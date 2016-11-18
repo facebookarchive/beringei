@@ -21,4 +21,38 @@ target_link_libraries(
     Threads::Threads
 )
 
-add_subdirectory(grafana_read_service);
+add_executable(
+    beringei_put
+
+    BeringeiPut.cpp
+)
+target_link_libraries(
+    beringei_put
+
+    beringei_thrift
+    beringei_plugin
+    ${FOLLY_LIBRARIES}
+    ${FBTHRIFT_LIBRARIES}
+    ${GFLAGS_LIBRARIES}
+    ${LIBGLOG_LIBRARIES}
+    Threads::Threads
+)
+
+add_executable(
+    beringei_get
+
+    BeringeiGet.cpp
+)
+target_link_libraries(
+    beringei_get
+
+    beringei_thrift
+    beringei_plugin
+    ${FOLLY_LIBRARIES}
+    ${FBTHRIFT_LIBRARIES}
+    ${GFLAGS_LIBRARIES}
+    ${LIBGLOG_LIBRARIES}
+    Threads::Threads
+)
+
+add_subdirectory(grafana_read_service)
