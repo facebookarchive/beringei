@@ -119,15 +119,16 @@ void BeringeiClientImpl::initialize(
   if (writerThreads == 0) {
     // If readServices fails, just assume there are no gorilla services.
     const auto readServices = selectReadServices();
-
+    currentReadServices_ = readServices;
     initBeringeiNetworkClients(readClients_, readServices);
 
     if (readServicesUpdateInterval != kNoReadServicesUpdates) {
-      readServicesUpdateThread_.reset(new std::thread(
-          &BeringeiClientImpl::readServicesUpdateThread,
-          this,
-          readServices,
-          readServicesUpdateInterval));
+      readServicesUpdateScheduler_.addFunction(
+          std::bind(&BeringeiClientImpl::updateReadServices, this),
+          std::chrono::seconds(readServicesUpdateInterval),
+          "readServicesUpdate",
+          std::chrono::seconds(readServicesUpdateInterval));
+      readServicesUpdateScheduler_.start();
     }
   } else {
     // Writes
@@ -208,11 +209,7 @@ void BeringeiClientImpl::initializeTestClients(
 
 BeringeiClientImpl::~BeringeiClientImpl() {
   stopWriterThreads();
-
-  if (readServicesUpdateThread_.get()) {
-    // Just detach it because it's probably sleeping and hope nothing crashes...
-    readServicesUpdateThread_->detach();
-  }
+  readServicesUpdateScheduler_.shutdown();
 }
 
 void BeringeiClientImpl::startWriterThreads(int numWriterThreads) {
@@ -632,23 +629,15 @@ std::vector<std::string> BeringeiClientImpl::selectReadServices() {
   return configurationAdapter_->getReadServices();
 }
 
-void BeringeiClientImpl::readServicesUpdateThread(
-    const std::vector<std::string>& initialReadServices,
-    int interval) {
-  std::vector<std::string> previousReadServices = initialReadServices;
+void BeringeiClientImpl::updateReadServices() {
+  const auto readServices = selectReadServices();
 
-  while (true) {
-    sleep(interval);
-
-    const auto readServices = selectReadServices();
-
-    if (readServices.size() != 0 && readServices != previousReadServices) {
-      std::vector<std::shared_ptr<BeringeiNetworkClient>> readClients;
-      initBeringeiNetworkClients(readClients, readServices);
-      previousReadServices = readServices;
-      folly::RWSpinLock::WriteHolder guard(&readClientLock_);
-      readClients_ = readClients;
-    }
+  if (readServices.size() != 0 && readServices != currentReadServices_) {
+    std::vector<std::shared_ptr<BeringeiNetworkClient>> readClients;
+    initBeringeiNetworkClients(readClients, readServices);
+    currentReadServices_ = readServices;
+    folly::RWSpinLock::WriteHolder guard(&readClientLock_);
+    readClients_ = readClients;
   }
 }
 

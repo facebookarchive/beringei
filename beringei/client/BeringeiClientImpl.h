@@ -13,6 +13,7 @@
 #include <vector>
 
 #include <folly/RWSpinLock.h>
+#include <folly/experimental/FunctionScheduler.h>
 #include "beringei/client/BeringeiConfigurationAdapterIf.h"
 #include "beringei/client/BeringeiNetworkClient.h"
 #include "beringei/client/RequestBatchingQueue.h"
@@ -159,9 +160,7 @@ class BeringeiClientImpl {
 
   std::vector<std::string> selectReadServices();
 
-  void readServicesUpdateThread(
-      const std::vector<std::string>& initialReadService,
-      int interval);
+  void updateReadServices();
 
   void retryThread();
 
@@ -191,7 +190,8 @@ class BeringeiClientImpl {
 
   std::vector<std::thread> writers_;
 
-  std::unique_ptr<std::thread> readServicesUpdateThread_;
+  std::vector<std::string> currentReadServices_;
+  folly::FunctionScheduler readServicesUpdateScheduler_;
   folly::RWSpinLock readClientLock_;
 
   struct RetryOperation {
