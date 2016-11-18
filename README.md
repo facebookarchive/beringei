@@ -49,7 +49,6 @@ Start beringei
 ./gorilla/beringei/service/beringei_main \
     -beringei_configuration_path /tmp/beringei.json \
     -create_directories \
-    -service_name beringei-service \
     -sleep_between_bucket_finalization_secs 60 \
     -allowed_timestamp_behind 300 \
     -bucket_size 600 \
@@ -63,7 +62,6 @@ Send data:
 while [[ 1 ]]; do
     ./gorilla/beringei/tools/beringei_put \
         -beringei_configuration_path /tmp/beringei.json \
-        -beringei_write_services beringei-service \
         testkey ${RANDOM} \
         -logtostderr -v 3
     sleep 30
@@ -74,7 +72,6 @@ Read it back:
 ```
 ./gorilla/beringei/tools/beringei_get \
     -beringei_configuration_path /tmp/beringei.json \
-    -beringei_write_services beringei-service \
     testkey \
     -logtostderr -v 3
 ```

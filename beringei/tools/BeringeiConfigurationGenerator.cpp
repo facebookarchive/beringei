@@ -22,9 +22,9 @@ DEFINE_string(host_names, "", "Host names separated by commas");
 
 DEFINE_int32(port, 9999, "Port");
 
-DEFINE_string(service_name, "beringei-service", "Service name for beringei");
+DEFINE_string(service_name, "beringei", "Service name for beringei");
 
-DEFINE_int32(num_shards, 50, "Total number of shards to use");
+DEFINE_int32(num_shards, 100, "Total number of shards to use");
 
 DEFINE_string(file_path, "", "Location to save the configuration");
 

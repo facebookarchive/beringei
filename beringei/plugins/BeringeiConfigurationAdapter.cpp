@@ -16,13 +16,12 @@ DEFINE_string(
 
 DEFINE_string(
     beringei_services,
-    "beringei-service",
+    "beringei",
     "Name of the beringei services enabled for reads");
 
 DEFINE_string(
     beringei_write_services,
-    "beringei-service,"
-    "beringei-test",
+    "beringei",
     "Name of the beringei services enabled for writes");
 
 DEFINE_string(
