@@ -1,0 +1,27 @@
+{
+  "shardCount" : 3,
+  "serviceMap" : [
+    {
+      "serviceName" : "beringei-west",
+      "location" : "west",
+      "isLoggingNewKeysEnabled" : true,
+      "shardMap" : [
+        {
+          "shardId" : 0,
+          "hostAddress" : "beringei-host-1",
+          "port" : 9999
+        },
+        {
+          "shardId" : 1,
+          "hostAddress" : "beringei-host-2",
+          "port" : 9999
+        },
+        {
+          "shardId" : 2,
+          "hostAddress" : "beringei-host-3",
+          "port" : 9999
+        }
+      ]
+    }
+  ]
+}
