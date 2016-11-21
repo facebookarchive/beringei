@@ -34,8 +34,6 @@ add_library(
     gen-cpp2/beringei_types.tcc
     gen-cpp2/beringei_grafana_constants.cpp
     gen-cpp2/beringei_grafana_constants.h
-    gen-cpp2/beringei_grafana_data.cpp
-    gen-cpp2/beringei_grafana_data.h
     gen-cpp2/beringei_grafana_types.cpp
     gen-cpp2/beringei_grafana_types_custom_protocol.h
     gen-cpp2/beringei_grafana_types.h
