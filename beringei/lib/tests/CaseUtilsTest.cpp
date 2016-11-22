@@ -8,12 +8,14 @@
  */
 
 #include <gtest/gtest.h>
+#include <ext/hash_map>
 
 #include <folly/String.h>
 #include "TestKeyList.h"
 
 #include "beringei/lib/CaseUtils.h"
 
+using __gnu_cxx::hash;
 using namespace ::testing;
 using namespace facebook::gorilla;
 
