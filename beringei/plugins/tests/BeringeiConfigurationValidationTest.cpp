@@ -21,8 +21,7 @@ using namespace std;
 class BeringeiConfigurationValidationTest : public testing::Test {
  public:
   BeringeiConfigurationValidationTest() {
-    auto filePath =
-        "beringei/plugins/tests/testfiles/BeringeiConfig2.json";
+    auto filePath = "beringei/plugins/tests/testfiles/BeringeiConfig2.json";
     configurationBase_ = loader_.loadFromJsonFile(filePath);
   }
 
