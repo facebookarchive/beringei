@@ -22,7 +22,9 @@ apt install --yes \
     flex \
     g++ \
     git \
+    gperf \
     libboost-all-dev \
+    libcap-dev \
     libdouble-conversion-dev \
     libevent-dev \
     libgflags-dev \

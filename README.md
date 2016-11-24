@@ -32,7 +32,7 @@ Generate the the thrift source:
 ```
 pushd beringei/if
 for THRIFT_FILE in $(ls *.thrift); do
-  PYTHONPATH=/tmp/fbthrift-2016.11.07.00/thrift/.python-local/lib/python  python2 -mthrift_compiler.main --gen cpp2 $THIRFT_FILE -I../..
+  PYTHONPATH=/tmp/fbthrift-2016.11.07.00/thrift/.python-local/lib/python  python2 -mthrift_compiler.main --gen cpp2 $THRIFT_FILE -I../..
 done
 popd
 ```
@@ -46,7 +46,7 @@ Generate a beringei configuration file
 ```
 Start beringei
 ```
-./gorilla/beringei/service/beringei_main \
+./beringei/service/beringei_main \
     -beringei_configuration_path /tmp/beringei.json \
     -create_directories \
     -sleep_between_bucket_finalization_secs 60 \
@@ -60,7 +60,7 @@ Start beringei
 Send data:
 ```
 while [[ 1 ]]; do
-    ./gorilla/beringei/tools/beringei_put \
+    ./beringei/tools/beringei_put \
         -beringei_configuration_path /tmp/beringei.json \
         testkey ${RANDOM} \
         -logtostderr -v 3
@@ -70,7 +70,7 @@ done
 
 Read it back:
 ```
-./gorilla/beringei/tools/beringei_get \
+./beringei/tools/beringei_get \
     -beringei_configuration_path /tmp/beringei.json \
     testkey \
     -logtostderr -v 3
