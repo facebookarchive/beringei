@@ -181,7 +181,7 @@ class BucketMap {
     return lastFinalizedBucket_;
   }
 
-  // returns the earlist timestamp (inclusive) from which gorilla is
+  // returns the earliest timestamp (inclusive) from which gorilla is
   // unaware of any missing data.  initialized to 0 and returns 0
   // if a shard has no missing data
   int64_t getReliableDataStartTime();
