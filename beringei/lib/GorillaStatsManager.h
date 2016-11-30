@@ -37,9 +37,7 @@ class GorillaStatsManager {
       const std::string& keyPrefix,
       std::unique_ptr<GorillaStatsManager> stats);
 
-  static void addStatValue(
-      const std::string& key,
-      int64_t value = 1);
+  static void addStatValue(const std::string& key, int64_t value = 1);
   static void setCounter(const std::string& key, int64_t value);
   static void incrementCounter(const std::string& key, int64_t amount = 1);
 
