@@ -11,8 +11,8 @@
 
 #include "GorillaStatsManager.h"
 
-#include "glog/logging.h"
 #include "beringei/lib/GorillaTimeConstants.h"
+#include "glog/logging.h"
 
 namespace facebook {
 namespace gorilla {

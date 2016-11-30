@@ -21,8 +21,7 @@ using namespace std;
 class BeringeiConfigurationTest : public testing::Test {};
 
 TEST_F(BeringeiConfigurationTest, CanLoadSimpleConfiguration) {
-  auto filePath =
-      "beringei/plugins/tests/testfiles/BeringeiConfig1.json";
+  auto filePath = "beringei/plugins/tests/testfiles/BeringeiConfig1.json";
   BeringeiConfigurationLoader loader;
   auto configurationInfo = loader.loadFromJsonFile(filePath);
   ASSERT_EQ(4, configurationInfo.shardCount);
