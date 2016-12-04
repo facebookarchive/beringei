@@ -24,13 +24,8 @@ target_link_libraries(
     ${GFLAGS_LIBRARIES}
 )
 
-file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/testfiles)
-file(
-    COPY
-        testfiles/BeringeiConfig1.json
-        testfiles/BeringeiConfig2.json
-    DESTINATION
-        testfiles/
+add_test(
+  NAME beringei_plugin_tests
+  COMMAND ${CMAKE_CURRENT_BINARY_DIR}/beringei_plugin_test_bin
+  WORKING_DIRECTORT ${CMAKE_SOURCE_DIR}
 )
-
-add_test(beringei_plugin_tests beringei_plugin_test_bin)

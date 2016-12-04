@@ -60,5 +60,14 @@ target_link_libraries(
     ${GFLAGS_LIBRARIES}
 )
 
-add_test(beringei_core_tests beringei_core_test_bin)
-add_test(beringei_bucket_map_test beringei_bucket_map_test_bin)
+add_test(
+  NAME beringei_lib_tests
+  COMMAND ${CMAKE_CURRENT_BINARY_DIR}/beringei_core_test_bin
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+
+add_test(
+  NAME beringei_bucket_map_test
+  COMMAND ${CMAKE_CURRENT_BINARY_DIR}/beringei_bucket_map_test_bin
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
