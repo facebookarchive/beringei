@@ -309,8 +309,6 @@ TEST_F(BeringeiServiceHandlerTest, GetShardDataBucketTimeElapse) {
   TemporaryDirectory dir("beringei_data_block");
   FLAGS_data_directory = dir.dirname();
   FLAGS_allowed_timestamp_ahead = kGorillaSecondsPerHour * 30;
-  // To avoid errors that other shards don't have data.
-  FLAGS_shards = 1;
 
   BeringeiServiceHandler handler(
       std::make_shared<MockConfigurationAdapter>(),
@@ -388,8 +386,6 @@ TEST_F(BeringeiServiceHandlerTest, GetShardDataTimeElapse) {
   TemporaryDirectory dir("beringei_data_block");
   FLAGS_data_directory = dir.dirname();
   FLAGS_allowed_timestamp_ahead = kGorillaSecondsPerHour * 30;
-  // To avoid errors that other shards don't have data.
-  FLAGS_shards = 1;
 
   BeringeiServiceHandler handler(
       std::make_shared<MockConfigurationAdapter>(),
@@ -477,8 +473,6 @@ TEST_F(BeringeiServiceHandlerTest, GetShardDataBucket) {
   TemporaryDirectory dir("beringei_data_block");
   FLAGS_data_directory = dir.dirname();
   FLAGS_allowed_timestamp_ahead = kGorillaSecondsPerHour * 30;
-  // To avoid errors that other shards don't have data.
-  FLAGS_shards = 1;
 
   BeringeiServiceHandler handler(
       std::make_shared<MockConfigurationAdapter>(),
