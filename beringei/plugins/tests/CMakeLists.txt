@@ -27,5 +27,5 @@ target_link_libraries(
 add_test(
   NAME beringei_plugin_tests
   COMMAND ${CMAKE_CURRENT_BINARY_DIR}/beringei_plugin_test_bin
-  WORKING_DIRECTORT ${CMAKE_SOURCE_DIR}
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
