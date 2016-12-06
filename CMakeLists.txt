@@ -16,7 +16,7 @@ set(PACKAGE_NAME      "beringei")
 set(PACKAGE_VERSION   "1")
 set(PACKAGE_STRING    "${PACKAGE_NAME} ${PACKAGE_VERSION}")
 set(PACKAGE_TARNAME   "${PACKAGE_NAME}-${PACKAGE_VERSION}")
-set(PACKAGE_BUGREPORT "https://github.com/facebook/beringei/issues")
+set(PACKAGE_BUGREPORT "https://github.com/facebookincubator/beringei/issues")
 
 project(${PACKAGE_NAME} C CXX)
 
