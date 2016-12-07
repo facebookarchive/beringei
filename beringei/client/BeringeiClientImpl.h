@@ -47,7 +47,7 @@ class BeringeiClientImpl {
   // testClient allows unit tests to pass in mocks.
   explicit BeringeiClientImpl(
       std::shared_ptr<BeringeiConfigurationAdapterIf> configurationAdapter,
-      bool throwExceptionOnPartialRead = false);
+      bool throwExceptionOnTransientFailure = false);
 
   virtual ~BeringeiClientImpl();
 
@@ -146,14 +146,16 @@ class BeringeiClientImpl {
   // retrieved, unownedKeys with keys that hosts responded they did
   // not own the shard for, and inProgressKeys with keys that are owned
   // but not fully loaded yet. If inProgressKeys is nullptr, foundKeys
-  // is also populated with keys that are in progress.
+  // is also populated with keys that are in progress, and the equivalent
+  // is true of partialDataKeys (those keys where there is a hole in the data).
   void getWithClient(
       BeringeiNetworkClient& readClient,
       const GetDataRequest& request,
       GetDataResult& result,
       std::vector<Key>& foundKeys,
       std::vector<Key>& unownedKeys,
-      std::vector<Key>* inProgressKeys);
+      std::vector<Key>* inProgressKeys,
+      std::vector<Key>* partialDataKeys);
 
   // Send data until reading an empty request.
   void writeDataPointsForever(WriteClient* writeClient);
@@ -200,7 +202,7 @@ class BeringeiClientImpl {
     uint32_t retryTimeSecs;
   };
 
-  bool throwExceptionOnPartialRead_;
+  bool throwExceptionOnTransientFailure_;
   folly::MPMCQueue<RetryOperation> retryQueue_;
   std::atomic<int> numRetryQueuedDataPoints_;
   std::vector<std::thread> retryWriters_;

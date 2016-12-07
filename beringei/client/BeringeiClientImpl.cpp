@@ -93,9 +93,9 @@ const static int kMaxRetryBatchSize = 10000;
 
 BeringeiClientImpl::BeringeiClientImpl(
     std::shared_ptr<BeringeiConfigurationAdapterIf> asyncClientAdapter,
-    bool throwExceptionOnPartialRead)
+    bool throwExceptionOnTransientFailure)
     : configurationAdapter_(asyncClientAdapter),
-      throwExceptionOnPartialRead_(throwExceptionOnPartialRead),
+      throwExceptionOnTransientFailure_(throwExceptionOnTransientFailure),
       retryQueue_(std::max(
           (int)FLAGS_gorilla_retry_queue_capacity /
               kRetryQueueCapacitySizeRatio,
@@ -346,7 +346,8 @@ void BeringeiClientImpl::getWithClient(
     GetDataResult& result,
     std::vector<Key>& foundKeys,
     std::vector<Key>& failedKeys,
-    std::vector<Key>* inProgressKeys) {
+    std::vector<Key>* inProgressKeys,
+    std::vector<Key>* partialDataKeys) {
   BeringeiNetworkClient::GetRequestMap requests;
   // Break this up into requests per host.
   for (const auto& key : request.keys) {
@@ -385,7 +386,6 @@ void BeringeiClientImpl::getWithClient(
         case StatusCode::DONT_OWN_SHARD:
           failedKeys.push_back(req.keys[i]);
           break;
-        case StatusCode::MISSING_TOO_MUCH_DATA:
         case StatusCode::SHARD_IN_PROGRESS:
           if (inProgressKeys) {
             inProgressKeys->push_back(req.keys[i]);
@@ -397,15 +397,24 @@ void BeringeiClientImpl::getWithClient(
               foundKeys.push_back(req.keys[i]);
             }
           }
-          if (res.results[i].status == StatusCode::MISSING_TOO_MUCH_DATA) {
-            GorillaStatsManager::addStatValue(kRedirectForMissingData, 1);
-            if (inProgressKeys) {
-              LOG(INFO) << "Received status to redirect to other coast, "
-                        << "will retry";
-            } else {
-              LOG(INFO) << "Received status to redirect to other coast, "
-                        << "disallowed, nonzero data treated as success: "
-                        << (res.results[i].data.size() > 0);
+          break;
+        case StatusCode::MISSING_TOO_MUCH_DATA:
+          GorillaStatsManager::addStatValue(kRedirectForMissingData, 1);
+          if (partialDataKeys) {
+            LOG(INFO) << "Received status to redirect to other coast, "
+                      << "will retry";
+
+            partialDataKeys->push_back(req.keys[i]);
+          } else {
+            LOG(INFO) << "Received status to redirect to other coast, "
+                      << "disallowed, nonzero data treated as success: "
+                      << (res.results[i].data.size() > 0);
+
+            // Caller doesn't care that there are holes in the data. Treat
+            // the results as success.
+            if (res.results[i].data.size() > 0) {
+              result.results.push_back(res.results[i]);
+              foundKeys.push_back(req.keys[i]);
             }
           }
           break;
@@ -464,7 +473,7 @@ void BeringeiClientImpl::get(
 
   for (int i = 0; i < readClientCopies.size(); i++) {
     std::vector<Key> failedKeys;
-    std::vector<Key> inProgressKeys;
+    std::vector<Key> partialKeys;
     auto& readClient = readClientCopies[i];
     if (i > 0) {
       GorillaStatsManager::addStatValue(kReadFailover);
@@ -472,8 +481,10 @@ void BeringeiClientImpl::get(
                 << readClient->getServiceName();
     }
 
-    // If this is the last iteration, gets results from shards that
-    // are in progress.
+    // If this is the last iteration, count shards with partial data (in
+    // progress or with recorded gaps) as though they were fully successful.
+    // However, if `throwExceptionOnTransientFailure_ is enabled, continue
+    // to record in progress shards as failures.
     bool lastIteration = i == readClientCopies.size() - 1;
     getWithClient(
         *readClient.get(),
@@ -481,12 +492,13 @@ void BeringeiClientImpl::get(
         result,
         request.keys,
         failedKeys,
-        throwExceptionOnPartialRead_ || !lastIteration ? &inProgressKeys
-                                                       : nullptr);
+        throwExceptionOnTransientFailure_ || !lastIteration ? &partialKeys
+                                                            : nullptr,
+        !lastIteration ? &partialKeys : nullptr);
 
     // Were there any keys hosts said they didn't own the shard for,
     // shards in progress or RPC failures?
-    if (failedKeys.empty() && inProgressKeys.empty()) {
+    if (failedKeys.empty() && partialKeys.empty()) {
       break;
     }
 
@@ -508,24 +520,25 @@ void BeringeiClientImpl::get(
           result,
           request.keys,
           failedKeys,
-          throwExceptionOnPartialRead_ || !lastIteration ? &inProgressKeys
-                                                         : nullptr);
+          throwExceptionOnTransientFailure_ || !lastIteration ? &partialKeys
+                                                              : nullptr,
+          !lastIteration ? &partialKeys : nullptr);
     }
 
     // If this fails, then we'll retry to another failure coast
-    if (failedKeys.empty() && inProgressKeys.empty()) {
+    if (failedKeys.empty() && partialKeys.empty()) {
       break;
     }
 
-    if (lastIteration && throwExceptionOnPartialRead_) {
+    if (lastIteration && throwExceptionOnTransientFailure_) {
       throw std::runtime_error("Failed reading data from gorilla");
     }
     // Now just reset clientRequest keys and retry with a different client
     clientRequest.keys = std::move(failedKeys);
     clientRequest.keys.insert(
         clientRequest.keys.end(),
-        std::make_move_iterator(inProgressKeys.begin()),
-        std::make_move_iterator(inProgressKeys.end()));
+        std::make_move_iterator(partialKeys.begin()),
+        std::make_move_iterator(partialKeys.end()));
   }
 }
 

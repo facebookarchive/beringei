@@ -20,7 +20,7 @@ class BeringeiClient : public BeringeiClientImpl {
       std::shared_ptr<BeringeiConfigurationAdapterIf> configurationAdapter,
       int queueCapacity = 0,
       int writerThreads = 0,
-      bool throwExceptionOnPartialRead = false,
+      bool throwExceptionOnTransientFailure = false,
       int readServicesUpdateInvterval = kDefaultReadServicesUpdateInterval);
 };
 }

@@ -70,7 +70,7 @@ class BeringeiClientMock : public BeringeiNetworkClient {
 
 class BeringeiClientTest : public testing::Test {
  protected:
-  void SetUp() {
+  void SetUp() override {
     DataPoint dp;
     dp.key.key = "one";
     dp.key.shardId = 1;
@@ -129,10 +129,14 @@ class BeringeiClientTest : public testing::Test {
     inProgressPartialRes.results.resize(1);
     b1.get(0, 50, inProgressPartialRes.results[0].data, &storage);
 
+    resWithHoles.results.resize(1);
+    b1.get(0, 50, resWithHoles.results[0].data, &storage);
+
     shardUnownedRes.results[0].status = StatusCode::DONT_OWN_SHARD;
     rpcFailRes.results[0].status = StatusCode::RPC_FAIL;
     inProgressRes.results[0].status = StatusCode::SHARD_IN_PROGRESS;
     inProgressPartialRes.results[0].status = StatusCode::SHARD_IN_PROGRESS;
+    resWithHoles.results[0].status = StatusCode::MISSING_TOO_MUCH_DATA;
   }
 
   std::unique_ptr<BeringeiClientImpl> createBeringeiClient(
@@ -158,6 +162,7 @@ class BeringeiClientTest : public testing::Test {
   GetDataResult rpcFailRes;
   GetDataResult inProgressRes;
   GetDataResult inProgressPartialRes;
+  GetDataResult resWithHoles;
 
   GetDataResult getResult;
   GorillaResultVector resultVec;
@@ -581,11 +586,12 @@ TEST_F(BeringeiClientTest, ReadClientFailoverShardInProgress) {
   auto beringeiClient = createBeringeiClient(
       adapterMock, 1, BeringeiClientImpl::kNoWriterThreads, false, client);
 
+  // Should retry both SHARD_IN_PROGRESS and MISSING_TOO_MUCH_DATA.
   BeringeiNetworkClient::GetRequestMap shardInProgress;
   shardInProgress[make_pair("", 3)].first.keys.push_back(k1);
   shardInProgress[make_pair("", 3)].second = inProgressRes;
   shardInProgress[make_pair("", 5)].first.keys.push_back(k2);
-  shardInProgress[make_pair("", 5)].second = inProgressRes;
+  shardInProgress[make_pair("", 5)].second = resWithHoles;
 
   BeringeiNetworkClient::GetRequestMap expected;
   expected[make_pair("", 3)].first.keys.push_back(k1);
@@ -644,4 +650,78 @@ TEST_F(BeringeiClientTest, ReadClientShardInProgressPartialResults) {
   ASSERT_EQ(1, result.results.size());
   ASSERT_EQ(1, getReq.keys.size());
   ASSERT_EQ(k2, getReq.keys[0]);
+}
+
+TEST_F(BeringeiClientTest, ReadClientThrowsExceptions) {
+  auto client = new StrictMock<BeringeiClientMock>(8);
+  auto adapterMock = std::make_shared<StrictMock<MockConfigurationAdapter>>();
+
+  // Configured to throw exceptions.
+  auto beringeiClient = createBeringeiClient(
+      adapterMock, 1, BeringeiClientImpl::kNoWriterThreads, true, client);
+
+  BeringeiNetworkClient::GetRequestMap shardInProgress;
+  shardInProgress[make_pair("", 3)].first.keys.push_back(k1);
+  shardInProgress[make_pair("", 3)].second = inProgressRes;
+  shardInProgress[make_pair("", 5)].first.keys.push_back(k2);
+  shardInProgress[make_pair("", 5)].second = resWithHoles;
+
+  // Nothing happens if the calls eventually succeed.
+  BeringeiNetworkClient::GetRequestMap expected;
+  expected[make_pair("", 3)].first.keys.push_back(k1);
+  expected[make_pair("", 3)].second = getRes1;
+  expected[make_pair("", 5)].first.keys.push_back(k2);
+  expected[make_pair("", 5)].second = getRes2;
+
+  // beringeiClient should retry with different BeringeiNetworkClient in
+  // different scope without invalidating shardCache.
+  EXPECT_CALL(*client, performGet(_))
+      .WillOnce(SetArgReferee<0>(shardInProgress))
+      .WillOnce(SetArgReferee<0>(expected));
+
+  GetDataResult result;
+  beringeiClient->get(getReq, result);
+
+  ASSERT_EQ(getResult.results.size(), result.results.size());
+  for (int i = 0; i < result.results.size(); i++) {
+    ASSERT_EQ(getResult.results[i].data.size(), result.results[i].data.size());
+    for (int j = 0; j < result.results[i].data.size(); j++) {
+      EXPECT_EQ(
+          getResult.results[i].data[j].count, result.results[i].data[j].count);
+    }
+  }
+
+  // Verify everything above is good.
+  Mock::VerifyAndClear(client);
+
+  // Try again, but MISSING_TOO_MUCH_DATA persists.
+  // No exception is thrown, as this is not a transient failure.
+  expected.begin()->second.second = resWithHoles;
+  EXPECT_CALL(*client, performGet(_))
+      .WillOnce(SetArgReferee<0>(shardInProgress))
+      .WillOnce(SetArgReferee<0>(expected));
+
+  result.results.clear();
+  beringeiClient->get(getReq, result);
+
+  ASSERT_EQ(getResult.results.size(), result.results.size());
+  for (int i = 0; i < result.results.size(); i++) {
+    ASSERT_EQ(getResult.results[i].data.size(), result.results[i].data.size());
+    for (int j = 0; j < result.results[i].data.size(); j++) {
+      EXPECT_EQ(
+          getResult.results[i].data[j].count, result.results[i].data[j].count);
+    }
+  }
+
+  // Verify everything above is good.
+  Mock::VerifyAndClear(client);
+
+  // Try again, but SHARD_IN_PROGRESS persists.
+  // Exception is thrown.
+  expected.begin()->second.second = inProgressRes;
+  EXPECT_CALL(*client, performGet(_))
+      .WillOnce(SetArgReferee<0>(shardInProgress))
+      .WillOnce(SetArgReferee<0>(expected));
+
+  ASSERT_ANY_THROW(beringeiClient->get(getReq, result));
 }

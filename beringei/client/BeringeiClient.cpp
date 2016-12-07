@@ -16,9 +16,11 @@ BeringeiClient::BeringeiClient(
     std::shared_ptr<BeringeiConfigurationAdapterIf> configurationAdapter,
     int queueCapacity,
     int writerThreads,
-    bool throwExceptionOnPartialRead,
+    bool throwExceptionOnTransientFailure,
     int readServicesUpdateInterval)
-    : BeringeiClientImpl(configurationAdapter, throwExceptionOnPartialRead) {
+    : BeringeiClientImpl(
+          configurationAdapter,
+          throwExceptionOnTransientFailure) {
   initialize(queueCapacity, writerThreads, readServicesUpdateInterval);
 }
 }
