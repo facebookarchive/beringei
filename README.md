@@ -48,14 +48,6 @@ the install scripts and directions to work with other linux distros.
 
 Run `sudo ./setup_ubuntu.sh`.
 
-Generate the the thrift source:
-```
-pushd beringei/if
-for THRIFT_FILE in $(ls *.thrift); do
-  PYTHONPATH=/tmp/fbthrift-2016.11.07.00/thrift/.python-local/lib/python  python2 -mthrift_compiler.main --gen cpp2 $THRIFT_FILE -I../..
-done
-popd
-```
 Actually build beringei
 `mkdir build && cd build && cmake .. && make`
 

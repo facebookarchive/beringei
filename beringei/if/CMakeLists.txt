@@ -44,3 +44,8 @@ target_link_libraries(
     beringei_thrift
     ${FBTHRIFT_LIBRARIES}
 )
+
+add_custom_command(TARGET beringei_thrift
+  PRE_BUILD
+  COMMAND bash "-e" "build_thrift.sh"
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
