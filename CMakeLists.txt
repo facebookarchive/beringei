@@ -44,6 +44,17 @@ include(CheckFunctionExists)
 include(BeringeiCompilerOptions)
 
 set(BERINGEI_HOME ${CMAKE_CURRENT_SOURCE_DIR})
+
+message("Building Required Thrift Files")
+execute_process(
+  COMMAND bash "-e" "build_thrift.sh"
+  WORKING_DIRECTORY ${BERINGEI_HOME}/beringei/if
+  RESULT_VARIABLE thrift_build_result)
+
+if(NOT "${thrift_build_result}" STREQUAL "0")
+    message(FATAL_ERROR "Could not build thrfft file.")
+endif()
+
 set(TP_PROJECTS_DIR "beringei/third-party")
 # So that qualified includes work. E.g. #include "beringei/client/$x.h"
 include_directories(${BERINGEI_HOME})

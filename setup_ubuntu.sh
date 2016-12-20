@@ -18,6 +18,7 @@ apt install --yes \
     automake \
     binutils-dev \
     bison \
+    clang-format-3.9 \
     cmake \
     flex \
     g++ \

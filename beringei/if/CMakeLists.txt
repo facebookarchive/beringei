@@ -11,6 +11,11 @@ include_directories(gen-cpp2)
 # Uplevel the path to this so lower things can use it.
 set(BERINGEI_THRIFT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/gen-cpp2 PARENT)
 
+add_custom_target(
+  beringei_gen_thrift_headers
+  COMMAND bash "-e" "build_thrift.sh"
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+
 add_library(
     beringei_thrift STATIC
     gen-cpp2/BeringeiService.h
@@ -40,7 +45,14 @@ add_library(
     gen-cpp2/beringei_grafana_types.tcc
 )
 
+add_dependencies(
+  beringei_thrift
+
+  beringei_gen_thrift_headers
+)
+
 target_link_libraries(
     beringei_thrift
+
     ${FBTHRIFT_LIBRARIES}
 )
