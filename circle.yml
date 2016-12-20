@@ -1,0 +1,11 @@
+machine:
+  services:
+    - docker
+
+dependencies:
+  override:
+    - docker build --rm=false -t base_ubuntu_16.10 .
+
+test:
+  override:
+    - docker run -t base_ubuntu_16.10 /bin/bash -c "set -e ; cmake .. ; make ; ctest"
