@@ -1,6 +1,7 @@
-![beringi logo](https://github.com/jteller/beringei/blob/master/beringei_logo_clear.png)
-
 # Beringei
+A High performance, in memory time series storage engine
+<img src="./beringei_logo_clear.png" height=120 width=120>
+
 In the fall of 2015, we published the paper “Gorilla: A Fast, Scalable,
 In-Memory Time Series Database” at VLDB 2015
 (http://www.vldb.org/pvldb/vol8/p1816-teller.pdf).
