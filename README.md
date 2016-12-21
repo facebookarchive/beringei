@@ -1,3 +1,5 @@
+![beringi logo](https://github.com/jteller/beringei/blob/master/beringei_logo_clear.png)
+
 # Beringei
 In the fall of 2015, we published the paper “Gorilla: A Fast, Scalable,
 In-Memory Time Series Database” at VLDB 2015
