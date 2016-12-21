@@ -1,5 +1,9 @@
 # Beringei
 
+A high performance, in memory time series storage engine
+
+<img src="./beringei_logo_clear.png" height=200 width=200>
+
 In the fall of 2015, we published the [paper “Gorilla: A Fast, Scalable, In-Memory Time Series Database”](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf) at VLDB 2015. Beringei is the open source representation of the ideas presented in this paper.
 
 Beringei is a high performance time series storage engine. Time series are commonly used as a representation of statistics, gauges, and counters for monitoring performance and health of a system. 
