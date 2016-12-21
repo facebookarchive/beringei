@@ -1,5 +1,5 @@
 # Beringei
-A High performance, in memory time series storage engine
+A high performance, in memory time series storage engine
 
 <img src="./beringei_logo_clear.png" height=200 width=200>
 
