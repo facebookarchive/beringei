@@ -50,7 +50,7 @@ the install scripts and directions to work with other linux distros.
 - Build beringei.
 
 ```
-mkdir build && cd build && cmake .. && make`
+mkdir build && cd build && cmake .. && make
 ```
 
 - Generate a beringei configuration file.
