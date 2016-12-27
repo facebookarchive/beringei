@@ -84,6 +84,7 @@ void BucketLogWriter::startWriterThread() {
 }
 
 void BucketLogWriter::stopWriterThread() {
+  LOG("TESTING CIRCLE");
   if (writerThread_) {
     stopThread_ = true;
 
