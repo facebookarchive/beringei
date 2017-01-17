@@ -56,3 +56,4 @@ target_link_libraries(
 )
 
 add_subdirectory(grafana_read_service)
+add_subdirectory(plain_text_service)
