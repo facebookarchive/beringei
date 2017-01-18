@@ -22,7 +22,6 @@
 #include <thrift/lib/cpp2/async/AsyncProcessor.h>
 #include <thrift/lib/cpp2/server/BaseThriftServer.h>
 #include <thrift/lib/cpp2/server/ThriftServer.h>
-#include <wangle/ssl/TLSCredProcessor.h>
 
 #include <chrono>
 
