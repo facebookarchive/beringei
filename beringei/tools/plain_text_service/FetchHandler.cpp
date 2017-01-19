@@ -40,7 +40,7 @@ void FetchHandler::onRequest(std::unique_ptr<HTTPMessage> msg) noexcept {
 }
 
 void FetchHandler::onBody(std::unique_ptr<folly::IOBuf> /* unused */) noexcept {
-  // nothing to do
+  // Nothing to do.
 }
 
 void FetchHandler::onEOM() noexcept {
@@ -68,7 +68,6 @@ void FetchHandler::onEOM() noexcept {
         .sendWithEOM();
   }
 
-  // parse times
   time_t startTime;
   if (!DateUtils::stringParseIsoTimestamp(_start, &startTime)) {
     return ResponseBuilder(downstream_)
@@ -86,11 +85,9 @@ void FetchHandler::onEOM() noexcept {
         .sendWithEOM();
   }
 
-  // get client
   BeringeiClient client(
       configurationAdapter_, 1, BeringeiClient::kNoWriterThreads);
 
-  // build request
   GetDataRequest request;
   request.keys.emplace_back();
   request.keys.back().key = _key;
@@ -98,11 +95,10 @@ void FetchHandler::onEOM() noexcept {
   request.begin = startTime;
   request.end = endTime;
 
-  // get datapoints
   gorilla::GorillaResultVector result;
   client.get(request, result);
 
-  // setup res
+  // Transform datapoints into result.
   std::ostringstream res;
   for (const auto& keyData : result) {
     const auto& keyName = keyData.first.key;
@@ -120,7 +116,7 @@ void FetchHandler::onEOM() noexcept {
 }
 
 void FetchHandler::onUpgrade(UpgradeProtocol /* unused */) noexcept {
-  // handler doesn't support upgrades
+  // Handler doesn't support upgrades.
 }
 
 void FetchHandler::requestComplete() noexcept {

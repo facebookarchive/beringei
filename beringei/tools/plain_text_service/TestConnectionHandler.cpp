@@ -18,21 +18,20 @@ namespace gorilla {
 
 void TestConnectionHandler::onRequest(
     std::unique_ptr<HTTPMessage> /* unused */) noexcept {
-  // nothing to do
+  // Nothing to do.
 }
 
 void TestConnectionHandler::onBody(
     std::unique_ptr<folly::IOBuf> /* unused */) noexcept {
-  // nothing to do
+  // Nothing to do.
 }
 
 void TestConnectionHandler::onEOM() noexcept {
-  // return ok
   ResponseBuilder(downstream_).status(200, "OK").body("").sendWithEOM();
 }
 
 void TestConnectionHandler::onUpgrade(UpgradeProtocol /* unused */) noexcept {
-  // handler doesn't support upgrades
+  // Handler doesn't support upgrades.
 }
 
 void TestConnectionHandler::requestComplete() noexcept {

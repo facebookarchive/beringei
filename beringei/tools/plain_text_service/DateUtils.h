@@ -26,7 +26,7 @@ class DateUtils {
       return false;
     }
 
-    timeinfo.tm_isdst = -1; // no DST information available
+    timeinfo.tm_isdst = -1; // No DST information available.
     if (t) {
       time_t timeSinceEpoch = timegm(&timeinfo);
       LOG(INFO) << timeSinceEpoch;

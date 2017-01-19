@@ -46,7 +46,7 @@ proxygen::RequestHandler* PlainTextServiceFactory::onRequest(
     return new UpdateHandler(configurationAdapter_);
   }
 
-  // return not found for all other uris
+  // Return not found for all other uris.
   return new NotFoundHandler();
 }
 }

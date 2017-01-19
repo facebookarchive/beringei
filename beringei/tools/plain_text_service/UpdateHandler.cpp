@@ -33,7 +33,7 @@ UpdateHandler::UpdateHandler(
     : RequestHandler(), configurationAdapter_(configurationAdapter) {}
 
 void UpdateHandler::onRequest(std::unique_ptr<HTTPMessage> msg) noexcept {
-  // nothing to do
+  // Nothing to do.
 }
 
 void UpdateHandler::onBody(std::unique_ptr<folly::IOBuf> body) noexcept {
@@ -105,26 +105,10 @@ void UpdateHandler::onEOM() noexcept {
               .count();
     }
 
-    LOG(INFO) << "SETTTTTTTTTTTTTTTTTTTT " << dp.value.unixTime;
     dps.push_back(dp);
   }
 
-  // dps.emplace_back();
-  // dps.back().key.key = std::string(argv[1]);
-  // dps.back().key.shardId =
-  //     std::hash<std::string>()(dps.back().key.key) % shardCount;
-  // dps.back().value.unixTime =
-  //     std::chrono::duration_cast<std::chrono::seconds>(
-  //         std::chrono::system_clock::now().time_since_epoch())
-  //         .count();
-  // dps.back().value.value = folly::to<double>(argv[2]);
-  //
   LOG(INFO) << "Num pts: " << dps.size();
-  //
-  // if (argc > 3) {
-  //   dps.back().value.unixTime = folly::to<int64_t>(argv[3]);
-  // }
-  //
 
   if (!client.putDataPoints(dps)) {
     LOG(ERROR) << "Failed to perform the put!";
@@ -137,29 +121,6 @@ void UpdateHandler::onEOM() noexcept {
 
   client.flushQueue();
 
-  //
-  // // build request
-  // GetDataRequest request;
-  // request.keys.emplace_back();
-  // request.keys.back().key = _key;
-  // request.keys.back().shardId = getShardId(_key, client.getNumShards());
-  // request.begin = startTime;
-  // request.end = endTime;
-  //
-  // // get datapoints
-  // gorilla::GorillaResultVector result;
-  // client.get(request, result);
-  //
-  // // setup res
-  // std::ostringstream res;
-  // for (const auto& keyData : result) {
-  //   const auto& keyName = keyData.first.key;
-  //   for (const auto& timeValue : keyData.second) {
-  //     res << keyName << " " << timeValue.value << " "
-  //               << timeValue.unixTime << std::endl;
-  //   }
-  // }
-
   ResponseBuilder(downstream_)
       .status(200, "OK")
       .header("Content-Type", "application/json")
@@ -168,7 +129,7 @@ void UpdateHandler::onEOM() noexcept {
 }
 
 void UpdateHandler::onUpgrade(UpgradeProtocol /* unused */) noexcept {
-  // handler doesn't support upgrades
+  // Handler doesn't support upgrades.
 }
 
 void UpdateHandler::requestComplete() noexcept {

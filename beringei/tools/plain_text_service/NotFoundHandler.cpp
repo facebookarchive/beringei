@@ -18,21 +18,20 @@ namespace gorilla {
 
 void NotFoundHandler::onRequest(
     std::unique_ptr<HTTPMessage> /* unused */) noexcept {
-  // nothing to do
+  // Nothing to do.
 }
 
 void NotFoundHandler::onBody(
     std::unique_ptr<folly::IOBuf> /* unused */) noexcept {
-  // nothing to do
+  // Nothing to do.
 }
 
 void NotFoundHandler::onEOM() noexcept {
-  // return not found
   ResponseBuilder(downstream_).status(404, "NOT FOUND").sendWithEOM();
 }
 
 void NotFoundHandler::onUpgrade(UpgradeProtocol /* unused */) noexcept {
-  // handler doesn't support upgrades
+  // Handler doesn't support upgrades.
 }
 
 void NotFoundHandler::requestComplete() noexcept {

@@ -20,7 +20,7 @@
 namespace facebook {
 namespace gorilla {
 
-// Request handler factory that figures out the right handler based on the uri
+// Request handler factory that figures out the right handler based on the uri.
 class PlainTextServiceFactory : public proxygen::RequestHandlerFactory {
  public:
   PlainTextServiceFactory();

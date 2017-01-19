@@ -15,7 +15,7 @@
 namespace facebook {
 namespace gorilla {
 
-// handler that replies with HTTP 200 OK.
+// Handler that replies with HTTP 200 OK.
 class TestConnectionHandler : public proxygen::RequestHandler {
  public:
   void onRequest(
