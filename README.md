@@ -1,4 +1,4 @@
-# Beringei
+# Beringei [![CircleCI](https://circleci.com/gh/facebookincubator/beringei/tree/master.svg?style=svg)](https://circleci.com/gh/facebookincubator/beringei/tree/master)
 A high performance, in memory time series storage engine
 
 <img src="./beringei_logo_clear.png" height=200 width=200>
