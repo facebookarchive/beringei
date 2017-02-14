@@ -127,8 +127,7 @@ BeringeiServiceHandler::BeringeiServiceHandler(
       numShardsBeingAdded_(0),
       addShardQueue_(fLI::FLAGS_shards),
       readBlocksShardQueue_(fLI::FLAGS_shards),
-      dropShardQueue_(fLI::FLAGS_shards),
-      lastFinalizedBucket_(0) {
+      dropShardQueue_(fLI::FLAGS_shards) {
   // the number of threads for each thread pool must exceed 0
   CHECK_GT(fLI::FLAGS_add_shard_threads, 0);
   CHECK_GT(fLI::FLAGS_key_writer_threads, 0);
@@ -399,8 +398,15 @@ void BeringeiServiceHandler::getShardDataBucket(
     int64_t shardId,
     int32_t offset,
     int32_t limit) {
-  beginTs -= beginTs % FLAGS_bucket_size;
-  endTs -= endTs % FLAGS_bucket_size;
+  // Floor timestamps.
+  beginTs = BucketMap::timestamp(
+      BucketMap::bucket(beginTs, FLAGS_bucket_size, shardId),
+      FLAGS_bucket_size,
+      shardId);
+  endTs = BucketMap::timestamp(
+      BucketMap::bucket(endTs, FLAGS_bucket_size, shardId),
+      FLAGS_bucket_size,
+      shardId);
 
   LOG(INFO) << "Fetching data for shard " << shardId << " between time "
             << beginTs << " and " << endTs;
@@ -446,7 +452,7 @@ void BeringeiServiceHandler::getShardDataBucket(
         ret.data.push_back(std::move(blocks));
         ret.recentRead.push_back(
             row->second.getQueriedBucketsAgo() <=
-            facebook::gorilla::kGorillaSecondsPerDay / FLAGS_bucket_size);
+            map->buckets(kGorillaSecondsPerDay));
       }
     }
   }
@@ -722,28 +728,31 @@ int BeringeiServiceHandler::purgeTimeSeries(uint8_t numBuckets) {
 
 void BeringeiServiceHandler::finalizeBucketsThread() {
   // This is the last bucket that can be finalized at this
-  // moment. It consideres the time timestamps can be late and adds
+  // moment. It considers that timestamps can be late and adds
   // one minute buffer to allow the data to be processed.
   //
   // The same bucket is finalized multiple times on purpose to make
   // sure all the shard movements are caught.
-  uint32_t bucketToFinalize = (time(nullptr) - FLAGS_allowed_timestamp_behind -
-                               facebook::gorilla::kGorillaSecondsPerMinute) /
-          FLAGS_bucket_size -
-      1;
-
-  if (lastFinalizedBucket_ != 0 &&
-      bucketToFinalize - lastFinalizedBucket_ > 1) {
-    GorillaStatsManager::addStatValue(kTooSlowToFinalizeBuckets);
-    LOG(ERROR) << "Finalizing the previous bucket took too long!";
+  uint64_t timestamp = time(nullptr) - FLAGS_allowed_timestamp_behind -
+      kGorillaSecondsPerMinute - BucketMap::duration(1, FLAGS_bucket_size);
+  bool behind = false;
+  for (int i = 0; i < FLAGS_shards; i++) {
+    uint32_t bucketToFinalize = data_[i]->bucket(timestamp);
+    if (data_[i]->isBehind(bucketToFinalize)) {
+      behind = true;
+    }
   }
 
-  finalizeBucket(bucketToFinalize);
-  lastFinalizedBucket_ = bucketToFinalize;
+  if (behind) {
+    GorillaStatsManager::addStatValue(kTooSlowToFinalizeBuckets);
+    LOG(ERROR) << "Finalizing the previous buckets took too long!";
+  }
+
+  finalizeBucket(timestamp);
 }
 
-void BeringeiServiceHandler::finalizeBucket(uint32_t bucketToFinalize) {
-  LOG(INFO) << "Finalizing bucket " << bucketToFinalize;
+void BeringeiServiceHandler::finalizeBucket(const uint64_t timestamp) {
+  LOG(INFO) << "Finalizing buckets at time " << timestamp;
 
   // Put all the shards in the queue even if they are not owned
   // because they might be owned 5 minutes later.
@@ -762,6 +771,7 @@ void BeringeiServiceHandler::finalizeBucket(uint32_t bucketToFinalize) {
           break;
         }
 
+        uint32_t bucketToFinalize = data_[shardId]->bucket(timestamp);
         Timer timer(true);
 
         // If the shard is not owned or there are no buckets to
@@ -769,9 +779,7 @@ void BeringeiServiceHandler::finalizeBucket(uint32_t bucketToFinalize) {
         int count = data_[shardId]->finalizeBuckets(bucketToFinalize);
 
         GorillaStatsManager::addStatValueAggregated(
-            kMsPerFinalizeShardBucket,
-            timer.get() / facebook::gorilla::kGorillaUsecPerMs,
-            count);
+            kMsPerFinalizeShardBucket, timer.get() / kGorillaUsecPerMs, count);
       }
     });
   }
@@ -781,4 +789,4 @@ void BeringeiServiceHandler::finalizeBucket(uint32_t bucketToFinalize) {
   }
 }
 }
-}
+} // facebook::gorilla

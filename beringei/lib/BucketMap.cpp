@@ -230,8 +230,38 @@ void BucketMap::erase(int index, Item item) {
   freeList_.push(index);
 }
 
-uint32_t BucketMap::bucket(uint64_t unixTime) {
-  return (uint32_t)(unixTime / windowSize_);
+uint32_t
+BucketMap::bucket(uint64_t unixTime, uint64_t windowSize, int shardId) {
+  return (uint32_t)(unixTime / windowSize);
+}
+
+uint32_t BucketMap::bucket(uint64_t unixTime) const {
+  return bucket(unixTime, windowSize_, shardId_);
+}
+
+uint64_t
+BucketMap::timestamp(uint32_t bucket, uint64_t windowSize, int shardId) {
+  return bucket * windowSize;
+}
+
+uint64_t BucketMap::timestamp(uint32_t bucket) const {
+  return timestamp(bucket, windowSize_, shardId_);
+}
+
+uint64_t BucketMap::duration(uint32_t buckets, uint64_t windowSize) {
+  return buckets * windowSize;
+}
+
+uint64_t BucketMap::duration(uint32_t buckets) const {
+  return duration(buckets, windowSize_);
+}
+
+uint32_t BucketMap::buckets(uint64_t duration, uint64_t windowSize) {
+  return duration / windowSize;
+}
+
+uint32_t BucketMap::buckets(uint64_t duration) const {
+  return buckets(duration, windowSize_);
 }
 
 BucketStorage* BucketMap::getStorage() {
@@ -263,7 +293,7 @@ bool BucketMap::setState(BucketMap::State state) {
         FLAGS_data_point_queue_size);
 
     // Deviations are indexed per minute.
-    deviations_.resize(n_ * windowSize_ / kGorillaSecondsPerMinute);
+    deviations_.resize(duration(n_) / kGorillaSecondsPerMinute);
   } else if (state == UNOWNED) {
     tmpMap.swap(map_);
     tmpQueue.swap(freeList_);
@@ -364,6 +394,11 @@ int BucketMap::finalizeBuckets(uint32_t lastBucketToFinalize) {
 
   lastFinalizedBucket_ = lastBucketToFinalize;
   return bucketsToFinalize;
+}
+
+bool BucketMap::isBehind(uint32_t bucketToFinalize) const {
+  return lastFinalizedBucket_ != 0 &&
+      bucketToFinalize > lastFinalizedBucket_ + 1;
 }
 
 void BucketMap::shutdown() {
@@ -618,10 +653,10 @@ void BucketMap::readLogFiles(uint32_t lastBlock) {
   FileUtils files(shardId_, BucketLogWriter::kLogFilePrefix, dataDirectory_);
 
   uint32_t unknownKeys = 0;
-  int64_t lastTimestamp = (lastBlock + 1) * windowSize_;
+  int64_t lastTimestamp = timestamp(lastBlock + 1);
 
   for (int64_t id : files.ls()) {
-    if (id < (lastBlock + 1) * windowSize_) {
+    if (id < timestamp(lastBlock + 1)) {
       LOG(INFO) << "Skipping log file " << id << " because it's already "
                 << "covered by a block";
       continue;
@@ -633,15 +668,14 @@ void BucketMap::readLogFiles(uint32_t lastBlock) {
       continue;
     }
 
-    uint32_t bucket = id / windowSize_;
+    uint32_t b = bucket(id);
     DataLogReader::readLog(
         file, id, [&](uint32_t key, int64_t unixTime, double value) {
 
-          if (unixTime < bucket * windowSize_ ||
-              unixTime > (bucket + 1) * windowSize_) {
+          if (unixTime < timestamp(b) || unixTime > timestamp(b + 1)) {
             LOG(ERROR) << "Unix time is out of the expected range: " << unixTime
-                       << " [" << (bucket * windowSize_) << ","
-                       << ((bucket + 1) * windowSize_) << "]";
+                       << " [" << timestamp(b) << "," << timestamp(b + 1)
+                       << "]";
             GorillaStatsManager::addStatValue(kCorruptLogFiles);
 
             // It's better to stop reading this log file here because
@@ -655,14 +689,14 @@ void BucketMap::readLogFiles(uint32_t lastBlock) {
             tv.unixTime = unixTime;
             tv.value = value;
             rows_[key]->second.put(
-                unixTime / windowSize_, tv, &storage_, key, nullptr);
+                bucket(unixTime), tv, &storage_, key, nullptr);
           } else {
             unknownKeys++;
           }
 
           int64_t gap = unixTime - lastTimestamp;
           if (gap > FLAGS_missing_logs_threshold_secs &&
-              lastTimestamp > windowSize_) {
+              lastTimestamp > timestamp(1)) {
             LOG(ERROR) << gap << " seconds of missing logs from "
                        << lastTimestamp << " to " << unixTime << " for shard "
                        << shardId_;
@@ -679,7 +713,7 @@ void BucketMap::readLogFiles(uint32_t lastBlock) {
 
   int64_t now = time(nullptr);
   int64_t gap = now - lastTimestamp;
-  if (gap > FLAGS_missing_logs_threshold_secs && lastTimestamp > windowSize_) {
+  if (gap > FLAGS_missing_logs_threshold_secs && lastTimestamp > timestamp(1)) {
     LOG(ERROR) << gap << " seconds of missing logs from " << lastTimestamp
                << " to now (" << now << ") for shard " << shardId_;
     GorillaStatsManager::addStatValue(kDataHoles, 1);
@@ -852,7 +886,7 @@ int BucketMap::indexDeviatingTimeSeries(
     return 0;
   }
 
-  int totalMinutes = n_ * windowSize_ / kGorillaSecondsPerMinute;
+  int totalMinutes = duration(n_) / kGorillaSecondsPerMinute;
 
   CHECK_EQ(totalMinutes, deviations_.size());
 
@@ -934,7 +968,7 @@ std::vector<BucketMap::Item> BucketMap::getDeviatingTimeSeries(
     return {};
   }
 
-  int totalMinutes = n_ * windowSize_ / kGorillaSecondsPerMinute;
+  int totalMinutes = duration(n_) / kGorillaSecondsPerMinute;
   CHECK_EQ(totalMinutes, deviations_.size());
 
   std::vector<BucketMap::Item> deviations;

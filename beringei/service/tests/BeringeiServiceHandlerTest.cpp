@@ -329,7 +329,7 @@ TEST_F(BeringeiServiceHandlerTest, GetShardDataBucketTimeElapse) {
       generatePutRequest(1000, startTime, endTime, keyPrefix, shardId);
   putDataPoints(handler, std::move(putRequest));
 
-  handler.finalizeBucket(endTime / FLAGS_bucket_size);
+  handler.finalizeBucket(endTime);
   GetShardDataBucketResult getDataResult;
   handler.getShardDataBucket(getDataResult, endTime, endTime, shardId, 0, 1000);
 
@@ -359,7 +359,7 @@ TEST_F(BeringeiServiceHandlerTest, GetShardDataBucketTimeElapse) {
   EXPECT_EQ(1, result.results[0].data.size());
   EXPECT_NE(0, result.results[0].data[0].count);
 
-  handler.finalizeBucket(endTime / FLAGS_bucket_size);
+  handler.finalizeBucket(endTime);
   GetShardDataBucketResult getDataResultAfter;
   handler.getShardDataBucket(
       getDataResultAfter, endTime, endTime, shardId, 0, 10000);
@@ -415,7 +415,7 @@ TEST_F(BeringeiServiceHandlerTest, GetShardDataTimeElapse) {
   EXPECT_EQ(1, result.results[0].data.size());
   EXPECT_NE(0, result.results[0].data[0].count);
 
-  handler.finalizeBucket(endTime / FLAGS_bucket_size);
+  handler.finalizeBucket(endTime);
   GetShardDataBucketResult getDataResult;
   handler.getShardDataBucket(
       getDataResult, endTime, endTime, shardId, 0, 10000);
@@ -445,7 +445,7 @@ TEST_F(BeringeiServiceHandlerTest, GetShardDataTimeElapse) {
     putRequest =
         generatePutRequest(1000, i, i + FLAGS_bucket_size, keyPrefix, shardId);
     putDataPoints(handler, std::move(putRequest));
-    handler.finalizeBucket((i + FLAGS_bucket_size) / FLAGS_bucket_size);
+    handler.finalizeBucket(i + FLAGS_bucket_size);
   }
 
   GetShardDataBucketResult getDataResultAfter;
@@ -491,7 +491,7 @@ TEST_F(BeringeiServiceHandlerTest, GetShardDataBucket) {
   auto putRequest =
       generatePutRequest(1000, startTime, endTime, keyPrefix, shardId);
   putDataPoints(handler, std::move(putRequest));
-  handler.finalizeBucket(endTime / FLAGS_bucket_size);
+  handler.finalizeBucket(endTime);
 
   GetShardDataBucketResult getDataResult;
   handler.getShardDataBucket(getDataResult, endTime, endTime, shardId, 0, 600);

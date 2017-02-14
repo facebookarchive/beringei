@@ -63,7 +63,7 @@ class BeringeiServiceHandler : virtual public BeringeiServiceSvIf {
   // in any of the `numBuckets` older buckets.
   int purgeTimeSeries(uint8_t numBuckets);
 
-  void finalizeBucket(uint32_t bucketToFinalize);
+  void finalizeBucket(const uint64_t timestamp);
   void finalizeBucketsThread();
 
   enum BeringeiShardState {
@@ -114,8 +114,6 @@ class BeringeiServiceHandler : virtual public BeringeiServiceSvIf {
 
   folly::MPMCQueue<std::pair<uint32_t, int64_t>> dropShardQueue_;
   std::thread dropShardThread_;
-
-  std::atomic<uint32_t> lastFinalizedBucket_;
 
   int32_t getTotalNumShards();
   int32_t getNumShards();
