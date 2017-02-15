@@ -172,75 +172,26 @@ class BeringeiServiceHandlerTest : public testing::Test {
     EXPECT_EQ(0, result.data.size());
   }
 
-  bool waitTillShardProcessed(
-      BeringeiServiceHandler* handler,
-      int64_t shardId,
-      bool expectData) {
-    bool success = false;
-    for (int retries = 0; !success && retries < 50; retries++) {
-      auto map = handler->getShardMap(shardId);
-      if (map) {
-        auto state = map->getState();
-        if ((!expectData && state == BucketMap::UNOWNED) ||
-            (expectData && state == BucketMap::OWNED)) {
-          success = true;
-        } else {
-          /* sleep override */ usleep(20000);
-        }
-      }
-    }
-
-    return success;
-  }
-
-  void dropShardAndWait(
-      BeringeiServiceHandler* handler,
-      int64_t shardId,
-      int64_t delay = BeringeiServiceHandler::kAsyncDropShardsDelaySecs) {
-    handler->dropShardAsync(shardId, delay);
-    while (!waitTillShardProcessed(handler, shardId, false)) {
-      // do nothing
-    }
+  void dropShardAndWait(BeringeiServiceHandler* handler, int64_t shardId) {
+    handler->shards_.dropShardForTests(shardId);
   }
 
   void addShardAndWait(BeringeiServiceHandler* handler, int64_t shardId) {
-    handler->addShardAsync(shardId);
-    while (!waitTillShardProcessed(handler, shardId, true)) {
-      // do nothing
-    }
+    handler->shards_.addShardForTests(shardId);
   }
 
   void setShardsAndWait(
       BeringeiServiceHandler* handler,
-      std::set<int64_t> shards,
-      int64_t delay = BeringeiServiceHandler::kAsyncDropShardsDelaySecs) {
-    bool retrySetShard = true;
+      std::set<int64_t> shards) {
+    handler->shards_.setShardsForTests(shards);
+  }
 
-    auto shardsOwned = handler->getShards();
-    // Shard Manager will retry set shards every few minutes.
-    std::vector<int64_t> shardsToBeDropped;
-    std::set_difference(
-        shardsOwned.begin(),
-        shardsOwned.end(),
-        shards.begin(),
-        shards.end(),
-        std::back_inserter(shardsToBeDropped));
+  auto getShards(BeringeiServiceHandler* handler) {
+    return handler->shards_.getShards();
+  }
 
-    while (retrySetShard) {
-      retrySetShard = false;
-      handler->setShards(shards, delay);
-      for (auto& shard : shards) {
-        if (!waitTillShardProcessed(handler, shard, true)) {
-          retrySetShard = true;
-        }
-      }
-
-      for (auto& shardToDrop : shardsToBeDropped) {
-        if (!waitTillShardProcessed(handler, shardToDrop, false)) {
-          retrySetShard = true;
-        }
-      }
-    }
+  auto addShardAsync(BeringeiServiceHandler* handler, int64_t shardId) {
+    return handler->shards_.addShardAsync(shardId);
   }
 
   void
@@ -700,7 +651,7 @@ TEST_F(BeringeiServiceHandlerTest, DropShardWithData) {
       generatePutRequest(1000, startTime, endTime, keyPrefix, shardId);
   putDataPoints(handler, std::move(putRequest));
 
-  dropShardAndWait(&handler, shardId, 0);
+  dropShardAndWait(&handler, shardId);
 
   GetDataResult result;
   auto getRequest =
@@ -724,7 +675,7 @@ TEST_F(BeringeiServiceHandlerTest, PutDataPointsToDroppedShard) {
       "mock_beringei_service",
       9999);
   int64_t shardId = 14;
-  dropShardAndWait(&handler, shardId, 0);
+  dropShardAndWait(&handler, shardId);
 
   int64_t startTime = time(nullptr) - 1800;
   int64_t endTime = startTime + 1800;
@@ -748,7 +699,7 @@ TEST_F(BeringeiServiceHandlerTest, AddDataToDroppedShard) {
       "mock_beringei_service",
       9999);
   int64_t shardId = 14;
-  dropShardAndWait(&handler, shardId, 0);
+  dropShardAndWait(&handler, shardId);
   shardTest(&handler, shardId, false);
 }
 
@@ -771,7 +722,7 @@ TEST_F(BeringeiServiceHandlerTest, AddDroppedShardBack) {
       generatePutRequest(1000, startTime, endTime, keyPrefix, shardId);
   putDataPoints(handler, std::move(putRequest));
 
-  dropShardAndWait(&handler, shardId, 0);
+  dropShardAndWait(&handler, shardId);
   addShardAndWait(&handler, shardId);
   shardTest(&handler, shardId, true);
 }
@@ -785,7 +736,7 @@ TEST_F(BeringeiServiceHandlerTest, SetShardsToOwnSingleShard) {
       std::make_shared<MockMemoryUsageGuard>(),
       "mock_beringei_service",
       9999);
-  setShardsAndWait(&handler, {14}, 0);
+  setShardsAndWait(&handler, {14});
   shardTest(&handler, 13, false);
   shardTest(&handler, 14, true);
 }
@@ -799,8 +750,8 @@ TEST_F(BeringeiServiceHandlerTest, SetShardsToDifferentSet) {
       std::make_shared<MockMemoryUsageGuard>(),
       "mock_beringei_service",
       9999);
-  setShardsAndWait(&handler, {14}, 0);
-  setShardsAndWait(&handler, {13}, 0);
+  setShardsAndWait(&handler, {14});
+  setShardsAndWait(&handler, {13});
   shardTest(&handler, 14, false);
   shardTest(&handler, 13, true);
 }
@@ -816,32 +767,32 @@ TEST_F(BeringeiServiceHandlerTest, ShuffleShards) {
       9999);
   std::set<int64_t> shards = {11, 12, 13};
 
-  setShardsAndWait(&handler, shards, 0);
-  EXPECT_EQ(shards, handler.getShards());
+  setShardsAndWait(&handler, shards);
+  EXPECT_EQ(shards, getShards(&handler));
   shardTest(&handler, 11, true);
   shardTest(&handler, 12, true);
   shardTest(&handler, 13, true);
   shardTest(&handler, 14, false);
 
   shards = {12, 13, 14};
-  setShardsAndWait(&handler, shards, 0);
-  EXPECT_EQ(shards, handler.getShards());
+  setShardsAndWait(&handler, shards);
+  EXPECT_EQ(shards, getShards(&handler));
   shardTest(&handler, 11, false);
   shardTest(&handler, 12, true);
   shardTest(&handler, 13, true);
   shardTest(&handler, 14, true);
 
   shards = {11, 14};
-  setShardsAndWait(&handler, shards, 0);
-  EXPECT_EQ(shards, handler.getShards());
+  setShardsAndWait(&handler, shards);
+  EXPECT_EQ(shards, getShards(&handler));
   shardTest(&handler, 11, true);
   shardTest(&handler, 12, false);
   shardTest(&handler, 13, false);
   shardTest(&handler, 14, true);
 
   shards = {};
-  setShardsAndWait(&handler, shards, 0);
-  EXPECT_EQ(shards, handler.getShards());
+  setShardsAndWait(&handler, shards);
+  EXPECT_EQ(shards, getShards(&handler));
   shardTest(&handler, 11, false);
   shardTest(&handler, 12, false);
   shardTest(&handler, 13, false);
@@ -860,25 +811,25 @@ TEST_F(BeringeiServiceHandlerTest, AddDropSetShards) {
 
   std::set<int64_t> expected = {12, 13};
   addShardAndWait(&handler, 11);
-  setShardsAndWait(&handler, {12, 13}, 0);
+  setShardsAndWait(&handler, {12, 13});
   shardTest(&handler, 11, false);
   shardTest(&handler, 12, true);
   shardTest(&handler, 13, true);
-  EXPECT_EQ(expected, handler.getShards());
+  EXPECT_EQ(expected, getShards(&handler));
 
   expected = {13};
-  dropShardAndWait(&handler, 12, 0);
+  dropShardAndWait(&handler, 12);
   shardTest(&handler, 11, false);
   shardTest(&handler, 12, false);
   shardTest(&handler, 13, true);
-  EXPECT_EQ(expected, handler.getShards());
+  EXPECT_EQ(expected, getShards(&handler));
 
   expected = {11};
-  setShardsAndWait(&handler, {11}, 0);
+  setShardsAndWait(&handler, {11});
   shardTest(&handler, 11, true);
   shardTest(&handler, 12, false);
   shardTest(&handler, 13, false);
-  EXPECT_EQ(expected, handler.getShards());
+  EXPECT_EQ(expected, getShards(&handler));
 }
 
 TEST_F(BeringeiServiceHandlerTest, AddShardAsync) {
@@ -890,11 +841,11 @@ TEST_F(BeringeiServiceHandlerTest, AddShardAsync) {
       std::make_shared<MockMemoryUsageGuard>(),
       "mock_beringei_service",
       9999);
-  auto status = handler.addShardAsync(11);
-  EXPECT_EQ(BeringeiServiceHandler::BeringeiShardState::SUCCESS, status);
+  auto status = addShardAsync(&handler, 11);
+  EXPECT_EQ(ShardData::BeringeiShardState::SUCCESS, status);
 
   /* sleep override */ usleep(200000);
-  status = handler.addShardAsync(11);
-  EXPECT_EQ(BeringeiServiceHandler::BeringeiShardState::SUCCESS, status);
+  status = addShardAsync(&handler, 11);
+  EXPECT_EQ(ShardData::BeringeiShardState::SUCCESS, status);
   shardTest(&handler, 11, true);
 }
