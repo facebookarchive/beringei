@@ -104,7 +104,17 @@ class BucketMap {
 
   void erase(int index, Item item);
 
-  uint32_t bucket(uint64_t unixTime);
+  // Conversions between bucket number and timestamp.
+  static uint32_t bucket(uint64_t unixTime, uint64_t windowSize, int shardId);
+  uint32_t bucket(uint64_t unixTime) const;
+  static uint64_t timestamp(uint32_t bucket, uint64_t windowSize, int shardId);
+  uint64_t timestamp(uint32_t bucket) const;
+
+  // Conversions between duration and number of buckets.
+  static uint64_t duration(uint32_t buckets, uint64_t windowSize);
+  uint64_t duration(uint32_t buckets) const;
+  static uint32_t buckets(uint64_t duration, uint64_t windowSize);
+  uint32_t buckets(uint64_t duration) const;
 
   BucketStorage* getStorage();
 
@@ -154,6 +164,9 @@ class BucketMap {
   // finalized. If the shard is not owned, will return immediately
   // with 0. This function is not thread-safe.
   int finalizeBuckets(uint32_t bucketToFinalize);
+
+  // Returns whether this BucketMap is behind more than 1 bucket.
+  bool isBehind(uint32_t bucketToFinalize) const;
 
   // Process is shutting down. Closes any open files. State will be
   // UNOWNED after this.
@@ -216,8 +229,8 @@ class BucketMap {
 
   void checkForMissingBlockFiles();
 
-  uint8_t n_;
-  int64_t windowSize_;
+  const uint8_t n_;
+  const int64_t windowSize_;
 
   int64_t reliableDataStartTime_;
 

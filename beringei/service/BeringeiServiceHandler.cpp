@@ -110,27 +110,17 @@ const static std::string kShardsDropped = ".shards_dropped";
 const int kMaxKeyLength = 400;
 const int kRefreshShardMapInterval = 60; // poll every minute
 
-const int BeringeiServiceHandler::kAsyncDropShardsDelaySecs = 30;
-
-static const int kStopThreadShardId = -1;
-
 BeringeiServiceHandler::BeringeiServiceHandler(
     std::shared_ptr<BeringeiConfigurationAdapterIf> configAdapter,
     std::shared_ptr<MemoryUsageGuardIf> memoryUsageGuard,
     const std::string& serviceName,
     const int32_t port)
-    : configAdapter_(std::move(configAdapter)),
+    : shards_(FLAGS_shards, FLAGS_add_shard_threads),
+      configAdapter_(std::move(configAdapter)),
       memoryUsageGuard_(std::move(memoryUsageGuard)),
       serviceName_(serviceName),
-      port_(port),
-      numShards_(0),
-      numShardsBeingAdded_(0),
-      addShardQueue_(fLI::FLAGS_shards),
-      readBlocksShardQueue_(fLI::FLAGS_shards),
-      dropShardQueue_(fLI::FLAGS_shards),
-      lastFinalizedBucket_(0) {
+      port_(port) {
   // the number of threads for each thread pool must exceed 0
-  CHECK_GT(fLI::FLAGS_add_shard_threads, 0);
   CHECK_GT(fLI::FLAGS_key_writer_threads, 0);
   CHECK_GT(fLI::FLAGS_log_writer_threads, 0);
   CHECK_GT(fLI::FLAGS_block_writer_threads, 0);
@@ -177,7 +167,7 @@ BeringeiServiceHandler::BeringeiServiceHandler(
     // it's somewhat distributed it should be fine.
     auto keyWriter = keyWriters[random() % keyWriters.size()];
     auto bucketLogWriter = bucketLogWriters[random() % bucketLogWriters.size()];
-    auto map = new BucketMap(
+    auto map = folly::make_unique<BucketMap>(
         FLAGS_buckets,
         FLAGS_bucket_size,
         i,
@@ -203,7 +193,7 @@ BeringeiServiceHandler::BeringeiServiceHandler(
         // Nothing here...
       }
     }
-    data_.emplace_back(map);
+    shards_.initialize(i, std::move(map));
   }
 
   // If we should be refreshing from a shard map, read the config and add shards
@@ -230,13 +220,6 @@ BeringeiServiceHandler::BeringeiServiceHandler(
       std::chrono::seconds(FLAGS_sleep_between_bucket_finalization_secs));
   bucketFinalizerThread_.start();
 
-  for (int i = 0; i < fLI::FLAGS_add_shard_threads; i++) {
-    addShardThreads_.push_back(
-        std::thread(&BeringeiServiceHandler::addShardThread, this));
-  }
-  dropShardThread_ =
-      std::thread(&BeringeiServiceHandler::dropShardThread, this);
-
   if (!FLAGS_disable_shard_refresh) {
     refreshShardConfigThread_.addFunction(
         std::bind(&BeringeiServiceHandler::refreshShardConfig, this),
@@ -251,16 +234,6 @@ BeringeiServiceHandler::~BeringeiServiceHandler() {
   purgeThread_.shutdown();
   bucketFinalizerThread_.shutdown();
   refreshShardConfigThread_.shutdown();
-
-  dropShardQueue_.write(std::make_pair(0, kStopThreadShardId));
-  dropShardThread_.join();
-
-  for (auto& t : addShardThreads_) {
-    addShardQueue_.write(kStopThreadShardId);
-  }
-  for (auto& t : addShardThreads_) {
-    t.join();
-  }
 }
 
 void BeringeiServiceHandler::putDataPoints(
@@ -297,7 +270,7 @@ void BeringeiServiceHandler::putDataPoints(
       continue;
     }
 
-    auto map = getShardMap(dp.key.shardId);
+    auto map = shards_.getShardMap(dp.key.shardId);
     if (!map) {
       continue;
     }
@@ -343,7 +316,7 @@ void BeringeiServiceHandler::getData(
 
   for (int i = 0; i < req->keys.size(); i++) {
     const Key& key = req->keys[i];
-    auto map = getShardMap(key.shardId);
+    auto map = shards_.getShardMap(key.shardId);
     if (!map || key.key.length() > kMaxKeyLength) {
       ret.results[i].status = StatusCode::KEY_MISSING;
       continue;
@@ -363,8 +336,8 @@ void BeringeiServiceHandler::getData(
       if (row.get()) {
         keysFound++;
         row->second.get(
-            data_[0]->bucket(req->begin),
-            data_[0]->bucket(req->end),
+            shards_[0]->bucket(req->begin),
+            shards_[0]->bucket(req->end),
             ret.results[i].data,
             map->getStorage());
         row->second.setQueried();
@@ -399,8 +372,15 @@ void BeringeiServiceHandler::getShardDataBucket(
     int64_t shardId,
     int32_t offset,
     int32_t limit) {
-  beginTs -= beginTs % FLAGS_bucket_size;
-  endTs -= endTs % FLAGS_bucket_size;
+  // Floor timestamps.
+  beginTs = BucketMap::timestamp(
+      BucketMap::bucket(beginTs, FLAGS_bucket_size, shardId),
+      FLAGS_bucket_size,
+      shardId);
+  endTs = BucketMap::timestamp(
+      BucketMap::bucket(endTs, FLAGS_bucket_size, shardId),
+      FLAGS_bucket_size,
+      shardId);
 
   LOG(INFO) << "Fetching data for shard " << shardId << " between time "
             << beginTs << " and " << endTs;
@@ -408,7 +388,7 @@ void BeringeiServiceHandler::getShardDataBucket(
   Timer timer(true);
 
   ret.moreEntries = false;
-  auto map = getShardMap(shardId);
+  auto map = shards_.getShardMap(shardId);
   if (!map) {
     ret.status = StatusCode::RPC_FAIL;
     return;
@@ -446,213 +426,13 @@ void BeringeiServiceHandler::getShardDataBucket(
         ret.data.push_back(std::move(blocks));
         ret.recentRead.push_back(
             row->second.getQueriedBucketsAgo() <=
-            facebook::gorilla::kGorillaSecondsPerDay / FLAGS_bucket_size);
+            map->buckets(kGorillaSecondsPerDay));
       }
     }
   }
 
   LOG(INFO) << "Data fetch for shard " << shardId << " complete in "
             << timer.get() << "us with " << ret.keys.size() << " keys returned";
-}
-
-void BeringeiServiceHandler::setShards(
-    const std::set<int64_t>& shards,
-    int dropDelay) {
-  std::vector<int64_t> shardsToBeAdded;
-  std::vector<int64_t> shardsToBeDropped;
-
-  for (int i = 0; i < data_.size(); i++) {
-    BucketMap::State state = data_[i]->getState();
-    bool shouldBeOwned = shards.find(i) != shards.end();
-
-    // Don't not touch the shards that are being added. We will attempt
-    // to drop them again periodically
-    if (shouldBeOwned) {
-      if (state == BucketMap::UNOWNED) {
-        shardsToBeAdded.push_back(i);
-      } else if (state == BucketMap::PRE_UNOWNED) {
-        // This shard was queued to be unowned but we never got that far.
-        // Just mark it as owned and thread unowning this shard won't do
-        // anything
-        data_[i]->cancelUnowning();
-      }
-    } else if (state == BucketMap::OWNED) {
-      shardsToBeDropped.push_back(i);
-    }
-  }
-
-  for (auto& shard : shardsToBeAdded) {
-    LOG(INFO) << "Adding shard " << shard << " based on current config.";
-    addShardAsync(shard);
-  }
-
-  for (auto& shard : shardsToBeDropped) {
-    LOG(INFO) << "Dropping shard " << shard << " based on current config.";
-    dropShardAsync(shard, dropDelay);
-  }
-}
-
-std::set<int64_t> BeringeiServiceHandler::getShards() {
-  std::set<int64_t> shards;
-
-  for (int i = 0; i < data_.size(); i++) {
-    // Return anything that is owned or being added.
-    if (data_[i]->getState() >= BucketMap::PRE_OWNED) {
-      shards.insert(i);
-    }
-  }
-
-  return shards;
-}
-
-void BeringeiServiceHandler::processOneShardAddition(int64_t shardId) {
-  auto map = getShardMap(shardId);
-  if (map) {
-    BucketMap::State state = map->getState();
-    if (state == BucketMap::PRE_OWNED) {
-      map->readKeyList();
-
-      // Put this shard back in the queue to read data.
-      addShardQueue_.write(shardId);
-    } else if (state == BucketMap::READING_KEYS_DONE) {
-      map->readData();
-      numShardsBeingAdded_--;
-      numShards_++;
-      GorillaStatsManager::setCounter(kShardsBeingAdded, numShardsBeingAdded_);
-      GorillaStatsManager::setCounter(kNumShards, numShards_);
-      GorillaStatsManager::addStatValue(kShardsAdded);
-      GorillaStatsManager::addStatValue(
-          kMsPerShardAdd, map->getAddTime() / kGorillaUsecPerMs);
-
-      // Enqueue to read the compressed block files.
-      readBlocksShardQueue_.write(shardId);
-    } else {
-      // Should never be reached.
-      CHECK(false);
-    }
-  }
-}
-
-BeringeiServiceHandler::BeringeiShardState
-BeringeiServiceHandler::addShardAsync(int64_t shardId) {
-  auto map = getShardMap(shardId);
-  if (map) {
-    BucketMap::State state = map->getState();
-    if (state >= BucketMap::PRE_OWNED) {
-      return BeringeiShardState::SUCCESS;
-    }
-    if (!map->setState(BucketMap::PRE_OWNED)) {
-      // Setting to pre owned failed which means it's currently being
-      // dropped.
-      return BeringeiShardState::IN_PROGRESS;
-    }
-
-    numShardsBeingAdded_++;
-    GorillaStatsManager::setCounter(kShardsBeingAdded, numShardsBeingAdded_);
-    addShardQueue_.write(shardId);
-    return BeringeiShardState::SUCCESS;
-  }
-  return BeringeiShardState::ERROR;
-}
-
-BeringeiServiceHandler::BeringeiShardState
-BeringeiServiceHandler::dropShardAsync(int64_t shardId, int64_t delay) {
-  auto map = getShardMap(shardId);
-  if (map) {
-    BucketMap::State state = map->getState();
-    if (state == BucketMap::UNOWNED) {
-      return BeringeiShardState::SUCCESS;
-    } else if (state != BucketMap::OWNED) {
-      // Anything else other than OWNED and UNOWNED is considered to
-      // be inprogess. This could mean that the shard is being added
-      // or being dropped after a delay.
-      return BeringeiShardState::IN_PROGRESS;
-    }
-
-    // PRE_UNOWNED is state that indicates that the shard will be
-    // dropped after the delay.
-    if (!map->setState(BucketMap::PRE_UNOWNED)) {
-      return BeringeiShardState::IN_PROGRESS;
-    }
-
-    std::pair<uint32_t, int64_t> shard;
-    shard.first = time(nullptr) + delay;
-    shard.second = shardId;
-    dropShardQueue_.write(shard);
-    return BeringeiShardState::IN_PROGRESS;
-  }
-
-  return BeringeiShardState::ERROR;
-}
-
-void BeringeiServiceHandler::addShardThread() {
-  // Read key lists for all the shards first before reading any data
-  // to make reading key lists as fast as possible.
-
-  while (true) {
-    try {
-      int64_t shardId;
-
-      // Prioritize addShardQueue_ over readBlocksShardQueue_.
-      // It's ok to do the blocking read on addShardQueue_ because these are the
-      // only threads that insert into readBlocksShardQueue_.
-      if (addShardQueue_.read(shardId)) {
-        processOneShardAddition(shardId);
-      } else if (readBlocksShardQueue_.read(shardId)) {
-        auto map = getShardMap(shardId);
-        if (map && map->readBlockFiles()) {
-          // Put this shard back in the queue to read more block files.
-          // This way, all shards are read starting from now and working back.
-          readBlocksShardQueue_.write(shardId);
-        }
-
-      } else {
-        addShardQueue_.blockingRead(shardId);
-        processOneShardAddition(shardId);
-      }
-
-      if (shardId == kStopThreadShardId) {
-        break;
-      }
-    } catch (std::exception& e) {
-      LOG(ERROR) << e.what();
-    }
-  }
-}
-
-void BeringeiServiceHandler::dropShardThread() {
-  while (true) {
-    try {
-      std::pair<uint32_t, int64_t> shard;
-      dropShardQueue_.blockingRead(shard);
-      if (shard.second == kStopThreadShardId) {
-        break;
-      }
-
-      int delay = shard.first - time(nullptr);
-      if (delay > 0) {
-        // FIFO queue with a constant delay, so sleeping is always fine.
-        /* sleep override */ sleep(delay);
-      }
-
-      auto map = getShardMap(shard.second);
-      if (map) {
-        if (map->getState() == BucketMap::PRE_UNOWNED) {
-          // Only drop the shard if it's in PRE_UNOWNED state. This
-          // guarantees that it is not being added back. If shard
-          // manager really wants to get rid of this shard, it will ask
-          // again.
-          if (map->setState(BucketMap::UNOWNED)) {
-            numShards_--;
-            GorillaStatsManager::setCounter(kNumShards, numShards_);
-            GorillaStatsManager::addStatValue(kShardsDropped);
-          }
-        }
-      }
-    } catch (std::exception& e) {
-      LOG(ERROR) << e.what();
-    }
-  }
 }
 
 void BeringeiServiceHandler::refreshShardConfig() {
@@ -666,16 +446,7 @@ void BeringeiServiceHandler::refreshShardConfig() {
   // We will addShard everything we should own and dropShard all other shards.
   // For anything we already own and should (or do not own and shouldn't), this
   // is a noop.
-  setShards(shardList);
-}
-
-BucketMap* BeringeiServiceHandler::getShardMap(int64_t shardId) {
-  if (shardId < 0 || shardId >= data_.size()) {
-    LOG(ERROR) << "Invalid shard " << shardId;
-    return nullptr;
-  }
-
-  return data_[shardId].get();
+  shards_.setShards(shardList);
 }
 
 void BeringeiServiceHandler::purgeThread() {
@@ -689,7 +460,7 @@ int BeringeiServiceHandler::purgeTimeSeries(uint8_t numBuckets) {
 
   try {
     std::unordered_map<int32_t, int64_t> purgedTSPerCategory;
-    for (auto& bucketMap : data_) {
+    for (auto& bucketMap : shards_) {
       if (bucketMap->getState() != BucketMap::OWNED) {
         continue;
       }
@@ -722,28 +493,31 @@ int BeringeiServiceHandler::purgeTimeSeries(uint8_t numBuckets) {
 
 void BeringeiServiceHandler::finalizeBucketsThread() {
   // This is the last bucket that can be finalized at this
-  // moment. It consideres the time timestamps can be late and adds
+  // moment. It considers that timestamps can be late and adds
   // one minute buffer to allow the data to be processed.
   //
   // The same bucket is finalized multiple times on purpose to make
   // sure all the shard movements are caught.
-  uint32_t bucketToFinalize = (time(nullptr) - FLAGS_allowed_timestamp_behind -
-                               facebook::gorilla::kGorillaSecondsPerMinute) /
-          FLAGS_bucket_size -
-      1;
-
-  if (lastFinalizedBucket_ != 0 &&
-      bucketToFinalize - lastFinalizedBucket_ > 1) {
-    GorillaStatsManager::addStatValue(kTooSlowToFinalizeBuckets);
-    LOG(ERROR) << "Finalizing the previous bucket took too long!";
+  uint64_t timestamp = time(nullptr) - FLAGS_allowed_timestamp_behind -
+      kGorillaSecondsPerMinute - BucketMap::duration(1, FLAGS_bucket_size);
+  bool behind = false;
+  for (int i = 0; i < FLAGS_shards; i++) {
+    uint32_t bucketToFinalize = shards_[i]->bucket(timestamp);
+    if (shards_[i]->isBehind(bucketToFinalize)) {
+      behind = true;
+    }
   }
 
-  finalizeBucket(bucketToFinalize);
-  lastFinalizedBucket_ = bucketToFinalize;
+  if (behind) {
+    GorillaStatsManager::addStatValue(kTooSlowToFinalizeBuckets);
+    LOG(ERROR) << "Finalizing the previous buckets took too long!";
+  }
+
+  finalizeBucket(timestamp);
 }
 
-void BeringeiServiceHandler::finalizeBucket(uint32_t bucketToFinalize) {
-  LOG(INFO) << "Finalizing bucket " << bucketToFinalize;
+void BeringeiServiceHandler::finalizeBucket(const uint64_t timestamp) {
+  LOG(INFO) << "Finalizing buckets at time " << timestamp;
 
   // Put all the shards in the queue even if they are not owned
   // because they might be owned 5 minutes later.
@@ -762,16 +536,15 @@ void BeringeiServiceHandler::finalizeBucket(uint32_t bucketToFinalize) {
           break;
         }
 
+        uint32_t bucketToFinalize = shards_[shardId]->bucket(timestamp);
         Timer timer(true);
 
         // If the shard is not owned or there are no buckets to
         // finalized, this will return immediately with 0.
-        int count = data_[shardId]->finalizeBuckets(bucketToFinalize);
+        int count = shards_[shardId]->finalizeBuckets(bucketToFinalize);
 
         GorillaStatsManager::addStatValueAggregated(
-            kMsPerFinalizeShardBucket,
-            timer.get() / facebook::gorilla::kGorillaUsecPerMs,
-            count);
+            kMsPerFinalizeShardBucket, timer.get() / kGorillaUsecPerMs, count);
       }
     });
   }
@@ -781,4 +554,4 @@ void BeringeiServiceHandler::finalizeBucket(uint32_t bucketToFinalize) {
   }
 }
 }
-}
+} // facebook::gorilla

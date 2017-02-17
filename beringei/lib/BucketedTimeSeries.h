@@ -20,6 +20,7 @@
 namespace facebook {
 namespace gorilla {
 
+class BucketMap;
 // Holds a rolling window of TimeSeries data.
 class BucketedTimeSeries {
  public:
@@ -85,7 +86,7 @@ class BucketedTimeSeries {
   // Sets the ODS category for this time series.
   void setCategory(uint16_t category);
 
-  uint32_t getLastUpdateTime(BucketStorage* storage, uint32_t windowSize);
+  uint32_t getLastUpdateTime(BucketStorage* storage, const BucketMap& map);
 
  private:
   // Open the next bucket for writes.

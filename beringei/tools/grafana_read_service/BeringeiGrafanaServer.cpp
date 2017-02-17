@@ -12,7 +12,6 @@
 #include "GrafanaServiceFactory.h"
 
 #include <folly/Memory.h>
-#include <folly/Portability.h>
 #include <folly/io/async/EventBaseManager.h>
 #include <gflags/gflags.h>
 #include <proxygen/httpserver/HTTPServer.h>

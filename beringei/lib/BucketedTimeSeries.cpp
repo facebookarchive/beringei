@@ -8,6 +8,7 @@
  */
 
 #include "BucketedTimeSeries.h"
+#include "BucketMap.h"
 
 namespace facebook {
 namespace gorilla {
@@ -188,7 +189,7 @@ void BucketedTimeSeries::setCategory(uint16_t category) {
 
 uint32_t BucketedTimeSeries::getLastUpdateTime(
     BucketStorage* storage,
-    uint32_t windowSize) {
+    const BucketMap& map) {
   folly::MSLGuard guard(lock_);
   uint32_t lastUpdateTime = stream_.getPreviousTimeStamp();
   if (lastUpdateTime != 0) {
@@ -206,7 +207,7 @@ uint32_t BucketedTimeSeries::getLastUpdateTime(
 
     if (blocks_[position % storage->numBuckets()] !=
         BucketStorage::kInvalidId) {
-      return (position + 1) * windowSize;
+      return map.timestamp(position + 1);
     }
   }
 
