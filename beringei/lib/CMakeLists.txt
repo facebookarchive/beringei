@@ -53,6 +53,8 @@ add_library(
     NetworkUtils.h
     PersistentKeyList.cpp
     PersistentKeyList.h
+    ShardData.cpp
+    ShardData.h
     SimpleMemoryUsageGuard.cpp
     SimpleMemoryUsageGuard.h
     TimeSeries.cpp
