@@ -57,6 +57,7 @@ class BeringeiServiceHandler : virtual public BeringeiServiceSvIf {
       int32_t limit) override;
 
   void purgeThread();
+  void cleanThread();
 
   // Purges time series that have no data in the active bucket and not
   // in any of the `numBuckets` older buckets.
@@ -78,6 +79,7 @@ class BeringeiServiceHandler : virtual public BeringeiServiceSvIf {
   const int32_t port_;
 
   folly::FunctionScheduler purgeThread_;
+  folly::FunctionScheduler cleanThread_;
   folly::FunctionScheduler bucketFinalizerThread_;
   folly::FunctionScheduler refreshShardConfigThread_;
 };

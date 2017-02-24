@@ -80,6 +80,8 @@ const static std::string kPurgedTimeSeries = ".purged_time_series";
 const static std::string kPurgedTimeSeriesInCategoryPrefix =
     ".purged_time_series_in_category_";
 const int kPurgeInterval = facebook::gorilla::kGorillaSecondsPerHour;
+const static std::string kMsPerKeyListCompact = ".ms_per_key_list_compact";
+const int kCleanInterval = 6 * facebook::gorilla::kGorillaSecondsPerHour;
 const static std::string kTooSlowToFinalizeBuckets =
     ".too_slow_to_finalize_buckets";
 const static std::string kMsPerFinalizeShardBucket =
@@ -210,6 +212,13 @@ BeringeiServiceHandler::BeringeiServiceHandler(
       std::chrono::seconds(kPurgeInterval));
   purgeThread_.start();
 
+  cleanThread_.addFunction(
+      std::bind(&BeringeiServiceHandler::cleanThread, this),
+      std::chrono::seconds(kCleanInterval),
+      "Clean Thread",
+      std::chrono::seconds(kCleanInterval));
+  cleanThread_.start();
+
   // Bucket finalizer thread runs at an interval slightly less than two hours.
   // We wait for a cycle before actually starting the thread to allow shards to
   // be loaded first before trying to finalize anything.
@@ -232,6 +241,7 @@ BeringeiServiceHandler::BeringeiServiceHandler(
 
 BeringeiServiceHandler::~BeringeiServiceHandler() {
   purgeThread_.shutdown();
+  cleanThread_.shutdown();
   bucketFinalizerThread_.shutdown();
   refreshShardConfigThread_.shutdown();
 }
@@ -453,6 +463,21 @@ void BeringeiServiceHandler::purgeThread() {
   int numPurged = purgeTimeSeries(FLAGS_buckets);
   LOG(INFO) << "Purged " << numPurged << " time series.";
   GorillaStatsManager::addStatValue(kPurgedTimeSeries, numPurged);
+}
+
+void BeringeiServiceHandler::cleanThread() {
+  Timer timer(true);
+  LOG(INFO) << "Compressing key lists and deleting old block files";
+  for (auto& bucketMap : shards_) {
+    if (bucketMap->getState() != BucketMap::OWNED) {
+      continue;
+    }
+    bucketMap->compactKeyList();
+    bucketMap->deleteOldBlockFiles();
+  }
+  LOG(INFO) << "Done compressing key lists and deleting old block files";
+  GorillaStatsManager::addStatValue(
+      kMsPerKeyListCompact, timer.get() / kGorillaUsecPerMs);
 }
 
 int BeringeiServiceHandler::purgeTimeSeries(uint8_t numBuckets) {
