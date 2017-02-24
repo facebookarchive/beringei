@@ -54,7 +54,7 @@ ready_destdir() {
 }
 
 mkdir -pv /usr/local/facebook-${FB_VERSION}
-ln -s /usr/local/facebook-${FB_VERSION} /usr/local/facebook
+ln -sf /usr/local/facebook-${FB_VERSION} /usr/local/facebook
 
 export LDFLAGS="-L/usr/local/facebook/lib -Wl,-rpath=/usr/local/facebook/lib"
 export CPPFLAGS="-I/usr/local/facebook/include"
