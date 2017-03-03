@@ -42,7 +42,7 @@ DEFINE_int64(
 int main(int argc, char** argv) {
   google::InitGoogleLogging(argv[0]);
   google::SetUsageMessage("[<options>] <key>");
-  google::ParseCommandLineFlags(&argc, &argv, true);
+  gflags::ParseCommandLineFlags(&argc, &argv, true);
 
   auto beringeiConfig =
       std::make_shared<gorilla::BeringeiConfigurationAdapter>(true);

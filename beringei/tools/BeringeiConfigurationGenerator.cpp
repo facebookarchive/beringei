@@ -35,7 +35,7 @@ std::vector<string> parseHostNames(string hostNames) {
 }
 
 int main(int argc, char** argv) {
-  google::ParseCommandLineFlags(&argc, &argv, true);
+  gflags::ParseCommandLineFlags(&argc, &argv, true);
 
   auto hostNames = parseHostNames(fLS::FLAGS_host_names);
   if (fLS::FLAGS_host_names.empty() || hostNames.size() == 0) {

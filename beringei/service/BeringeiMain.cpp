@@ -53,7 +53,7 @@ std::shared_ptr<apache::thrift::ThriftServer> server;
 
 int main(int argc, char** argv) {
   google::InitGoogleLogging(fLS::FLAGS_service_name.c_str());
-  google::ParseCommandLineFlags(
+  gflags::ParseCommandLineFlags(
       &argc, &argv, true /* remove from argv and modify argc after parsing */);
 
   // Don't actually do anything with the stats.
