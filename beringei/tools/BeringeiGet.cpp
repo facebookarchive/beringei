@@ -41,7 +41,7 @@ DEFINE_int64(
 
 int main(int argc, char** argv) {
   google::InitGoogleLogging(argv[0]);
-  google::SetUsageMessage("[<options>] <key>");
+  gflags::SetUsageMessage("[<options>] <key>");
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
   auto beringeiConfig =
@@ -61,7 +61,7 @@ int main(int argc, char** argv) {
             << "; End time: " << FLAGS_end_time;
 
   if (argc < 2) {
-    google::ShowUsageWithFlagsRestrict(argv[0], "beringei");
+    gflags::ShowUsageWithFlagsRestrict(argv[0], "beringei");
     return 1;
   }
 

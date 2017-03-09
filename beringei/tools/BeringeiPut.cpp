@@ -22,7 +22,7 @@ DECLARE_string(beringei_configuration_path);
 
 int main(int argc, char** argv) {
   google::InitGoogleLogging(argv[0]);
-  google::SetUsageMessage("[<options>] <key> <value> [<timestamp>]");
+  gflags::SetUsageMessage("[<options>] <key> <value> [<timestamp>]");
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
   auto beringeiConfig =
@@ -31,7 +31,7 @@ int main(int argc, char** argv) {
       std::make_shared<gorilla::BeringeiClient>(beringeiConfig, 10, 5, true);
 
   if (argc < 3) {
-    google::ShowUsageWithFlagsRestrict(argv[0], "BeringeiPut.cpp");
+    gflags::ShowUsageWithFlagsRestrict(argv[0], "BeringeiPut.cpp");
     return 1;
   }
 
