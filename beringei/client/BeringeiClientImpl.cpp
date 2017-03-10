@@ -212,6 +212,20 @@ BeringeiClientImpl::~BeringeiClientImpl() {
   readServicesUpdateScheduler_.shutdown();
 }
 
+void BeringeiClientImpl::getLastUpdateTimes(
+    uint32_t minLastUpdateTime,
+    uint32_t maxKeysPerRequest,
+    uint32_t timeoutSeconds,
+    std::function<bool(const std::vector<KeyUpdateTime>& keys)> callback) {
+  auto readClientCopy = getReadClientCopy();
+  if (!readClientCopy) {
+    return;
+  }
+
+  readClientCopy->getLastUpdateTimes(
+      minLastUpdateTime, maxKeysPerRequest, timeoutSeconds, callback);
+}
+
 void BeringeiClientImpl::startWriterThreads(int numWriterThreads) {
   if (numWriterThreads > 0) {
     for (auto& writeClient : writeClients_) {

@@ -255,6 +255,106 @@ void BeringeiNetworkClient::performShardDataBucketGet(
   }
 }
 
+bool BeringeiNetworkClient::getShardKeys(
+    int shardNumber,
+    int limit,
+    int offset,
+    std::vector<KeyUpdateTime>& keys) {
+  std::pair<std::string, int> hostInfo;
+  if (!getHostForShard(shardNumber, hostInfo)) {
+    throw std::runtime_error(
+        folly::format("Couldn't find shard owner {}", shardNumber).str());
+  }
+
+  std::shared_ptr<BeringeiServiceAsyncClient> client =
+      getBeringeiThriftClient(hostInfo.first, hostInfo.second);
+
+  GetLastUpdateTimesRequest req;
+  GetLastUpdateTimesResult result;
+  req.offset = offset;
+  req.shardId = shardNumber;
+  req.limit = limit;
+
+  client->sync_getLastUpdateTimes(result, req);
+  keys = std::move(result.keys);
+  return result.moreResults;
+}
+
+void BeringeiNetworkClient::getLastUpdateTimesForHost(
+    uint32_t minLastUpdateTime,
+    uint32_t maxKeysPerRequest,
+    const std::string& host,
+    int port,
+    const std::vector<int64_t>& shards,
+    uint32_t timeoutSeconds,
+    std::function<bool(const std::vector<KeyUpdateTime>& keys)> callback) {
+  time_t startTime = time(nullptr);
+
+  stopRequests_ = false;
+
+  try {
+    auto client = getBeringeiThriftClient(host, port);
+    for (auto& shard : shards) {
+      GetLastUpdateTimesRequest req;
+      GetLastUpdateTimesResult result;
+      req.offset = 0;
+      req.shardId = shard;
+      req.limit = maxKeysPerRequest;
+      bool continueOperation = true;
+
+      do {
+        client->sync_getLastUpdateTimes(result, req);
+        continueOperation = callback(result.keys) &&
+            time(nullptr) - startTime < timeoutSeconds && !stopRequests_.load();
+        req.offset += maxKeysPerRequest;
+      } while (continueOperation && result.moreResults);
+
+      if (!continueOperation) {
+        LOG(INFO) << "Operation stopped by the caller or a timeout was reached";
+        break;
+      }
+    }
+  } catch (std::exception& e) {
+    LOG(ERROR) << e.what();
+  }
+}
+
+void BeringeiNetworkClient::getLastUpdateTimes(
+    uint32_t minLastUpdateTime,
+    uint32_t maxKeysPerRequest,
+    uint32_t timeoutSeconds,
+    std::function<bool(const std::vector<KeyUpdateTime>& keys)> callback) {
+  int numShards = getNumShards();
+  std::map<std::pair<std::string, int>, std::vector<int64_t>> shardsPerHost;
+
+  for (int i = 0; i < numShards; i++) {
+    std::pair<std::string, int> hostInfo;
+    if (getHostForShard(i, hostInfo)) {
+      shardsPerHost[hostInfo].push_back(i);
+    } else {
+      LOG(WARNING) << "Nobody owns shard " << i;
+    }
+  }
+
+  std::vector<std::thread> threads;
+  for (auto& iter : shardsPerHost) {
+    threads.push_back(std::thread(
+        &BeringeiNetworkClient::getLastUpdateTimesForHost,
+        this,
+        minLastUpdateTime,
+        maxKeysPerRequest,
+        iter.first.first,
+        iter.first.second,
+        iter.second,
+        timeoutSeconds,
+        callback));
+  }
+
+  for (auto& thread : threads) {
+    thread.join();
+  }
+}
+
 bool BeringeiNetworkClient::addDataPointToRequest(
     DataPoint& dp,
     PutRequestMap& requests,

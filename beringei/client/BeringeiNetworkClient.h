@@ -53,6 +53,19 @@ class BeringeiNetworkClient {
   // Fire off a getData request.
   virtual void performGet(GetRequestMap& requests);
 
+  // Fetches the last update times from all the servers in parallel
+  // and calls the callback multiple times with partial results. The
+  // callback should return false if it doesn't want more results, and
+  // the operation will be stopped. The call is synchronous and will
+  // return once all the results have been found or the callback has
+  // returned false or the timeout has been reached. The callback will
+  // be called from multiple different threads.
+  virtual void getLastUpdateTimes(
+      uint32_t minLastUpdateTime,
+      uint32_t maxKeysPerRequest,
+      uint32_t timeoutSeconds,
+      std::function<bool(const std::vector<KeyUpdateTime>& keys)> callback);
+
   // Adds a data point to a request. Returns true if more points should be
   // added to this request, false otherwise. `dropped` will be set to true
   // if the data point was not added to the request.
@@ -89,6 +102,14 @@ class BeringeiNetworkClient {
       const std::string& hostAddress,
       int port);
 
+  // Gets keys stored in specified shard. Returns true if there are more keys
+  // to be fetched.
+  virtual bool getShardKeys(
+      int shardNumber,
+      int limit,
+      int offset,
+      std::vector<KeyUpdateTime>& keys);
+
  protected:
   // Default constructor that doesn't do any initialization. Should be
   // only used from tests.
@@ -120,6 +141,15 @@ class BeringeiNetworkClient {
   void addCacheEntry(
       int64_t shardId,
       const std::pair<std::string, int>& hostInfo);
+
+  void getLastUpdateTimesForHost(
+      uint32_t minLastUpdateTime,
+      uint32_t maxKeysPerRequest,
+      const std::string& host,
+      int port,
+      const std::vector<int64_t>& shards,
+      uint32_t timeoutSeconds,
+      std::function<bool(const std::vector<KeyUpdateTime>& keys)> callback);
 
   struct ShardCacheEntry {
     std::string hostAddress;

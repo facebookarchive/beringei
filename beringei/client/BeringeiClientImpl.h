@@ -57,6 +57,13 @@ class BeringeiClientImpl {
   // was definitely dropped.
   bool putDataPoints(std::vector<DataPoint>& values);
 
+  // @see BeringeiNetworkClient
+  void getLastUpdateTimes(
+      uint32_t minLastUpdateTime,
+      uint32_t maxKeysPerRequest,
+      uint32_t timeoutSeconds,
+      std::function<bool(const std::vector<KeyUpdateTime>& keys)> callback);
+
   // Get compressed data points from Gorilla.
   // If set, serviceOverride bypasses the gorilla_read_services property.
   virtual void get(
