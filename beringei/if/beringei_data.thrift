@@ -122,3 +122,35 @@ struct ConfigurationInfo {
   // List of Beringei services.
   2: list<ServiceMap> serviceMap,
 }
+
+struct GetLastUpdateTimesRequest {
+  // Which shard to query.
+  1: i64 shardId,
+
+  // Minimum last update time in seconds since epoch.
+  2: i32 minLastUpdateTime,
+
+  // Offset within the shard when splitting the calls.
+  3: i32 offset,
+
+  // The maximum number of results that will be returned. There might still be
+  // more results even if the number of results is less than this value.
+  4: i32 limit,
+}
+
+struct KeyUpdateTime {
+  1: string key,
+  2: i32 categoryId,
+  3: i32 updateTime,
+
+  // True if this key was queried from Beringei in the last ~24 hours,
+  // false otherwise.
+  4: bool queriedRecently,
+}
+
+struct GetLastUpdateTimesResult {
+  1: list<KeyUpdateTime> keys,
+
+  // Set to true if there are more results in the shard.
+  2: bool moreResults,
+}

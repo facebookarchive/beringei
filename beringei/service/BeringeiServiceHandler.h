@@ -56,6 +56,12 @@ class BeringeiServiceHandler : virtual public BeringeiServiceSvIf {
       int32_t offset,
       int32_t limit) override;
 
+  virtual BucketMap* getShardMap(int64_t shardId);
+
+  virtual void getLastUpdateTimes(
+      GetLastUpdateTimesResult& ret,
+      std::unique_ptr<GetLastUpdateTimesRequest> req) override;
+
   void purgeThread();
   void cleanThread();
 

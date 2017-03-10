@@ -849,3 +849,71 @@ TEST_F(BeringeiServiceHandlerTest, AddShardAsync) {
   EXPECT_EQ(ShardData::BeringeiShardState::SUCCESS, status);
   shardTest(&handler, 11, true);
 }
+
+TEST_F(BeringeiServiceHandlerTest, GetLastUpdateTimes) {
+  TemporaryDirectory dir("beringei_data_block");
+  FLAGS_data_directory = dir.dirname();
+
+  BeringeiServiceHandler handler(
+      std::make_shared<MockConfigurationAdapter>(),
+      std::make_shared<MockMemoryUsageGuard>(),
+      "mock_beringei_service",
+      9999);
+
+  int64_t startTime = time(nullptr) - 300;
+  int64_t endTime = startTime + 300;
+
+  auto putRequest = generatePutRequest(100, startTime, endTime);
+  putDataPoints(handler, std::move(putRequest));
+
+  for (int i = 0; i < 110; i += 10) {
+    std::unique_ptr<GetLastUpdateTimesRequest> req(
+        new GetLastUpdateTimesRequest);
+    req->shardId = 0;
+    req->minLastUpdateTime = endTime;
+    req->offset = i;
+    req->limit = 10;
+
+    GetLastUpdateTimesResult result;
+    handler.getLastUpdateTimes(result, std::move(req));
+
+    if (i < 100) {
+      EXPECT_EQ(i < 90, result.moreResults);
+      EXPECT_EQ(10, result.keys.size());
+      for (auto& key : result.keys) {
+        EXPECT_EQ(endTime, key.updateTime);
+      }
+    } else {
+      EXPECT_FALSE(result.moreResults);
+      EXPECT_EQ(0, result.keys.size());
+    }
+  }
+}
+
+TEST_F(BeringeiServiceHandlerTest, GetLastUpdateTimesWithNoMatches) {
+  TemporaryDirectory dir("beringei_data_block");
+  FLAGS_data_directory = dir.dirname();
+
+  BeringeiServiceHandler handler(
+      std::make_shared<MockConfigurationAdapter>(),
+      std::make_shared<MockMemoryUsageGuard>(),
+      "mock_beringei_service",
+      9999);
+
+  int64_t startTime = time(nullptr) - 300;
+  int64_t endTime = startTime + 300;
+
+  auto putRequest = generatePutRequest(100, startTime, endTime);
+  putDataPoints(handler, std::move(putRequest));
+
+  std::unique_ptr<GetLastUpdateTimesRequest> req(new GetLastUpdateTimesRequest);
+  req->shardId = 0;
+  req->minLastUpdateTime = endTime + 1;
+  req->offset = 0;
+  req->limit = 100;
+
+  GetLastUpdateTimesResult result;
+  handler.getLastUpdateTimes(result, std::move(req));
+
+  EXPECT_EQ(0, result.keys.size());
+}

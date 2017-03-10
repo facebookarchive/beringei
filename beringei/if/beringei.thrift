@@ -31,4 +31,10 @@ service BeringeiService {
    */
   beringei_data.GetShardDataBucketResult getShardDataBucket(
       1: i64 begin, 2: i64 end, 3: i64 shardId, 4: i32 offset, 5: i32 limit),
+
+  /**
+   * Gets the last update times for time series.
+   */
+  beringei_data.GetLastUpdateTimesResult getLastUpdateTimes(
+      1: beringei_data.GetLastUpdateTimesRequest req),
 }

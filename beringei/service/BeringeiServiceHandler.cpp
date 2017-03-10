@@ -106,6 +106,8 @@ const static std::string kMsPerShardAdd = ".ms_per_shard_add";
 const static std::string kShardsAdded = ".shards_added";
 const static std::string kShardsBeingAdded = ".shards_being_added";
 const static std::string kShardsDropped = ".shards_dropped";
+const static std::string kUsPerGetLastUpdateTimes =
+    ".us_per_get_last_update_times";
 
 // Max size for ODS key is 256 and entity 128. This will fit those and
 // some extra characters.
@@ -478,6 +480,52 @@ void BeringeiServiceHandler::cleanThread() {
   LOG(INFO) << "Done compressing key lists and deleting old block files";
   GorillaStatsManager::addStatValue(
       kMsPerKeyListCompact, timer.get() / kGorillaUsecPerMs);
+}
+
+BucketMap* BeringeiServiceHandler::getShardMap(int64_t shardId) {
+  return shards_[shardId];
+}
+
+void BeringeiServiceHandler::getLastUpdateTimes(
+    GetLastUpdateTimesResult& ret,
+    std::unique_ptr<GetLastUpdateTimesRequest> req) {
+  auto map = getShardMap(req->shardId);
+  if (!map) {
+    LOG(ERROR) << "Trying to get last update times for an invalid shard!";
+    return;
+  }
+
+  if (map->getState() != BucketMap::OWNED) {
+    LOG(ERROR) << "Trying to get last update times for an unowned shard!";
+    return;
+  }
+
+  Timer timer(true);
+
+  std::vector<BucketMap::Item> timeSeriesData;
+  ret.moreResults = map->getSome(timeSeriesData, req->offset, req->limit);
+
+  for (auto& timeSeries : timeSeriesData) {
+    if (timeSeries.get()) {
+      uint32_t lastUpdateTime =
+          timeSeries->second.getLastUpdateTime(map->getStorage(), *map);
+      if (lastUpdateTime >= req->minLastUpdateTime) {
+        KeyUpdateTime key;
+        key.key = timeSeries->first;
+
+        key.categoryId = timeSeries->second.getCategory();
+        key.updateTime = lastUpdateTime;
+
+        uint8_t queriedBucketsAgo = timeSeries->second.getQueriedBucketsAgo();
+        key.queriedRecently =
+            queriedBucketsAgo <= map->buckets(kGorillaSecondsPerDay);
+
+        ret.keys.push_back(std::move(key));
+      }
+    }
+  }
+
+  GorillaStatsManager::addStatValue(kUsPerGetLastUpdateTimes, timer.get());
 }
 
 int BeringeiServiceHandler::purgeTimeSeries(uint8_t numBuckets) {
