@@ -239,6 +239,40 @@ BeringeiServiceHandler::BeringeiServiceHandler(
         std::chrono::seconds(kRefreshShardMapInterval));
     refreshShardConfigThread_.start();
   }
+
+  GorillaStatsManager::addStatExportType(kUsPerGet, AVG);
+  GorillaStatsManager::addStatExportType(kUsPerGet, COUNT);
+  GorillaStatsManager::addStatExportType(kUsPerGetPerKey, AVG);
+  GorillaStatsManager::addStatExportType(kUsPerPut, AVG);
+  GorillaStatsManager::addStatExportType(kUsPerPut, COUNT);
+  GorillaStatsManager::addStatExportType(kUsPerPutPerKey, AVG);
+
+  GorillaStatsManager::addStatExportType(kKeysPut, AVG);
+  GorillaStatsManager::addStatExportType(kKeysPut, SUM);
+
+  GorillaStatsManager::addStatExportType(kKeysGot, AVG);
+  GorillaStatsManager::addStatExportType(kKeysGot, SUM);
+
+  GorillaStatsManager::addStatExportType(kNewKeys, SUM);
+  GorillaStatsManager::addStatExportType(kDatapointsAdded, SUM);
+  GorillaStatsManager::addStatExportType(kDatapointsDropped, SUM);
+  GorillaStatsManager::addStatExportType(kDatapointsBehind, SUM);
+  GorillaStatsManager::addStatExportType(kDatapointsAhead, SUM);
+  GorillaStatsManager::addStatExportType(kNewTimeSeriesBlocked, SUM);
+  GorillaStatsManager::addStatExportType(kPurgedTimeSeries, SUM);
+
+  GorillaStatsManager::addStatExportType(kMsPerFinalizeShardBucket, AVG);
+  GorillaStatsManager::addStatExportType(kMsPerFinalizeShardBucket, COUNT);
+  GorillaStatsManager::addStatExportType(kTooSlowToFinalizeBuckets, SUM);
+
+  GorillaStatsManager::addStatExportType(kMsPerKeyListCompact, AVG);
+  GorillaStatsManager::addStatExportType(kMsPerKeyListCompact, COUNT);
+
+  GorillaStatsManager::addStatExportType(kDatapointsNotOwned, SUM);
+  GorillaStatsManager::addStatExportType(kMissingTooMuchData, SUM);
+
+  GorillaStatsManager::addStatExportType(kUsPerGetLastUpdateTimes, AVG);
+  GorillaStatsManager::addStatExportType(kUsPerGetLastUpdateTimes, COUNT);
 }
 
 BeringeiServiceHandler::~BeringeiServiceHandler() {
