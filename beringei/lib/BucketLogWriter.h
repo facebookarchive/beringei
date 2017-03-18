@@ -59,6 +59,14 @@ class BucketLogWriter {
   void startWriterThread();
   void stopWriterThread();
 
+  uint32_t bucket(uint64_t unixTime, int shardId) const;
+  uint64_t timestamp(uint32_t bucket, int shardId) const;
+  uint64_t duration(uint32_t buckets) const;
+
+  // TODO(jdshen): these are temporary, delete when doing bucket staggering.
+  uint64_t getRandomNextClearDuration() const;
+  uint64_t getRandomOpenNextDuration(int shardId) const;
+
  private:
   struct LogDataInfo {
     int32_t index;

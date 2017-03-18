@@ -32,6 +32,8 @@ add_library(
     BucketStorage.h
     BucketedTimeSeries.cpp
     BucketedTimeSeries.h
+    BucketUtils.cpp
+    BucketUtils.h
     CaseUtils.cpp
     CaseUtils.h
     DataBlock.h

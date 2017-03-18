@@ -104,16 +104,9 @@ class BucketMap {
 
   void erase(int index, Item item);
 
-  // Conversions between bucket number and timestamp.
-  static uint32_t bucket(uint64_t unixTime, uint64_t windowSize, int shardId);
   uint32_t bucket(uint64_t unixTime) const;
-  static uint64_t timestamp(uint32_t bucket, uint64_t windowSize, int shardId);
   uint64_t timestamp(uint32_t bucket) const;
-
-  // Conversions between duration and number of buckets.
-  static uint64_t duration(uint32_t buckets, uint64_t windowSize);
   uint64_t duration(uint32_t buckets) const;
-  static uint32_t buckets(uint64_t duration, uint64_t windowSize);
   uint32_t buckets(uint64_t duration) const;
 
   BucketStorage* getStorage();

@@ -10,6 +10,7 @@
 #include "BucketMap.h"
 
 #include "BucketLogWriter.h"
+#include "BucketUtils.h"
 #include "DataBlockReader.h"
 #include "DataLog.h"
 #include "GorillaStatsManager.h"
@@ -230,38 +231,20 @@ void BucketMap::erase(int index, Item item) {
   freeList_.push(index);
 }
 
-uint32_t
-BucketMap::bucket(uint64_t unixTime, uint64_t windowSize, int shardId) {
-  return (uint32_t)(unixTime / windowSize);
-}
-
 uint32_t BucketMap::bucket(uint64_t unixTime) const {
-  return bucket(unixTime, windowSize_, shardId_);
-}
-
-uint64_t
-BucketMap::timestamp(uint32_t bucket, uint64_t windowSize, int shardId) {
-  return bucket * windowSize;
+  return BucketUtils::bucket(unixTime, windowSize_, shardId_);
 }
 
 uint64_t BucketMap::timestamp(uint32_t bucket) const {
-  return timestamp(bucket, windowSize_, shardId_);
-}
-
-uint64_t BucketMap::duration(uint32_t buckets, uint64_t windowSize) {
-  return buckets * windowSize;
+  return BucketUtils::timestamp(bucket, windowSize_, shardId_);
 }
 
 uint64_t BucketMap::duration(uint32_t buckets) const {
-  return duration(buckets, windowSize_);
-}
-
-uint32_t BucketMap::buckets(uint64_t duration, uint64_t windowSize) {
-  return duration / windowSize;
+  return BucketUtils::duration(buckets, windowSize_);
 }
 
 uint32_t BucketMap::buckets(uint64_t duration) const {
-  return buckets(duration, windowSize_);
+  return BucketUtils::buckets(duration, windowSize_);
 }
 
 BucketStorage* BucketMap::getStorage() {

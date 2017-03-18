@@ -17,6 +17,7 @@
 #include "beringei/lib/BucketLogWriter.h"
 #include "beringei/lib/BucketMap.h"
 #include "beringei/lib/BucketStorage.h"
+#include "beringei/lib/BucketUtils.h"
 #include "beringei/lib/FileUtils.h"
 #include "beringei/lib/GorillaStatsManager.h"
 #include "beringei/lib/GorillaTimeConstants.h"
@@ -418,15 +419,8 @@ void BeringeiServiceHandler::getShardDataBucket(
     int64_t shardId,
     int32_t offset,
     int32_t limit) {
-  // Floor timestamps.
-  beginTs = BucketMap::timestamp(
-      BucketMap::bucket(beginTs, FLAGS_bucket_size, shardId),
-      FLAGS_bucket_size,
-      shardId);
-  endTs = BucketMap::timestamp(
-      BucketMap::bucket(endTs, FLAGS_bucket_size, shardId),
-      FLAGS_bucket_size,
-      shardId);
+  beginTs = BucketUtils::floorTimestamp(beginTs, FLAGS_bucket_size, shardId);
+  endTs = BucketUtils::floorTimestamp(endTs, FLAGS_bucket_size, shardId);
 
   LOG(INFO) << "Fetching data for shard " << shardId << " between time "
             << beginTs << " and " << endTs;
@@ -606,7 +600,7 @@ void BeringeiServiceHandler::finalizeBucketsThread() {
   // The same bucket is finalized multiple times on purpose to make
   // sure all the shard movements are caught.
   uint64_t timestamp = time(nullptr) - FLAGS_allowed_timestamp_behind -
-      kGorillaSecondsPerMinute - BucketMap::duration(1, FLAGS_bucket_size);
+      kGorillaSecondsPerMinute - BucketUtils::duration(1, FLAGS_bucket_size);
   bool behind = false;
   for (int i = 0; i < FLAGS_shards; i++) {
     uint32_t bucketToFinalize = shards_[i]->bucket(timestamp);

@@ -9,9 +9,10 @@
 
 #include "BucketLogWriter.h"
 
+#include "BucketUtils.h"
 #include "GorillaStatsManager.h"
+#include "GorillaTimeConstants.h"
 
-#include "beringei/lib/GorillaTimeConstants.h"
 #include "glog/logging.h"
 
 namespace facebook {
@@ -52,7 +53,7 @@ BucketLogWriter::BucketLogWriter(
       // One `allowedTimestampBehind` delay to allow the data to come in
       // and one more delay to allow the data to be dequeued and written.
       waitTimeBeforeClosing_(allowedTimestampBehind * 2),
-      keepLogFilesAroundTime_(windowSize * 2) {
+      keepLogFilesAroundTime_(BucketUtils::duration(2, windowSize)) {
   CHECK_GT(windowSize, allowedTimestampBehind)
       << "Window size " << windowSize
       << " must be larger than allowedTimestampBehind "
@@ -92,6 +93,26 @@ void BucketLogWriter::stopWriterThread() {
     logData(0, kNoOpIndex, 0, 0);
     writerThread_->join();
   }
+}
+
+uint32_t BucketLogWriter::bucket(uint64_t unixTime, int shardId) const {
+  return BucketUtils::bucket(unixTime, windowSize_, shardId);
+}
+
+uint64_t BucketLogWriter::timestamp(uint32_t bucket, int shardId) const {
+  return BucketUtils::timestamp(bucket, windowSize_, shardId);
+}
+
+uint64_t BucketLogWriter::duration(uint32_t buckets) const {
+  return BucketUtils::duration(buckets, windowSize_);
+}
+
+uint64_t BucketLogWriter::getRandomNextClearDuration() const {
+  return random() % duration(1);
+}
+
+uint64_t BucketLogWriter::getRandomOpenNextDuration(int shardId) const {
+  return windowSize_ * (0.75 + 0.25 * shardId / numShards_);
 }
 
 void BucketLogWriter::flushQueue() {
@@ -145,7 +166,7 @@ bool BucketLogWriter::writeOneLogEntry(bool blockingRead) {
       // Randomly select the next clear time between windowSize_ and
       // windowSize_ * 2 to spread out the clear operations.
       writer.nextClearTimeSecs =
-          time(nullptr) + windowSize_ + (random() % windowSize_);
+          time(nullptr) + duration(1) + getRandomNextClearDuration();
       writer.fileUtils.reset(
           new FileUtils(info.shardId, kLogFilePrefix, dataDirectory_));
       shardWriters_.insert(std::make_pair(info.shardId, std::move(writer)));
@@ -161,9 +182,9 @@ bool BucketLogWriter::writeOneLogEntry(bool blockingRead) {
         continue;
       }
 
-      int bucket = info.unixTime / windowSize_;
+      int b = bucket(info.unixTime, info.shardId);
       ShardWriter& shardWriter = iter->second;
-      auto& logWriter = shardWriter.logWriters[bucket];
+      auto& logWriter = shardWriter.logWriters[b];
 
       // If this bucket doesn't have a file open yet, open it now.
       if (!logWriter) {
@@ -186,17 +207,16 @@ bool BucketLogWriter::writeOneLogEntry(bool blockingRead) {
       // 1/4 of the time window based on the shard ID. This will avoid
       // opening a lot of files simultaneously.
       uint32_t openNextFileTime =
-          windowSize_ * (bucket + 0.75 + 0.25 * info.shardId / numShards_);
+          timestamp(b, info.shardId) + getRandomOpenNextDuration(info.shardId);
       if (time(nullptr) > openNextFileTime &&
-          shardWriter.logWriters.find(bucket + 1) ==
-              shardWriter.logWriters.end()) {
-        uint32_t baseTime = (bucket + 1) * windowSize_;
+          shardWriter.logWriters.find(b + 1) == shardWriter.logWriters.end()) {
+        uint32_t baseTime = timestamp(b + 1, info.shardId);
         LOG(INFO) << "Opening file in advance for shard " << info.shardId;
         for (int i = 0; i < kFileOpenRetries; i++) {
           auto f =
               shardWriter.fileUtils->open(baseTime, "wb", kLogFileBufferSize);
           if (f.file) {
-            shardWriter.logWriters[bucket + 1].reset(
+            shardWriter.logWriters[b + 1].reset(
                 new DataLogWriter(std::move(f), baseTime));
             break;
           }
@@ -212,17 +232,19 @@ bool BucketLogWriter::writeOneLogEntry(bool blockingRead) {
       // Only clear at most one previous bucket because the operation
       // is really slow and queue might fill up if multiple buckets
       // are cleared.
+
+      auto now = time(nullptr);
       if (!onePreviousLogWriterCleared &&
-          time(nullptr) % windowSize_ > waitTimeBeforeClosing_ &&
-          shardWriter.logWriters.find(bucket - 1) !=
-              shardWriter.logWriters.end()) {
-        shardWriter.logWriters.erase(bucket - 1);
+          now - BucketUtils::floorTimestamp(now, windowSize_, info.shardId) >
+              waitTimeBeforeClosing_ &&
+          shardWriter.logWriters.find(b - 1) != shardWriter.logWriters.end()) {
+        shardWriter.logWriters.erase(b - 1);
         onePreviousLogWriterCleared = true;
       }
 
-      if (time(nullptr) > shardWriter.nextClearTimeSecs) {
+      if (now > shardWriter.nextClearTimeSecs) {
         shardWriter.fileUtils->clearTo(time(nullptr) - keepLogFilesAroundTime_);
-        shardWriter.nextClearTimeSecs += windowSize_;
+        shardWriter.nextClearTimeSecs += duration(1);
       }
 
       if (logWriter) {
