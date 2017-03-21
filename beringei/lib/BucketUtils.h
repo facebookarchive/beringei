@@ -27,6 +27,8 @@ class BucketUtils {
   // Gets the timestamp of the bucket the original timestamp is in.
   static uint64_t
   floorTimestamp(uint64_t unixTime, uint64_t windowSize, int shardId);
+  static uint64_t
+  ceilTimestamp(uint64_t unixTime, uint64_t windowSize, int shardId);
 };
 }
 }

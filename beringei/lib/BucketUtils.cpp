@@ -36,5 +36,17 @@ uint64_t BucketUtils::floorTimestamp(
     int shardId) {
   return timestamp(bucket(unixTime, windowSize, shardId), windowSize, shardId);
 }
+
+uint64_t BucketUtils::ceilTimestamp(
+    uint64_t unixTime,
+    uint64_t windowSize,
+    int shardId) {
+  if (unixTime == 0) {
+    return 0;
+  }
+
+  auto b = bucket(unixTime - 1, windowSize, shardId);
+  return timestamp(b + 1, windowSize, shardId);
+}
 }
 } // facebook::gorilla
