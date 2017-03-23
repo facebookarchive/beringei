@@ -212,7 +212,7 @@ TEST(BucketStorageTest, BigDataFromDisk) {
   vector<uint32_t> timeSeriesIds2;
   vector<uint64_t> storageIds;
   BucketStorage storage(10, shardId, dir.dirname());
-  ASSERT_EQ(true, storage.loadPosition(100, timeSeriesIds2, storageIds));
+  ASSERT_TRUE(storage.loadPosition(100, timeSeriesIds2, storageIds));
   ASSERT_EQ(ids, storageIds);
   ASSERT_EQ(timeSeriesIds, timeSeriesIds2);
 
@@ -261,7 +261,7 @@ TEST(BucketStorageTest, DedupedDataFromDisk) {
   vector<uint32_t> timeSeriesIds2;
   vector<uint64_t> storageIds;
   BucketStorage storage(10, shardId, dir.dirname());
-  ASSERT_EQ(true, storage.loadPosition(100, timeSeriesIds2, storageIds));
+  ASSERT_TRUE(storage.loadPosition(100, timeSeriesIds2, storageIds));
   ASSERT_EQ(2048, storageIds.size());
   ASSERT_EQ(2048, timeSeriesIds2.size());
 

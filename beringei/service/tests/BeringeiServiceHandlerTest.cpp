@@ -448,7 +448,7 @@ TEST_F(BeringeiServiceHandlerTest, GetShardDataBucket) {
   handler.getShardDataBucket(getDataResult, endTime, endTime, shardId, 0, 600);
 
   EXPECT_EQ(StatusCode::OK, getDataResult.status);
-  EXPECT_EQ(true, getDataResult.moreEntries);
+  EXPECT_TRUE(getDataResult.moreEntries);
 
   // Should have 600 keys.
   EXPECT_EQ(600, getDataResult.keys.size());
