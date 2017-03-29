@@ -136,7 +136,7 @@ vector<DataPoint> BeringeiNetworkClient::performPut(PutRequestMap& requests) {
                 }
 
                 if (--numActiveRequests == 0) {
-                  eventBaseManager_.getEventBase()->terminateLoopSoon();
+                  getEventBase()->terminateLoopSoon();
                 }
               }));
 
@@ -153,7 +153,7 @@ vector<DataPoint> BeringeiNetworkClient::performPut(PutRequestMap& requests) {
   }
 
   if (numActiveRequests > 0) {
-    eventBaseManager_.getEventBase()->loopForever();
+    getEventBase()->loopForever();
   }
   return dropped;
 }
@@ -207,7 +207,7 @@ void BeringeiNetworkClient::performGet(GetRequestMap& requests) {
           }
 
           if (--numActiveRequests == 0) {
-            eventBaseManager_.getEventBase()->terminateLoopSoon();
+            getEventBase()->terminateLoopSoon();
           }
         }));
 
@@ -216,7 +216,7 @@ void BeringeiNetworkClient::performGet(GetRequestMap& requests) {
   }
 
   if (numActiveRequests > 0) {
-    eventBaseManager_.getEventBase()->loopForever();
+    getEventBase()->loopForever();
   }
 }
 
@@ -372,19 +372,22 @@ bool BeringeiNetworkClient::addDataPointToRequest(
   return requests[hostInfo].data.size() < FLAGS_gorilla_max_batch_size;
 }
 
+uint32_t BeringeiNetworkClient::getTimeoutMs() {
+  return (FLAGS_gorilla_processing_timeout == 0)
+      ? kDefaultThriftTimeoutMs
+      : FLAGS_gorilla_processing_timeout;
+}
+
 std::shared_ptr<BeringeiServiceAsyncClient>
 BeringeiNetworkClient::getBeringeiThriftClient(
     const std::string& hostAddress,
     int port) {
   folly::SocketAddress address(hostAddress, port, true);
-  auto socket = apache::thrift::async::TAsyncSocket::newSocket(
-      eventBaseManager_.getEventBase(), address);
+  auto socket =
+      apache::thrift::async::TAsyncSocket::newSocket(getEventBase(), address);
   auto channel =
       apache::thrift::HeaderClientChannel::newChannel(std::move(socket));
-  uint32_t timeout = FLAGS_gorilla_processing_timeout == 0
-      ? kDefaultThriftTimeoutMs
-      : FLAGS_gorilla_processing_timeout;
-  channel->setTimeout(timeout);
+  channel->setTimeout(getTimeoutMs());
   return std::make_shared<BeringeiServiceAsyncClient>(std::move(channel));
 }
 

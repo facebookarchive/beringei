@@ -98,6 +98,8 @@ class BeringeiNetworkClient {
       int32_t limit,
       GetShardDataBucketResult& result);
 
+  static uint32_t getTimeoutMs();
+
   virtual std::shared_ptr<BeringeiServiceAsyncClient> getBeringeiThriftClient(
       const std::string& hostAddress,
       int port);
@@ -109,6 +111,10 @@ class BeringeiNetworkClient {
       int limit,
       int offset,
       std::vector<KeyUpdateTime>& keys);
+
+  static folly::EventBase* getEventBase() {
+    return folly::EventBaseManager::get()->getEventBase();
+  }
 
  protected:
   // Default constructor that doesn't do any initialization. Should be
@@ -158,7 +164,6 @@ class BeringeiNetworkClient {
   };
 
  protected:
-  folly::EventBaseManager eventBaseManager_;
   std::shared_ptr<BeringeiConfigurationAdapterIf> configurationAdapter_;
   std::string serviceName_;
   std::atomic<bool> stopRequests_;
