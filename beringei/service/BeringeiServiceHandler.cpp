@@ -172,7 +172,7 @@ BeringeiServiceHandler::BeringeiServiceHandler(
     // it's somewhat distributed it should be fine.
     auto keyWriter = keyWriters[random() % keyWriters.size()];
     auto bucketLogWriter = bucketLogWriters[random() % bucketLogWriters.size()];
-    auto map = folly::make_unique<BucketMap>(
+    auto map = std::make_unique<BucketMap>(
         FLAGS_buckets,
         FLAGS_bucket_size,
         i,
