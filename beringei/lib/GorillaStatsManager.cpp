@@ -32,6 +32,15 @@ void GorillaStatsManager::addStatValue(const std::string& key, int64_t value) {
   }
 }
 
+void GorillaStatsManager::addStatValue(
+    const std::string& key,
+    int64_t value,
+    GorillaStatsExportType type) {
+  if (stats_.get()) {
+    stats_->addStatValueInternal(keyPrefix_ + key, value, type);
+  }
+}
+
 void GorillaStatsManager::addStatValueAggregated(
     const std::string& key,
     int64_t sum,

@@ -38,6 +38,10 @@ class GorillaStatsManager {
       std::unique_ptr<GorillaStatsManager> stats);
 
   static void addStatValue(const std::string& key, int64_t value = 1);
+  static void addStatValue(
+      const std::string& key,
+      int64_t value,
+      GorillaStatsExportType type);
   static void setCounter(const std::string& key, int64_t value);
   static void incrementCounter(const std::string& key, int64_t amount = 1);
 
@@ -62,6 +66,10 @@ class GorillaStatsManager {
   virtual void addStatValueInternal(
       const std::string& key,
       int64_t value = 1) = 0;
+  virtual void addStatValueInternal(
+      const std::string& key,
+      int64_t value,
+      GorillaStatsExportType type) = 0;
   virtual void setCounterInternal(const std::string& key, int64_t value) = 0;
   virtual void incrementCounterInternal(
       const std::string& key,
