@@ -48,5 +48,13 @@ uint64_t BucketUtils::ceilTimestamp(
   auto b = bucket(unixTime - 1, windowSize, shardId);
   return timestamp(b + 1, windowSize, shardId);
 }
+
+uint32_t BucketUtils::alignedBucket(uint64_t unixTime, uint64_t windowSize) {
+  return (uint32_t)(unixTime / windowSize);
+}
+
+uint64_t BucketUtils::alignedTimestamp(uint32_t bucket, uint64_t windowSize) {
+  return bucket * windowSize;
+}
 }
 } // facebook::gorilla

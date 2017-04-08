@@ -42,7 +42,7 @@ class BucketedTimeSeries {
       uint32_t timeSeriesId,
       uint16_t* category);
 
-  // Read out buckets.
+  // Read out buckets between begin and end inclusive, including current one.
   typedef std::vector<TimeSeriesBlock> Output;
   void get(uint32_t begin, uint32_t end, Output& out, BucketStorage* storage);
 
