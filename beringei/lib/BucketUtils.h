@@ -27,8 +27,11 @@ class BucketUtils {
   // Gets the timestamp of the bucket the original timestamp is in.
   static uint64_t
   floorTimestamp(uint64_t unixTime, uint64_t windowSize, int shardId);
+
+  // Gets the first bucket timestamp greater than or equal to unixTime
   static uint64_t
   ceilTimestamp(uint64_t unixTime, uint64_t windowSize, int shardId);
+
   // Conversions for buckets aligned at 0 modulo windowSize
   static uint32_t alignedBucket(uint64_t unixTime, uint64_t windowSize);
   static uint64_t alignedTimestamp(uint32_t bucket, uint64_t windowSize);

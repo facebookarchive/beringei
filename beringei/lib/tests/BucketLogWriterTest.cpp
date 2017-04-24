@@ -10,6 +10,7 @@
 #include <gtest/gtest.h>
 
 #include "beringei/lib/BucketLogWriter.h"
+#include "beringei/lib/BucketUtils.h"
 #include "beringei/lib/DataLog.h"
 #include "beringei/lib/FileUtils.h"
 
@@ -27,6 +28,7 @@ class BucketLogWriterTest : public testing::Test {
 
 void readSingleValueFromLog(
     FileUtils& fileUtils,
+    int shardId,
     uint32_t expectedId,
     uint32_t expectedUnixTime,
     double expectValue,
@@ -36,7 +38,8 @@ void readSingleValueFromLog(
   if (f.file == nullptr) {
     // The file has been opened in advanced with the bucket starting
     // time file name.
-    baseTime = expectedUnixTime / windowSize * windowSize;
+    baseTime =
+        BucketUtils::floorTimestamp(expectedUnixTime, windowSize, shardId);
     f = fileUtils.open(baseTime, "rb", 0);
   }
   ASSERT_NE(nullptr, f.file);
@@ -80,8 +83,7 @@ TEST_F(BucketLogWriterTest, WriteSingleValue) {
   writer.stopShard(shardId);
   writer.flushQueue();
 
-  int baseTime = unixTime / windowSize * windowSize;
-  readSingleValueFromLog(fileUtils, 37, unixTime, 38.0, windowSize);
+  readSingleValueFromLog(fileUtils, shardId, 37, unixTime, 38.0, windowSize);
 }
 
 TEST_F(BucketLogWriterTest, ThreadedWrite) {
@@ -91,6 +93,11 @@ TEST_F(BucketLogWriterTest, ThreadedWrite) {
 
   int shardId = 23;
   int windowSize = 100;
+  int unixTime = BucketUtils::floorTimestamp(5000, windowSize, shardId);
+  int ts1 = unixTime + 1;
+  int ts2 = unixTime + windowSize - 1;
+  int ts3 = unixTime + windowSize;
+  int ts4 = unixTime + 5 * windowSize / 2;
 
   FileUtils fileUtils(shardId, "log", dir.dirname());
   fileUtils.clearAll();
@@ -98,23 +105,23 @@ TEST_F(BucketLogWriterTest, ThreadedWrite) {
   BucketLogWriter writer(windowSize, dir.dirname(), 10, 0);
 
   writer.startShard(shardId);
-  writer.logData(shardId, 37, 5001, 1.0);
-  writer.logData(shardId, 38, 5099, 2.0);
-  writer.logData(shardId, 39, 5100, 3.0);
-  writer.logData(shardId, 40, 5250, 4.0);
+  writer.logData(shardId, 37, ts1, 1.0);
+  writer.logData(shardId, 38, ts2, 2.0);
+  writer.logData(shardId, 39, ts3, 3.0);
+  writer.logData(shardId, 40, ts4, 4.0);
   writer.stopShard(shardId);
 
   // Sleep a while to let the writer thread do its job.
   writer.flushQueue();
 
-  auto f = fileUtils.open(5001, "rb", 0);
+  auto f = fileUtils.open(ts1, "rb", 0);
   ASSERT_NE(nullptr, f.file);
 
   vector<uint32_t> ids;
   vector<int64_t> times;
   vector<double> values;
   int points = DataLogReader::readLog(
-      f, 5001, [&](uint32_t id, uint32_t timestamp, double value) {
+      f, ts1, [&](uint32_t id, uint32_t timestamp, double value) {
         ids.push_back(id);
         times.push_back(timestamp);
         values.push_back(value);
@@ -122,18 +129,18 @@ TEST_F(BucketLogWriterTest, ThreadedWrite) {
       });
 
   vector<uint32_t> expectedIds = {37, 38};
-  vector<int64_t> expectedTimes = {5001, 5099};
+  vector<int64_t> expectedTimes = {ts1, ts2};
   vector<double> expectedValues = {1.0, 2.0};
 
-  ASSERT_EQ(expectedIds, ids);
-  ASSERT_EQ(expectedTimes, times);
-  ASSERT_EQ(expectedValues, values);
+  EXPECT_EQ(expectedIds, ids);
+  EXPECT_EQ(expectedTimes, times);
+  EXPECT_EQ(expectedValues, values);
 
-  ASSERT_EQ(2, points);
+  EXPECT_EQ(2, points);
   fclose(f.file);
 
-  readSingleValueFromLog(fileUtils, 39, 5100, 3.0, windowSize);
-  readSingleValueFromLog(fileUtils, 40, 5250, 4.0, windowSize);
+  readSingleValueFromLog(fileUtils, shardId, 39, ts3, 3.0, windowSize);
+  readSingleValueFromLog(fileUtils, shardId, 40, ts4, 4.0, windowSize);
 }
 
 TEST_F(BucketLogWriterTest, MultipleShards) {
@@ -159,8 +166,8 @@ TEST_F(BucketLogWriterTest, MultipleShards) {
   writer.flushQueue();
 
   FileUtils fileUtils23(23, "log", dir.dirname());
-  readSingleValueFromLog(fileUtils23, 38, 5002, 2.0, windowSize);
+  readSingleValueFromLog(fileUtils23, 23, 38, 5002, 2.0, windowSize);
 
   FileUtils fileUtils24(24, "log", dir.dirname());
-  readSingleValueFromLog(fileUtils24, 41, 5005, 5.0, windowSize);
+  readSingleValueFromLog(fileUtils24, 24, 41, 5005, 5.0, windowSize);
 }
