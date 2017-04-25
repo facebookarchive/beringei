@@ -10,13 +10,13 @@
 #include "BucketedTimeSeries.h"
 #include "BucketMap.h"
 
-namespace facebook {
-namespace gorilla {
-
 DEFINE_int32(
     mintimestampdelta,
     30,
     "Values coming in faster than this are considered spam");
+
+namespace facebook {
+namespace gorilla {
 
 static const uint16_t kDefaultCategory = 0;
 

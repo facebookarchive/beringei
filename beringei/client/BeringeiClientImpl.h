@@ -15,6 +15,7 @@
 #include <folly/RWSpinLock.h>
 #include <folly/experimental/FunctionScheduler.h>
 #include "beringei/client/BeringeiConfigurationAdapterIf.h"
+#include "beringei/client/BeringeiGetResult.h"
 #include "beringei/client/BeringeiNetworkClient.h"
 #include "beringei/client/RequestBatchingQueue.h"
 
@@ -76,6 +77,12 @@ class BeringeiClientImpl {
   void get(
       GetDataRequest& request,
       GorillaResultVector& result,
+      const std::string& serviceOverride = "");
+
+  // Get unpacked data points from Gorilla.
+  // If set, serviceOverride bypasses the gorilla_read_services property.
+  virtual BeringeiGetResult get(
+      GetDataRequest& request,
       const std::string& serviceOverride = "");
 
   // Returns true if reading from gorilla is enabled, false otherwise.

@@ -9,16 +9,20 @@
 
 #include "BeringeiClientImpl.h"
 
+#include <folly/Enumerate.h>
 #include <folly/LifoSem.h>
 #include <folly/String.h>
+#include <folly/gen/Base.h>
 #include <thrift/lib/cpp2/async/RequestChannel.h>
 #include <future>
 
 #include "beringei/lib/GorillaStatsManager.h"
 #include "beringei/lib/TimeSeries.h"
 #include "beringei/lib/Timer.h"
+#include "wangle/concurrent/GlobalExecutor.h"
 
 using namespace apache::thrift;
+using namespace folly::gen;
 using namespace facebook;
 
 namespace facebook {
@@ -571,6 +575,107 @@ void BeringeiClientImpl::get(
           block, result[i].second, request.begin, request.end);
     }
   }
+}
+
+BeringeiGetResult BeringeiClientImpl::get(
+    GetDataRequest& request,
+    const std::string& serviceOverride) {
+  std::vector<std::shared_ptr<BeringeiNetworkClient>> readClientCopies;
+
+  {
+    // Take a copy of the read clients inside the lock if it changes
+    // while reading.
+    folly::RWSpinLock::ReadHolder guard(&readClientLock_);
+    readClientCopies = readClients_;
+  }
+
+  if (!serviceOverride.empty()) {
+    bool found = false;
+    for (auto& client : readClientCopies) {
+      if (client->isCorrespondingService(serviceOverride)) {
+        found = true;
+        readClientCopies = {client};
+      }
+    }
+
+    if (!found) {
+      // Service wasn't on the list. Try making a new temporary
+      // client. If the service is invalid, let the exception go to the
+      // caller.
+
+      if (!configurationAdapter_->isValidReadService(serviceOverride)) {
+        GorillaStatsManager::addStatValue(kBadReadServices);
+      } else {
+        auto client =
+            createNetworkClient(serviceOverride, configurationAdapter_, false);
+
+        // Don't stick this in readClients_ because we don't want normal queries
+        // to use the overwritten service.
+        readClientCopies = {client};
+      }
+    }
+  }
+
+  auto results = std::make_shared<BeringeiGetResultCollector>(
+      request.keys.size(), readClientCopies.size(), request.begin, request.end);
+
+  std::vector<BeringeiNetworkClient::MultiGetRequestMap> requests(
+      readClientCopies.size());
+  std::vector<folly::Future<folly::Unit>> fs;
+
+  // Fulfilled when we've received one full copy of the data.
+  folly::Promise<folly::Unit> oneComplete;
+
+  for (int clientId = 0; clientId < readClientCopies.size(); clientId++) {
+    for (const auto& key : folly::enumerate(request.keys)) {
+      readClientCopies[clientId]->addKeyToGetRequest(
+          key.index, *key, requests[clientId]);
+    }
+
+    for (auto& r : requests[clientId]) {
+      r.second.first.begin = request.begin;
+      r.second.first.end = request.end;
+      // TODO: BeringeiGetResult::addResults() blocks on a lock, which we
+      //       shouldn't do in the CPU thread pool. Though this approach still
+      //       reduces latency compared to everything in one thread.
+      //       Maybe split the decompression and merging steps?
+      fs.push_back(readClientCopies[clientId]
+                       ->performGet(r.first, std::move(r.second.first))
+                       .via(wangle::getCPUExecutor().get())
+                       .then([
+                         &oneComplete,
+                         results,
+                         clientId,
+                         indices = std::move(r.second.second)
+                       ](GetDataResult result) {
+                         if (results->addResults(result, indices, clientId)) {
+                           oneComplete.setValue();
+                         }
+                       })
+                       .onError([](const std::exception& e) {
+                         LOG(ERROR) << e.what();
+                       }));
+    }
+  }
+
+  // Futures madness.
+  // Block until either every result has arrived or we received enough results
+  // to construct a full data set and then a timeout occured.
+  std::vector<folly::Future<folly::Unit>> either;
+  either.push_back(oneComplete.getFuture().then([]() {
+    return folly::futures::sleep(
+        std::chrono::milliseconds(BeringeiNetworkClient::getTimeoutMs()));
+  }));
+  either.push_back(
+      collectAll(fs).then([](const std::vector<folly::Try<folly::Unit>>&) {}));
+  folly::collectAny(either).waitVia(BeringeiNetworkClient::getEventBase());
+
+  auto clientNames = from(readClientCopies) | dereference |
+      member(&BeringeiNetworkClient::getServiceName) | as<std::vector>();
+
+  // Extract and return the results. Any future replies that arrive will
+  // be ignored.
+  return results->finalize(throwExceptionOnTransientFailure_, clientNames);
 }
 
 void BeringeiClientImpl::writeDataPointsForever(WriteClient* writeClient) {

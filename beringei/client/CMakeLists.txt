@@ -11,10 +11,12 @@ add_library(
     BeringeiClient.h
     BeringeiClientImpl.h
     BeringeiConfigurationAdapterIf.h
+    BeringeiGetResult.h
     BeringeiNetworkClient.h
     RequestBatchingQueue.h
     BeringeiClient.cpp
     BeringeiClientImpl.cpp
+    BeringeiGetResult.cpp
     BeringeiNetworkClient.cpp
     RequestBatchingQueue.cpp
 )

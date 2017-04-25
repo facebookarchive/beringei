@@ -97,8 +97,7 @@ vector<DataPoint> BeringeiNetworkClient::performPut(PutRequestMap& requests) {
 
   for (auto& request : requests) {
     try {
-      auto client = this->getBeringeiThriftClient(
-          request.first.first, request.first.second);
+      auto client = getBeringeiThriftClient(request.first);
 
       // Keep clients alive
       clients.push_back(client);
@@ -173,8 +172,7 @@ void BeringeiNetworkClient::performGet(GetRequestMap& requests) {
   std::shared_ptr<BeringeiServiceAsyncClient> client = nullptr;
   for (auto& request : requests) {
     try {
-      client = this->getBeringeiThriftClient(
-          request.first.first, request.first.second);
+      client = getBeringeiThriftClient(request.first);
     } catch (const std::exception& e) {
       LOG(ERROR) << "Failed to construct BeringeiServiceAsyncClient for"
                  << " host:port " << request.first.first << ":"
@@ -220,6 +218,12 @@ void BeringeiNetworkClient::performGet(GetRequestMap& requests) {
   }
 }
 
+folly::Future<GetDataResult> BeringeiNetworkClient::performGet(
+    const std::pair<std::string, int>& hostInfo,
+    const GetDataRequest& request) {
+  return getBeringeiThriftClient(hostInfo)->future_getData(request);
+}
+
 void BeringeiNetworkClient::performShardDataBucketGet(
     int64_t begin,
     int64_t end,
@@ -238,7 +242,7 @@ void BeringeiNetworkClient::performShardDataBucketGet(
 
   std::shared_ptr<BeringeiServiceAsyncClient> client = nullptr;
   try {
-    client = this->getBeringeiThriftClient(hostInfo.first, hostInfo.second);
+    client = this->getBeringeiThriftClient(hostInfo);
   } catch (const std::exception& e) {
     result.status = StatusCode::RPC_FAIL;
     LOG(ERROR) << "Failed to construct BeringeiServiceAsyncClient for"
@@ -267,7 +271,7 @@ bool BeringeiNetworkClient::getShardKeys(
   }
 
   std::shared_ptr<BeringeiServiceAsyncClient> client =
-      getBeringeiThriftClient(hostInfo.first, hostInfo.second);
+      getBeringeiThriftClient(hostInfo);
 
   GetLastUpdateTimesRequest req;
   GetLastUpdateTimesResult result;
@@ -293,7 +297,7 @@ void BeringeiNetworkClient::getLastUpdateTimesForHost(
   stopRequests_ = false;
 
   try {
-    auto client = getBeringeiThriftClient(host, port);
+    auto client = getBeringeiThriftClient({host, port});
     for (auto& shard : shards) {
       GetLastUpdateTimesRequest req;
       GetLastUpdateTimesResult result;
@@ -372,6 +376,26 @@ bool BeringeiNetworkClient::addDataPointToRequest(
   return requests[hostInfo].data.size() < FLAGS_gorilla_max_batch_size;
 }
 
+void BeringeiNetworkClient::addKeyToGetRequest(
+    const Key& key,
+    GetRequestMap& requests) {
+  addKeyToRequest<GetRequestMap>(key, requests);
+}
+
+void BeringeiNetworkClient::addKeyToGetRequest(
+    size_t index,
+    const Key& key,
+    MultiGetRequestMap& requests) {
+  std::pair<std::string, int> hostInfo;
+  bool success = getHostForShard(key.shardId, hostInfo);
+  if (!success) {
+    return;
+  }
+
+  requests[hostInfo].first.keys.push_back(key);
+  requests[hostInfo].second.push_back(index);
+}
+
 uint32_t BeringeiNetworkClient::getTimeoutMs() {
   return (FLAGS_gorilla_processing_timeout == 0)
       ? kDefaultThriftTimeoutMs
@@ -380,9 +404,8 @@ uint32_t BeringeiNetworkClient::getTimeoutMs() {
 
 std::shared_ptr<BeringeiServiceAsyncClient>
 BeringeiNetworkClient::getBeringeiThriftClient(
-    const std::string& hostAddress,
-    int port) {
-  folly::SocketAddress address(hostAddress, port, true);
+    const std::pair<std::string, int>& hostInfo) {
+  folly::SocketAddress address(hostInfo.first, hostInfo.second, true);
   auto socket =
       apache::thrift::async::TAsyncSocket::newSocket(getEventBase(), address);
   auto channel =

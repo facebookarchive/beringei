@@ -7,6 +7,7 @@
  * of patent rights can be found in the PATENTS file in the same directory.
  */
 
+#include <folly/futures/Future.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
@@ -19,6 +20,7 @@
 
 using namespace ::testing;
 using namespace facebook::gorilla;
+using namespace folly;
 using namespace std;
 
 namespace facebook {
@@ -56,12 +58,48 @@ class BeringeiClientMock : public BeringeiNetworkClient {
     request.first.keys.push_back(key);
   }
 
+  // Assume shards are evenly distributed across 2 hosts.
+  bool getHostForShard(int64_t shard, std::pair<std::string, int>& hostInfo)
+      override {
+    hostInfo.first = "some_host";
+    hostInfo.second = shard % 2;
+    return true;
+  }
+
   int64_t getNumShards() override {
     return numShards_;
   }
 
   string getServiceName() override {
     return "";
+  }
+
+  MOCK_METHOD2(
+      mockPerformGet,
+      std::pair<StatusCode, int>(int, const std::vector<int64_t>&));
+
+  Future<GetDataResult> performGet(
+      const std::pair<std::string, int>& hostInfo,
+      const GetDataRequest& request) override {
+    std::vector<int64_t> shards;
+    for (auto& k : request.keys) {
+      shards.push_back(k.shardId);
+    }
+
+    auto r = mockPerformGet(hostInfo.second, shards);
+
+    TimeSeriesData ts;
+    ts.status = r.first;
+    GetDataResult result;
+    for (int i = 0; i < request.keys.size(); i++) {
+      result.results.push_back(ts);
+    }
+    if (r.second == 0) {
+      return makeFuture<GetDataResult>(std::move(result));
+    }
+    return futures::sleep(
+               std::chrono::milliseconds(folly::Random::rand64(r.second)))
+        .then([result]() { return result; });
   }
 
  private:
@@ -80,10 +118,8 @@ class BeringeiClientTest : public testing::Test {
     dp.key.shardId = 2;
     dps.push_back(dp);
 
-    k1.key = "eleven";
-    k2.key = "twelve";
-    k1.shardId = 3;
-    k2.shardId = 5;
+    k1 = buildKey("eleven", 3);
+    k2 = buildKey("twelve", 5);
 
     // Results should come back sorted by shard.
     getReq.keys = {k2, k1};
@@ -137,6 +173,13 @@ class BeringeiClientTest : public testing::Test {
     inProgressRes.results[0].status = StatusCode::SHARD_IN_PROGRESS;
     inProgressPartialRes.results[0].status = StatusCode::SHARD_IN_PROGRESS;
     resWithHoles.results[0].status = StatusCode::MISSING_TOO_MUCH_DATA;
+  }
+
+  facebook::gorilla::Key buildKey(const std::string& key, int shard) {
+    facebook::gorilla::Key k;
+    k.key = key;
+    k.shardId = shard;
+    return k;
   }
 
   std::unique_ptr<BeringeiClientImpl> createBeringeiClient(
@@ -479,6 +522,39 @@ TEST_F(BeringeiClientTest, ReadClientSameHostFailoverOtherScope) {
           getResult.results[i].data[j].count, result.results[i].data[j].count);
     }
   }
+}
+
+TEST_F(BeringeiClientTest, MultiMasterGet) {
+  auto client = new StrictMock<BeringeiClientMock>(8);
+  auto adapterMock = std::make_shared<StrictMock<MockConfigurationAdapter>>();
+  auto beringeiClient = createBeringeiClient(
+      adapterMock, 1, BeringeiClientImpl::kNoWriterThreads, false, client);
+
+  GetDataRequest req;
+  req.keys = {buildKey("zero", 0),
+              buildKey("one", 1),
+              buildKey("two", 2),
+              buildKey("three", 3)};
+
+  // Client should issue 4 requests for 2 different shards.
+  // In this test environment, all requests go to the same client object.
+  // We respond with immediate and delayed success (for different shards),
+  // incomplete data, and a timeout (1h delayed response).
+  EXPECT_CALL(*client, mockPerformGet(0, std::vector<int64_t>{0, 2}))
+      .WillOnce(Return(std::pair<StatusCode, int>{StatusCode::OK, 200}))
+      .WillOnce(Return(std::pair<StatusCode, int>{StatusCode::OK, 3600000}));
+
+  EXPECT_CALL(*client, mockPerformGet(1, std::vector<int64_t>{1, 3}))
+      .WillOnce(
+          Return(std::pair<StatusCode, int>{StatusCode::SHARD_IN_PROGRESS, 0}))
+      .WillOnce(Return(std::pair<StatusCode, int>{StatusCode::OK, 0}));
+
+  auto result = beringeiClient->get(req);
+
+  // Client should not block forever and should claim to have succeeded.
+  EXPECT_EQ(4, result.results.size());
+  EXPECT_TRUE(result.allSuccess);
+  EXPECT_GT(result.memoryEstimate, 0);
 }
 
 TEST_F(BeringeiClientTest, NetworkClientHandleException) {

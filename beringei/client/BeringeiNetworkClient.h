@@ -46,12 +46,21 @@ class BeringeiNetworkClient {
       std::pair<GetDataRequest, GetDataResult>>
       GetRequestMap;
 
+  typedef std::unordered_map<
+      std::pair<std::string, int>,
+      std::pair<GetDataRequest, std::vector<size_t>>>
+      MultiGetRequestMap;
+
   // Fire off a putData request. Returns the dropped data
   // points. Might move data points from the requests.
   virtual std::vector<DataPoint> performPut(PutRequestMap& requests);
 
   // Fire off a getData request.
   virtual void performGet(GetRequestMap& requests);
+
+  virtual folly::Future<GetDataResult> performGet(
+      const std::pair<std::string, int>& hostInfo,
+      const GetDataRequest& request);
 
   // Fetches the last update times from all the servers in parallel
   // and calls the callback multiple times with partial results. The
@@ -72,9 +81,15 @@ class BeringeiNetworkClient {
   virtual bool
   addDataPointToRequest(DataPoint& dp, PutRequestMap& requests, bool& dropped);
 
-  virtual void addKeyToGetRequest(const Key& key, GetRequestMap& requests) {
-    addKeyToRequest<GetRequestMap>(key, requests);
-  }
+  // Adds a key to a get request.
+  virtual void addKeyToGetRequest(const Key& key, GetRequestMap& requests);
+
+  // Like above, but MultiGetRequestMap also records the index of each key into
+  // the corresponding result structure.
+  virtual void addKeyToGetRequest(
+      size_t index,
+      const Key& key,
+      MultiGetRequestMap& requests);
 
   // Invalidate the DirectoryService cache for a certain set of shard ids
   virtual void invalidateCache(const std::unordered_set<int64_t>& shardIds);
@@ -101,8 +116,7 @@ class BeringeiNetworkClient {
   static uint32_t getTimeoutMs();
 
   virtual std::shared_ptr<BeringeiServiceAsyncClient> getBeringeiThriftClient(
-      const std::string& hostAddress,
-      int port);
+      const std::pair<std::string, int>& hostInfo);
 
   // Gets keys stored in specified shard. Returns true if there are more keys
   // to be fetched.
@@ -121,7 +135,9 @@ class BeringeiNetworkClient {
   // only used from tests.
   BeringeiNetworkClient() {}
 
-  bool getHostForShard(int64_t shardId, std::pair<std::string, int>& hostInfo);
+  virtual bool getHostForShard(
+      int64_t shardId,
+      std::pair<std::string, int>& hostInfo);
 
   template <typename T>
   void addKeyToRequest(const Key& key, T& requests) {
