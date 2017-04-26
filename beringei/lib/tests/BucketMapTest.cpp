@@ -45,7 +45,7 @@ class BucketMapTest : public testing::Test {
   void test(BucketMap& map) {
     TimeValuePair tv;
     tv.value = 100.0;
-    tv.unixTime = 0;
+    tv.unixTime = map.timestamp(0);
 
     // First insertion is 3x as long as bumping counters.
     gorilla::Timer timer(true);
@@ -88,8 +88,9 @@ class BucketMapTest : public testing::Test {
 
   int insert(BucketMap& map, vector<vector<TimeValuePair>>& samples) {
     gorilla::Timer timer(true);
-    std::atomic<int> inserted(0);
-    std::atomic<int> added(0);
+    int inserted = 0;
+    int added = 0;
+    std::set<std::pair<int, int>> seen;
 
     for (int hour = 0; hour < 24; hour++) {
       for (int i = 0; i < samples.size(); i++) {
@@ -98,13 +99,15 @@ class BucketMapTest : public testing::Test {
           auto ret = map.put(key, tv, 0);
           added += ret.first;
           inserted += ret.second;
+          seen.insert({i, map.bucket(tv.unixTime)});
           tv.unixTime += kGorillaSecondsPerHour;
         }
-      } // );
+      }
     }
     LOG(INFO) << "PUT 24H (" << inserted << " dp) : " << timer.get();
     LOG(INFO) << "ROWS ADDED : " << added;
-    return inserted;
+    LOG(INFO) << "UNIQUE BUCKETS: " << seen.size();
+    return seen.size();
   }
 
   TestKeyList keyList_;
@@ -222,10 +225,10 @@ TEST_F(BucketMapTest, Load) {
     loadData(samples);
   }
 
-  int inserted = insert(map, samples);
+  int buckets = insert(map, samples);
 
   BucketedTimeSeries::Output out;
-  out.reserve(6 * samples.size());
+  out.reserve(buckets);
   uint64_t begin = 1377721380;
   uint64_t end = 1377730980 + 23 * kGorillaSecondsPerHour;
 
@@ -238,7 +241,7 @@ TEST_F(BucketMapTest, Load) {
   LOG(INFO) << "GET : " << timer.get();
 
   // Verify we got everything back out.
-  EXPECT_EQ(7 * samples.size(), out.size());
+  EXPECT_EQ(buckets, out.size());
 }
 
 TEST_F(BucketMapTest, ShardTransitions) {
@@ -388,8 +391,8 @@ TEST_F(BucketMapTest, QueuedPutExistingKey) {
 
   BucketedTimeSeries::Output output;
   item->second.get(
-      dp1.unixTime / windowSize,
-      dp3.unixTime / windowSize,
+      map.bucket(dp1.unixTime),
+      map.bucket(dp3.unixTime),
       output,
       map.getStorage());
 
@@ -528,11 +531,12 @@ TEST_F(BucketMapTest, SingleTimeSeriesWithOneDeviation) {
       FileUtils::joinPaths(dir.dirname(), "10"));
 
   auto map = buildBucketMap(dir.dirname().c_str());
+  int start = map->timestamp(0);
 
   int kDeviatingPoint = 5;
   for (int i = 0; i < 10; i++) {
     TimeValuePair value;
-    value.unixTime = i * 60;
+    value.unixTime = start + i * 60;
     value.value = i == kDeviatingPoint ? 10 : 1;
     auto ret = map->put(kDefaultKey, value, 0);
     ASSERT_EQ(1, ret.second);
@@ -540,9 +544,10 @@ TEST_F(BucketMapTest, SingleTimeSeriesWithOneDeviation) {
 
   // The deviating value will be more than 2.0 standard deviations
   // away from the mean.
-  ASSERT_EQ(1, map->indexDeviatingTimeSeries(0, 0, 10 * 60, 2.0));
+  ASSERT_EQ(
+      1, map->indexDeviatingTimeSeries(start, start, start + 10 * 60, 2.0));
   for (int i = 0; i < 10; i++) {
-    auto deviations = map->getDeviatingTimeSeries(i * 60);
+    auto deviations = map->getDeviatingTimeSeries(start + i * 60);
     ASSERT_EQ(i == kDeviatingPoint ? 1 : 0, deviations.size());
   }
 }
@@ -553,9 +558,11 @@ TEST_F(BucketMapTest, SingleTimeSeriesWhereEverythingDeviates) {
       FileUtils::joinPaths(dir.dirname(), "10"));
 
   auto map = buildBucketMap(dir.dirname().c_str());
+  int start = map->timestamp(0);
+
   for (int i = 0; i < 10; i++) {
     TimeValuePair value;
-    value.unixTime = i * 60;
+    value.unixTime = start + i * 60;
     value.value = i % 2 == 0 ? 0 : 100;
     auto ret = map->put(kDefaultKey, value, 0);
     ASSERT_EQ(1, ret.second);
@@ -563,9 +570,10 @@ TEST_F(BucketMapTest, SingleTimeSeriesWhereEverythingDeviates) {
 
   // Every value will be more than 0.1 standard deviations away from
   // the mean.
-  ASSERT_EQ(10, map->indexDeviatingTimeSeries(0, 0, 10 * 60, 0.1));
+  ASSERT_EQ(
+      10, map->indexDeviatingTimeSeries(start, start, start + 10 * 60, 0.1));
   for (int i = 0; i < 10; i++) {
-    auto deviations = map->getDeviatingTimeSeries(i * 60);
+    auto deviations = map->getDeviatingTimeSeries(start + i * 60);
     ASSERT_EQ(1, deviations.size());
   }
 }
@@ -577,11 +585,13 @@ TEST_F(BucketMapTest, MultipleTimeSeriesWithDifferentDeviations) {
 
   auto map = buildBucketMap(dir.dirname().c_str());
 
-  addTestData(map, 0);
+  int start = map->timestamp(0);
+  addTestData(map, start);
 
-  ASSERT_EQ(10, map->indexDeviatingTimeSeries(0, 0, 10 * 60, 2.0));
+  ASSERT_EQ(
+      10, map->indexDeviatingTimeSeries(start, start, start + 10 * 60, 2.0));
   for (int i = 0; i < 10; i++) {
-    auto deviations = map->getDeviatingTimeSeries(i * 60);
+    auto deviations = map->getDeviatingTimeSeries(start + i * 60);
     ASSERT_EQ(1, deviations.size());
 
     string expectedKey = kDefaultKey + std::to_string(i);
