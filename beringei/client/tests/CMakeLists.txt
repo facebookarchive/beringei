@@ -12,6 +12,7 @@ add_executable(
     BeringeiClientTest.cpp
     BeringeiGetResultTest.cpp
     RequestBatchingQueueTest.cpp
+    TestMain.cpp
 )
 target_link_libraries(
     beringei_client_test_bin
