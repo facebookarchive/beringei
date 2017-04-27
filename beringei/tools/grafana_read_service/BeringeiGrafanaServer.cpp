@@ -12,6 +12,7 @@
 #include "GrafanaServiceFactory.h"
 
 #include <folly/Memory.h>
+#include <folly/init/Init.h>
 #include <folly/io/async/EventBaseManager.h>
 #include <gflags/gflags.h>
 #include <proxygen/httpserver/HTTPServer.h>
@@ -35,8 +36,7 @@ DEFINE_int32(
     "will use the number of cores on this machine.");
 
 int main(int argc, char* argv[]) {
-  gflags::ParseCommandLineFlags(&argc, &argv, true);
-  google::InitGoogleLogging(argv[0]);
+  folly::init(&argc, &argv, true);
   google::InstallFailureSignalHandler();
 
   LOG(INFO) << "Attemping to bind to port " << FLAGS_http_port;

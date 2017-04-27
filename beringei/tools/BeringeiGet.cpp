@@ -16,6 +16,7 @@
 #include <string>
 
 #include <folly/Conv.h>
+#include <folly/init/Init.h>
 
 using namespace facebook;
 
@@ -40,9 +41,8 @@ DEFINE_int64(
     "Unix timestamp of the end time to query. Must be > --start_time.");
 
 int main(int argc, char** argv) {
-  google::InitGoogleLogging(argv[0]);
   gflags::SetUsageMessage("[<options>] <key>");
-  gflags::ParseCommandLineFlags(&argc, &argv, true);
+  folly::init(&argc, &argv, true);
 
   auto beringeiConfig =
       std::make_shared<gorilla::BeringeiConfigurationAdapter>(true);

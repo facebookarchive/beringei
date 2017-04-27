@@ -15,15 +15,15 @@
 #include <string>
 
 #include <folly/Conv.h>
+#include <folly/init/Init.h>
 
 using namespace facebook;
 
 DECLARE_string(beringei_configuration_path);
 
 int main(int argc, char** argv) {
-  google::InitGoogleLogging(argv[0]);
   gflags::SetUsageMessage("[<options>] <key> <value> [<timestamp>]");
-  gflags::ParseCommandLineFlags(&argc, &argv, true);
+  folly::init(&argc, &argv, true);
 
   auto beringeiConfig =
       std::make_shared<gorilla::BeringeiConfigurationAdapter>(true);
