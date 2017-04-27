@@ -11,6 +11,7 @@ add_executable(
     BeringeiConfigurationAdapterTest.cpp
     BeringeiConfigurationTest.cpp
     BeringeiConfigurationValidationTest.cpp
+    TestMain.cpp
 )
 
 target_link_libraries(

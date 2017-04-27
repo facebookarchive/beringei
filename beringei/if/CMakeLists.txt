@@ -18,31 +18,36 @@ add_custom_target(
 
 add_library(
     beringei_thrift STATIC
-    gen-cpp2/BeringeiService.h
-    gen-cpp2/BeringeiService_custom_protocol.h
-    gen-cpp2/beringei_constants.h
-    gen-cpp2/beringei_data_constants.h
-    gen-cpp2/beringei_data_types.h
-    gen-cpp2/beringei_data_types_custom_protocol.h
-    gen-cpp2/beringei_types.h
-    gen-cpp2/beringei_types_custom_protocol.h
     gen-cpp2/BeringeiService.cpp
+    gen-cpp2/BeringeiService.h
+    gen-cpp2/BeringeiService.tcc
     gen-cpp2/BeringeiService_client.cpp
+    gen-cpp2/BeringeiService_custom_protocol.h
     gen-cpp2/BeringeiService_processmap_binary.cpp
     gen-cpp2/BeringeiService_processmap_compact.cpp
     gen-cpp2/beringei_constants.cpp
+    gen-cpp2/beringei_constants.h
     gen-cpp2/beringei_data_constants.cpp
+    gen-cpp2/beringei_data_constants.h
+    gen-cpp2/beringei_data_constants.h
+    gen-cpp2/beringei_data_data.cpp
+    gen-cpp2/beringei_data_data.cpp
     gen-cpp2/beringei_data_types.cpp
-    gen-cpp2/beringei_types.cpp
-    gen-cpp2/BeringeiService.tcc
+    gen-cpp2/beringei_data_types.h
     gen-cpp2/beringei_data_types.tcc
-    gen-cpp2/beringei_types.tcc
+    gen-cpp2/beringei_data_types_custom_protocol.h
     gen-cpp2/beringei_grafana_constants.cpp
     gen-cpp2/beringei_grafana_constants.h
+    gen-cpp2/beringei_grafana_data.cpp
+    gen-cpp2/beringei_grafana_data.h
     gen-cpp2/beringei_grafana_types.cpp
-    gen-cpp2/beringei_grafana_types_custom_protocol.h
     gen-cpp2/beringei_grafana_types.h
     gen-cpp2/beringei_grafana_types.tcc
+    gen-cpp2/beringei_grafana_types_custom_protocol.h
+    gen-cpp2/beringei_types.cpp
+    gen-cpp2/beringei_types.h
+    gen-cpp2/beringei_types.tcc
+    gen-cpp2/beringei_types_custom_protocol.h
 )
 
 add_dependencies(

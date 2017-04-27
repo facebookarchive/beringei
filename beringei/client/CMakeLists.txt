@@ -26,6 +26,7 @@ target_link_libraries(
     beringei_core
     beringei_thrift
     ${FOLLY_LIBRARIES}
+    ${WANGLE_LIBRARIES}
 )
 
 add_subdirectory(tests)

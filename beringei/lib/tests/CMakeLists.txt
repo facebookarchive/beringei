@@ -12,6 +12,7 @@ add_library(
     TestKeyList.cpp
     TestDataLoader.h
     TestDataLoader.cpp
+    TestMain.cpp
 )
 
 add_executable(
