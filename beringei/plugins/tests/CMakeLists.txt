@@ -13,6 +13,7 @@ add_executable(
     BeringeiConfigurationValidationTest.cpp
     TestMain.cpp
 )
+add_dependencies(beringei_plugin_test_bin gtest_tp)
 
 target_link_libraries(
     beringei_plugin_test_bin

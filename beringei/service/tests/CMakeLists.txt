@@ -11,6 +11,7 @@ add_executable(
     BeringeiServiceHandlerTest.cpp
     TestMain.cpp
 )
+add_dependencies(beringei_service_test_bin gtest_tp)
 
 target_link_libraries(
     beringei_service_test_bin

@@ -14,6 +14,8 @@ set(GTEST_DISABLE_PTHREADS OFF)
 
 find_package(Threads REQUIRED)
 
+set(GTEST_DIR "${CMAKE_BINARY_DIR}/beringei/third-party/gtest/src")
+
 externalproject_add(
     gtest_tp
     GIT_REPOSITORY https://github.com/google/googletest.git
@@ -24,6 +26,7 @@ externalproject_add(
         -DBUILD_GTEST=ON
         -DBUILD_GMOCK=ON
     PREFIX "${CMAKE_CURRENT_BINARY_DIR}"
+    BUILD_BYPRODUCTS "${GTEST_DIR}/gtest_tp-build/googlemock/libgmock_main.a"
     # Disable install step
     INSTALL_COMMAND ""
     )
