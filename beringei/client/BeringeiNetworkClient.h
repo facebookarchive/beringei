@@ -9,6 +9,7 @@
 
 #pragma once
 
+#include <condition_variable>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -185,6 +186,8 @@ class BeringeiNetworkClient {
   std::atomic<bool> stopRequests_;
 
  private:
+  std::condition_variable stopping_;
+  std::mutex stoppingMutex_;
   std::vector<std::unique_ptr<ShardCacheEntry>> shardCache_;
   folly::RWSpinLock shardCacheLock_;
   bool isShadow_;

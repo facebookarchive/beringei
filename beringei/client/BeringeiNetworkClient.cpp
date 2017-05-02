@@ -44,6 +44,8 @@ static const std::string kStaleShardInfoUsed =
 static const int kDefaultThriftTimeoutMs =
     2 * kGorillaMsPerSecond; // 60 seconds
 
+const static int kSleepBetweenRetrySecs = 10;
+
 BeringeiNetworkClient::BeringeiNetworkClient(
     const std::string& serviceName,
     std::shared_ptr<BeringeiConfigurationAdapterIf> configurationAdapter,
@@ -296,6 +298,8 @@ void BeringeiNetworkClient::getLastUpdateTimesForHost(
 
   stopRequests_ = false;
 
+  std::unique_lock<std::mutex> lock(stoppingMutex_);
+
   try {
     auto client = getBeringeiThriftClient({host, port});
     for (auto& shard : shards) {
@@ -307,11 +311,36 @@ void BeringeiNetworkClient::getLastUpdateTimesForHost(
       bool continueOperation = true;
 
       do {
-        client->sync_getLastUpdateTimes(result, req);
-        continueOperation = callback(result.keys) &&
-            time(nullptr) - startTime < timeoutSeconds && !stopRequests_.load();
-        req.offset += maxKeysPerRequest;
-      } while (continueOperation && result.moreResults);
+        bool success = false;
+        try {
+          client->sync_getLastUpdateTimes(result, req);
+          success = true;
+        } catch (std::exception& e) {
+          LOG(ERROR) << e.what();
+        }
+
+        if (success) { // we got results back
+          continueOperation = callback(result.keys);
+          if (!result.moreResults) {
+            break;
+          }
+          req.offset += maxKeysPerRequest;
+        }
+
+        if (continueOperation) {
+          continueOperation = time(nullptr) - startTime < timeoutSeconds &&
+              !stopRequests_.load();
+        }
+
+        if (continueOperation && !success) {
+          // Let's not hammer with immediate requests in the loop and
+          // let Beringei to take a rest for a little bit.
+          continueOperation = !stopping_.wait_for(
+              lock, std::chrono::seconds(kSleepBetweenRetrySecs), [this]() {
+                return stopRequests_.load();
+              });
+        }
+      } while (continueOperation);
 
       if (!continueOperation) {
         LOG(INFO) << "Operation stopped by the caller or a timeout was reached";
@@ -523,6 +552,7 @@ void BeringeiNetworkClient::addCacheEntry(
 
 void BeringeiNetworkClient::stopRequests() {
   stopRequests_ = true;
+  stopping_.notify_all();
 }
 
 std::string BeringeiNetworkClient::getServiceName() {
