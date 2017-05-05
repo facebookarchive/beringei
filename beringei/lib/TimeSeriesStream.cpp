@@ -56,7 +56,8 @@ void TimeSeriesStream::reset() {
   previousValueTrailingZeros_ = 0;
 
   // Do not reset the `prevTimestamp_` because it is still useful for
-  // the callers and never actually used when data_ is empty.
+  // the callers. When data_ is empty, it is used only to enforce the
+  // minTimestampDelta check across buckets.
 }
 
 uint32_t TimeSeriesStream::size() {
@@ -100,15 +101,6 @@ bool TimeSeriesStream::append(
 bool TimeSeriesStream::appendTimestamp(
     int64_t timestamp,
     int64_t minTimestampDelta) {
-  if (data_.empty()) {
-    // Store the first value as is
-    BitUtil::addValueToBitString(
-        timestamp, kBitsForFirstTimestamp, data_, numBits_);
-    prevTimestamp_ = timestamp;
-    prevTimestampDelta_ = kDefaultDelta;
-    return true;
-  }
-
   // Store a delta of delta for the rest of the values in one of the
   // following ways
   //
@@ -119,8 +111,19 @@ bool TimeSeriesStream::appendTimestamp(
   // '1111' followed by a value length of 32
 
   int64_t delta = timestamp - prevTimestamp_;
-  if (delta < minTimestampDelta) {
+
+  // Skip the minTimestampDelta check for the first timestamp.
+  if (delta < minTimestampDelta && prevTimestamp_ != 0) {
     return false;
+  }
+
+  if (data_.empty()) {
+    // Store the first value as is
+    BitUtil::addValueToBitString(
+        timestamp, kBitsForFirstTimestamp, data_, numBits_);
+    prevTimestamp_ = timestamp;
+    prevTimestampDelta_ = kDefaultDelta;
+    return true;
   }
 
   int64_t deltaOfDelta = delta - prevTimestampDelta_;

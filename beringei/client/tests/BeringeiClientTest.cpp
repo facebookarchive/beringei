@@ -135,7 +135,7 @@ class BeringeiClientTest : public testing::Test {
 
     for (int i = 19; i < 22; i++) {
       TimeValuePair tv;
-      tv.unixTime = i;
+      tv.unixTime = i * minTimestampDelta;
       tv.value = i;
       b1.put(i, tv, &storage, 0, nullptr);
       resultVec[0].second.push_back(tv);
@@ -143,7 +143,7 @@ class BeringeiClientTest : public testing::Test {
 
     for (int i = 19; i < 22; i++) {
       TimeValuePair tv;
-      tv.unixTime = i + 7;
+      tv.unixTime = (i + 7) * minTimestampDelta;
       tv.value = i;
       b2.put(i + 7, tv, &storage, 0, nullptr);
       resultVec[1].second.push_back(tv);
@@ -212,6 +212,10 @@ class BeringeiClientTest : public testing::Test {
 
   facebook::gorilla::Key k1;
   facebook::gorilla::Key k2;
+
+  // This must match default value for FLAGS_mintimestampdelta.
+  // It ensures we do not drop any pairs inserted via put() in Setup()
+  const uint32_t minTimestampDelta = 30;
 };
 
 // PUTS
@@ -361,8 +365,9 @@ TEST_F(BeringeiClientTest, GetPoints) {
   }
 
   auto fullReq = getReq;
-  fullReq.begin = 19;
-  fullReq.end = 29;
+  // range below must match that used in BeringeiClientTest::SetUp
+  fullReq.begin = 19 * minTimestampDelta;
+  fullReq.end = 29 * minTimestampDelta;
   result.clear();
   beringeiClient->get(fullReq, result);
   ASSERT_EQ(resultVec.size(), result.size());

@@ -124,3 +124,69 @@ TEST(BucketedTimeSeriesTest2, QueriedBucketsAgo) {
   // New bucket started after last get
   ASSERT_EQ(1, bucket.getQueriedBucketsAgo());
 }
+
+TEST(BucketedTimeSeriesTest2, MinTimestampDeltaCheck) {
+  BucketedTimeSeries bucket;
+  bucket.reset(5);
+  BucketStorage storage(5, 0, "");
+
+  uint32_t timeSeriesId = 0;
+  uint16_t* timeSeriesCategory = nullptr;
+  uint32_t defaultMinTimestampDelta = 30;
+  uint32_t bucketId;
+  TimeValuePair tvPair;
+
+  // Attempt to insert first pair in first bucket must always pass
+  bucketId = 1;
+  tvPair.unixTime = 5;
+  ASSERT_EQ(
+      true,
+      bucket.put(bucketId, tvPair, &storage, timeSeriesId, timeSeriesCategory));
+  // Attempt to insert a pair in same bucket with zero delta should fail
+  tvPair.unixTime = 5;
+  ASSERT_EQ(
+      false,
+      bucket.put(bucketId, tvPair, &storage, timeSeriesId, timeSeriesCategory));
+  // Attempt to insert a pair in same bucket with insufficient delta should fail
+  tvPair.unixTime += defaultMinTimestampDelta - 1;
+  ASSERT_EQ(
+      false,
+      bucket.put(bucketId, tvPair, &storage, timeSeriesId, timeSeriesCategory));
+  // Attempt to insert a pair in same bucket with sufficient delta should pass
+  tvPair.unixTime += 1;
+  ASSERT_EQ(
+      true,
+      bucket.put(bucketId, tvPair, &storage, timeSeriesId, timeSeriesCategory));
+  // Attempt to insert a pair in same bucket with > sufficient delta should pass
+  tvPair.unixTime += defaultMinTimestampDelta + 1;
+  ASSERT_EQ(
+      true,
+      bucket.put(bucketId, tvPair, &storage, timeSeriesId, timeSeriesCategory));
+
+  bucketId = 2;
+  // Attempt to insert a pair in next bucket with zero delta should fail
+  tvPair.unixTime += 0;
+  ASSERT_EQ(
+      false,
+      bucket.put(bucketId, tvPair, &storage, timeSeriesId, timeSeriesCategory));
+  // Attempt to insert a pair in next bucket with insufficient delta should fail
+  tvPair.unixTime += defaultMinTimestampDelta - 1;
+  ASSERT_EQ(
+      false,
+      bucket.put(bucketId, tvPair, &storage, timeSeriesId, timeSeriesCategory));
+  // Attempt to insert a pair in next bucket with sufficient delta should pass
+  tvPair.unixTime += 1;
+  ASSERT_EQ(
+      true,
+      bucket.put(bucketId, tvPair, &storage, timeSeriesId, timeSeriesCategory));
+  // Attempt to insert a pair in same bucket with insufficient delta should fail
+  tvPair.unixTime += 1;
+  ASSERT_EQ(
+      false,
+      bucket.put(bucketId, tvPair, &storage, timeSeriesId, timeSeriesCategory));
+  // Attempt to insert a pair in same bucket with sufficient delta should pass
+  tvPair.unixTime += defaultMinTimestampDelta;
+  ASSERT_EQ(
+      true,
+      bucket.put(bucketId, tvPair, &storage, timeSeriesId, timeSeriesCategory));
+}
