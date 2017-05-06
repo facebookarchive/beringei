@@ -27,12 +27,12 @@ static const std::string kMemoryTotal = "gorilla.memory_total";
 
 SimpleMemoryUsageGuard::SimpleMemoryUsageGuard()
     : isFreeMemoryRatioLow_(false), memoryStatsUpdateRunner_() {
+  memLimitToEnforceKb_ = fLU64::FLAGS_soft_memory_cap_mb * 1024;
   memoryStatsUpdateRunner_.addFunction(
       std::bind(&SimpleMemoryUsageGuard::updateMemoryStats, this),
       kMemoryStatsUpdateInterval,
       "updateMemoryStats");
   memoryStatsUpdateRunner_.start();
-  memLimitToEnforceKb_ = fLU64::FLAGS_soft_memory_cap_mb * 1024;
 }
 
 bool SimpleMemoryUsageGuard::weAreLowOnMemory() {
