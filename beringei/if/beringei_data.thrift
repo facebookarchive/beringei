@@ -17,8 +17,8 @@ struct Key {
 
 // getData structs
 enum Compression {
-  NONE,
-  ZLIB,
+  NONE = 0,
+  ZLIB = 1,
 }
 
 // DO NOT interact with this struct directly. Feed it into TimeSeries.h.
@@ -29,14 +29,14 @@ struct TimeSeriesBlock {
 }
 
 enum StatusCode {
-  OK,
-  DONT_OWN_SHARD,
-  KEY_MISSING,
-  RPC_FAIL,
-  SHARD_IN_PROGRESS,
-  BUCKET_NOT_FINALIZED,
-  ZIPPY_STORAGE_FAIL,
-  MISSING_TOO_MUCH_DATA,
+  OK = 0,
+  DONT_OWN_SHARD = 1,
+  KEY_MISSING = 2,
+  RPC_FAIL = 3,
+  SHARD_IN_PROGRESS = 4,
+  BUCKET_NOT_FINALIZED = 5,
+  ZIPPY_STORAGE_FAIL = 6,
+  MISSING_TOO_MUCH_DATA = 7,
 }
 
 struct TimeSeriesData {
