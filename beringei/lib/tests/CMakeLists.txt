@@ -14,6 +14,7 @@ add_library(
     TestDataLoader.cpp
     TestMain.cpp
 )
+add_dependencies(beringei_test_util gtest_tp)
 
 add_executable(
     beringei_core_test_bin

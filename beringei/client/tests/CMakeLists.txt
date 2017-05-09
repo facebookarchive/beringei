@@ -14,6 +14,8 @@ add_executable(
     RequestBatchingQueueTest.cpp
     TestMain.cpp
 )
+add_dependencies(beringei_client_test_bin gtest_tp)
+
 target_link_libraries(
     beringei_client_test_bin
 
