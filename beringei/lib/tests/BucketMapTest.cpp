@@ -45,7 +45,7 @@ class BucketMapTest : public testing::Test {
   void test(BucketMap& map) {
     TimeValuePair tv;
     tv.value = 100.0;
-    tv.unixTime = map.timestamp(0);
+    tv.unixTime = map.timestamp(1);
 
     // First insertion is 3x as long as bumping counters.
     gorilla::Timer timer(true);
@@ -61,12 +61,17 @@ class BucketMapTest : public testing::Test {
       map.put(keyList_.testStr(i), tv, 0);
     }
     LOG(INFO) << "INSERT 2 : " << timer.get();
-    // sleep(10);
 
+    map.finalizeBuckets(1);
+
+    testReads(map);
+  }
+
+  void testReads(BucketMap& map) {
     // Reads are on par with writes.
     typename BucketedTimeSeries::Output out;
     out.reserve(kKeys);
-    timer.reset();
+    gorilla::Timer timer(true);
     for (int i = 0; i < kKeys; i++) {
       auto row = map.get(keyList_.testStr(i));
       ASSERT_NE(nullptr, row.get());
@@ -161,8 +166,59 @@ TEST_F(BucketMapTest, Reload) {
 
   auto keyWriter = std::make_shared<KeyListWriter>(dir.dirname(), 100);
   keyWriter->startShard(10);
+  {
+    // Create a new one, reading the keys from disk.
+    BucketMap map(
+        6,
+        4 * kGorillaSecondsPerHour,
+        10,
+        dir.dirname(),
+        keyWriter,
+        bucketLogWriter,
+        BucketMap::OWNED);
+    map.setState(BucketMap::PRE_UNOWNED);
+    map.setState(BucketMap::UNOWNED);
 
-  // Create a new one, reading the keys from disk.
+    gorilla::Timer timer(true);
+    map.setState(BucketMap::PRE_OWNED);
+    map.readKeyList();
+    map.readData();
+    while (map.readBlockFiles()) {
+    }
+    LOG(INFO) << "READ FROM DISK : " << timer.get();
+
+    std::vector<BucketMap::Item> items;
+    map.getEverything(items);
+
+    std::set<std::string> keySet;
+    for (auto& item : items) {
+      if (item) {
+        keySet.insert(item->first);
+      }
+    }
+
+    for (int i = 0; i < kKeys; i++) {
+      EXPECT_GT(keySet.count(keyList_.testStr(i)), 0)
+          << "testStr(" << i << ") = " << keyList_.testStr(i);
+    }
+
+    testReads(map);
+  }
+
+  // Now wipe the key_list file and reload the data yet again.
+  // We have to give KeyListWriter at least one key to make it replace the file.
+  bool one = false;
+  keyWriter->compact(10, [&one]() {
+    if (!one) {
+      one = true;
+      return std::tuple<uint32_t, const char*, uint16_t>{0, "a_key", 0};
+    }
+    return std::tuple<uint32_t, const char*, uint16_t>{0, nullptr, 0};
+  });
+
+  // Read it all again.
+  // This time, insert a point before reading blocks. This point should not have
+  // older data.
   BucketMap map(
       6,
       4 * kGorillaSecondsPerHour,
@@ -177,23 +233,34 @@ TEST_F(BucketMapTest, Reload) {
   gorilla::Timer timer(true);
   map.setState(BucketMap::PRE_OWNED);
   map.readKeyList();
-  map.setState(BucketMap::OWNED);
+  map.readData();
+
+  // Add a point. This will get assigned an ID that still has block
+  // data on disk.
+  TimeValuePair tv;
+  tv.value = 100.0;
+  tv.unixTime = map.timestamp(2);
+  map.put("another_key", tv, 0);
+
+  while (map.readBlockFiles()) {
+  }
   LOG(INFO) << "READ FROM DISK : " << timer.get();
 
-  std::vector<BucketMap::Item> items;
-  map.getEverything(items);
-
-  std::set<std::string> keySet;
-  for (auto& item : items) {
-    if (item) {
-      keySet.insert(item->first);
+  // Make sure we have only the keys we expect.
+  std::vector<BucketMap::Item> everything;
+  map.getEverything(everything);
+  int have = 0;
+  for (auto& thing : everything) {
+    if (thing.get()) {
+      have++;
     }
   }
+  ASSERT_EQ(2, have); // "a_key" and "another_key".
 
-  for (int i = 0; i < kKeys; i++) {
-    EXPECT_GT(keySet.count(keyList_.testStr(i)), 0)
-        << "testStr(" << i << ") = " << keyList_.testStr(i);
-  }
+  // This key should not be associated with old data.
+  BucketedTimeSeries::Output o;
+  map.get("another_key")->second.get(0, map.timestamp(3), o, map.getStorage());
+  ASSERT_EQ(1, o.size());
 }
 
 TEST_F(BucketMapTest, Load) {

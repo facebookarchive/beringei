@@ -289,6 +289,8 @@ bool BucketMap::setState(BucketMap::State state) {
     keyWriter_->stopShard(shardId_);
     logWriter_->stopShard(shardId_);
   } else if (state == OWNED) {
+    tmpVec.swap(rowsFromDisk_);
+
     // Calling this won't hurt even if the timer isn't running.
     addTimer_.stop();
   }
@@ -538,7 +540,8 @@ bool BucketMap::readBlockFiles() {
     folly::RWSpinLock::ReadHolder guard(lock_);
 
     for (int i = 0; i < timeSeriesIds.size(); i++) {
-      if (timeSeriesIds[i] < rows_.size() && rows_[timeSeriesIds[i]].get()) {
+      if (timeSeriesIds[i] < rowsFromDisk_.size() &&
+          rowsFromDisk_[timeSeriesIds[i]].get()) {
         rows_[timeSeriesIds[i]]->second.setDataBlock(
             position, n_, storageIds[i]);
       } else {
@@ -623,6 +626,8 @@ void BucketMap::readKeyList() {
       freeList_.push(i);
     }
   }
+
+  getEverything(rowsFromDisk_);
 
   LOG(INFO) << "Done reading keys for shard " << shardId_;
   GorillaStatsManager::addStatValue(
