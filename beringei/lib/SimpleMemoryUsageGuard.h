@@ -30,7 +30,6 @@ class SimpleMemoryUsageGuard : public MemoryUsageGuardIf {
 
   std::atomic<bool> isFreeMemoryRatioLow_;
   folly::FunctionScheduler memoryStatsUpdateRunner_;
-  int64_t memLimitToEnforceKb_;
 };
 }
 } // facebook:gorilla

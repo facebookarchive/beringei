@@ -10,7 +10,7 @@
 #include "SimpleMemoryUsageGuard.h"
 
 #include <gflags/gflags.h>
-#include <sys/resource.h>
+#include <fstream>
 #include "beringei/lib/GorillaStatsManager.h"
 
 DEFINE_uint64(
@@ -18,20 +18,24 @@ DEFINE_uint64(
     0, // unlimited
     "Soft memory cap for gorilla (mb).  Memory usage may exceed this cap, "
     "but new time series creation may be blocked. 0 indicates unlimited.");
+
 namespace facebook {
 namespace gorilla {
 
 static const std::chrono::seconds kMemoryStatsUpdateInterval(1);
 
-static const std::string kMemoryTotal = "gorilla.memory_total";
+static constexpr size_t kBytesPerMB = 1024 * 1024;
+static const std::string kMemoryTotal = "gorilla.memory_total_mb";
+static const std::string kStatFile = "/proc/self/statm";
 
 SimpleMemoryUsageGuard::SimpleMemoryUsageGuard()
     : isFreeMemoryRatioLow_(false), memoryStatsUpdateRunner_() {
-  memLimitToEnforceKb_ = fLU64::FLAGS_soft_memory_cap_mb * 1024;
   memoryStatsUpdateRunner_.addFunction(
       std::bind(&SimpleMemoryUsageGuard::updateMemoryStats, this),
       kMemoryStatsUpdateInterval,
       "updateMemoryStats");
+  GorillaStatsManager::addStatExportType(
+      kMemoryTotal, GorillaStatsExportType::AVG);
   memoryStatsUpdateRunner_.start();
 }
 
@@ -40,23 +44,29 @@ bool SimpleMemoryUsageGuard::weAreLowOnMemory() {
 }
 
 void SimpleMemoryUsageGuard::updateMemoryStats() {
-  if (memLimitToEnforceKb_ == 0) {
+  if (FLAGS_soft_memory_cap_mb == 0) {
     isFreeMemoryRatioLow_ = false;
     return;
   }
 
-  struct rusage currentUsage;
+  size_t vPages, rPages;
+  std::ifstream statm(kStatFile);
+  statm >> vPages >> rPages; // Ignore the rest of the fields.
 
-  int retVal = getrusage(RUSAGE_SELF, &currentUsage);
-  if (retVal != 0) {
-    LOG(ERROR) << "Failed to retrieve usage info with error code: " << retVal;
+  if (!statm.good()) {
+    LOG(ERROR) << "Failed to update memory usage";
+    statm.close();
     return;
   }
 
-  long maxRssInKb = currentUsage.ru_maxrss;
-  GorillaStatsManager::addStatValue(kMemoryTotal, maxRssInKb);
+  statm.close();
 
-  isFreeMemoryRatioLow_ = maxRssInKb >= memLimitToEnforceKb_;
+  size_t rssMB = rPages * getpagesize() / kBytesPerMB;
+
+  GorillaStatsManager::setCounter(kMemoryTotal, rssMB);
+  GorillaStatsManager::addStatValue(kMemoryTotal, rssMB);
+
+  isFreeMemoryRatioLow_ = rssMB >= FLAGS_soft_memory_cap_mb;
 }
 }
 } // facebook:gorilla
