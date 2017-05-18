@@ -18,6 +18,14 @@
 #include "beringei/lib/TimeSeries.h"
 
 DECLARE_int32(mintimestampdelta);
+DEFINE_bool(
+    gorilla_compare_reads,
+    false,
+    "whether to compare the data read from different gorilla services");
+DEFINE_double(
+    gorilla_compare_epsilon,
+    0.1,
+    "the allowed error between data for comparison");
 
 namespace {
 template <typename T>
@@ -70,10 +78,65 @@ struct DeltaInserter
   std::vector<facebook::gorilla::TimeValuePair>* data_;
   int64_t delta_;
 };
+
+// May be slightly more expensive.
+struct DeltaCompareInserter
+    : public std::iterator<std::output_iterator_tag, void, void, void, void> {
+  using container_type = std::vector<facebook::gorilla::TimeValuePair>;
+
+  DeltaCompareInserter(
+      std::vector<facebook::gorilla::TimeValuePair>& data,
+      int64_t delta,
+      double epsilon,
+      int64_t& mismatches)
+      : data_(&data),
+        delta_(delta),
+        epsilon_(epsilon),
+        mismatches_(mismatches) {}
+
+  DeltaCompareInserter& operator=(const facebook::gorilla::TimeValuePair& tv) {
+    if (data_->empty() || (tv.unixTime - data_->back().unixTime) >= delta_) {
+      data_->push_back(tv);
+    } else if (
+        std::abs(tv.value - data_->back().value) >
+        std::max(epsilon_ * std::abs(data_->back().value), epsilon_)) {
+      mismatches_++;
+    }
+    return *this;
+  }
+
+  DeltaCompareInserter& operator=(facebook::gorilla::TimeValuePair&& tv) {
+    if (data_->empty() || (tv.unixTime - data_->back().unixTime) >= delta_) {
+      data_->push_back(std::move(tv));
+    } else if (
+        std::abs(tv.value - data_->back().value) >
+        std::max(epsilon_ * std::abs(data_->back().value), epsilon_)) {
+      mismatches_++;
+    }
+    return *this;
+  }
+
+  DeltaCompareInserter& operator*() {
+    return *this;
+  }
+  DeltaCompareInserter& operator++() {
+    return *this;
+  }
+  DeltaCompareInserter& operator++(int) {
+    return *this;
+  }
+
+  std::vector<facebook::gorilla::TimeValuePair>* data_;
+  int64_t delta_;
+  double epsilon_;
+  int64_t& mismatches_;
+};
 }
 
 namespace facebook {
 namespace gorilla {
+
+static const std::string kMismatchesKey = ".gorilla_client.mismatches";
 
 BeringeiGetResultCollector::BeringeiGetResultCollector(
     size_t size,
@@ -86,6 +149,7 @@ BeringeiGetResultCollector::BeringeiGetResultCollector(
       remainingKeys_(size),
       complete_(size),
       drops_(1ull << services),
+      mismatches_(1ull << services),
       done_(false),
       result_(size) {
   // This would require an insane amount of memory anyway, but at least make
@@ -182,16 +246,33 @@ BeringeiGetResult BeringeiGetResultCollector::finalize(
     }
   }
 
-  for (int i = 0; i < numServices_; i++) {
+  int64_t maxMismatches = 0;
+  for (size_t i = 0; i < numServices_; i++) {
     GorillaStatsManager::addStatValue(
-        ".gorilla_client.missing_points." + serviceNames[i],
-        drops[i],
-        GorillaStatsExportType::SUM);
+        ".gorilla_client.missing_points." + serviceNames[i], drops[i], SUM);
     GorillaStatsManager::addStatValue(
-        ".gorilla_client.failed_keys." + serviceNames[i],
-        missings[i],
-        GorillaStatsExportType::SUM);
+        ".gorilla_client.failed_keys." + serviceNames[i], missings[i], SUM);
+
+    if (FLAGS_gorilla_compare_reads) {
+      if (maxMismatches < mismatches_[1ull << i]) {
+        maxMismatches = mismatches_[1ull << i];
+      }
+    }
   }
+
+  if (FLAGS_gorilla_compare_reads) {
+    if (maxMismatches > 0) {
+      GorillaStatsManager::addStatValue(kMismatchesKey, maxMismatches, SUM);
+      GorillaStatsManager::addStatValue(kMismatchesKey, 1, COUNT);
+    }
+  }
+
+  int64_t numDatapoints = 0;
+  for (auto& ts : result_.results) {
+    numDatapoints += ts.size();
+  }
+  GorillaStatsManager::addStatValue(
+      ".gorilla_client.num_datapoints", numDatapoints, SUM);
 
   result_.memoryEstimate = sizeof(this) + vectorMemory(result_.results) +
       vectorMemory(complete_) + vectorMemory(drops_);
@@ -229,18 +310,36 @@ void BeringeiGetResultCollector::merge(
   // Merge the results.
   std::vector<TimeValuePair> newData;
   newData.reserve(std::max(haveData.size(), resultData.size()));
-  std::merge(
-      haveData.begin(),
-      haveData.end(),
-      resultData.begin(),
-      resultData.end(),
-      DeltaInserter(newData, FLAGS_mintimestampdelta));
+
+  if (FLAGS_gorilla_compare_reads) {
+    int64_t mismatches = 0;
+    std::merge(
+        haveData.begin(),
+        haveData.end(),
+        resultData.begin(),
+        resultData.end(),
+        DeltaCompareInserter(
+            newData,
+            FLAGS_mintimestampdelta,
+            FLAGS_gorilla_compare_epsilon,
+            mismatches));
+    if (complete_[i].count == 1) {
+      mismatches_[complete_[i].received.to_ulong()] += mismatches;
+    }
+    mismatches_[1ull << service] += mismatches;
+  } else {
+    std::merge(
+        haveData.begin(),
+        haveData.end(),
+        resultData.begin(),
+        resultData.end(),
+        DeltaInserter(newData, FLAGS_mintimestampdelta));
+  }
 
   // Count the un-matched data points.
   drops_[complete_[i].received.to_ulong()] +=
       (newData.size() - haveData.size());
   drops_[1ull << service] += (newData.size() - resultData.size());
-
   std::swap(haveData, newData);
 }
 }

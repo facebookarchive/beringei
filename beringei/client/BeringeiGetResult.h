@@ -67,6 +67,11 @@ class BeringeiGetResultCollector {
       bool validate,
       const std::vector<std::string>& serviceNames);
 
+  // Use in tests only.
+  const std::vector<int64_t>& getMismatchesForTesting() const {
+    return mismatches_;
+  }
+
  private:
   // Add results.
   void merge(size_t i, size_t service, const TimeSeriesData& result);
@@ -89,6 +94,9 @@ class BeringeiGetResultCollector {
 
   // How much data was missing from each service.
   std::vector<int> drops_;
+
+  // Mismatches per each service's first merge, indexed by 1ull << service.
+  std::vector<int64_t> mismatches_;
 
   folly::fibers::TimedMutex lock_;
   bool done_;

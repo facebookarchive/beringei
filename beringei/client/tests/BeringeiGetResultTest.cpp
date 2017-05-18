@@ -18,6 +18,9 @@ using namespace facebook::gorilla;
 using namespace folly;
 using namespace std;
 
+DECLARE_bool(gorilla_compare_reads);
+DECLARE_double(gorilla_compare_epsilon);
+
 class BeringeiGetResultTest : public testing::Test {
  protected:
   void SetUp() override {
@@ -36,7 +39,7 @@ class BeringeiGetResultTest : public testing::Test {
   // Put data points into a TimeSeriesData object.
   // Allow no more than 3 points per TimeSeriesBlock to make sure we exercise
   // all the deserialization logic.
-  TimeSeriesData timeSeriesData(const vector<pair<int, int>>& data) {
+  TimeSeriesData timeSeriesData(const vector<pair<int, double>>& data) {
     const int perBlock = 3;
 
     TimeSeriesData out;
@@ -58,7 +61,7 @@ class BeringeiGetResultTest : public testing::Test {
   }
 
   GetDataResult result(
-      const vector<vector<pair<int, int>>>& data,
+      const vector<vector<pair<int, double>>>& data,
       StatusCode status) {
     GetDataResult r;
     r.results.reserve(data.size());
@@ -103,6 +106,45 @@ TEST_F(BeringeiGetResultTest, Merge) {
       {tvp(60, 1), tvp(118, 2), tvp(180, 3), tvp(239, 4)}};
 
   EXPECT_THAT(result.results, ContainerEq(expected));
+}
+
+TEST_F(BeringeiGetResultTest, MergeCompare) {
+  FLAGS_gorilla_compare_reads = true;
+  FLAGS_gorilla_compare_epsilon = 0.01;
+  BeringeiGetResultCollector collector(2, 3, 60, 240);
+
+  collector.addResults(
+      result(
+          {{{60, 100}, {180, 300}, {241, 400}},
+           {{60, 100}, {122, 180}, {180, 300}}},
+          StatusCode::OK),
+      {0, 1},
+      0);
+
+  collector.addResults(
+      result(
+          {{{60, 100}, {120, 200}, {182, 300}, {240, 400}},
+           {{61, 200}, {120, 200}, {181, 301}, {242, 420}}},
+          StatusCode::OK),
+      {0, 1},
+      1);
+
+  collector.addResults(
+      result(
+          {{{181, 350}}, {{60, 100}, {121, 180}, {182, 300}, {240, 400}}},
+          StatusCode::OK),
+      {0, 1},
+      2);
+
+  auto result = collector.finalize(true, {"", "", ""});
+
+  vector<vector<TimeValuePair>> expected = {
+      {tvp(60, 100), tvp(120, 200), tvp(180, 300), tvp(240, 400)},
+      {tvp(60, 100), tvp(120, 200), tvp(180, 300), tvp(240, 400)}};
+
+  EXPECT_THAT(result.results, ContainerEq(expected));
+  EXPECT_THAT(
+      collector.getMismatchesForTesting(), ElementsAre(0, 2, 2, 0, 2, 0, 0, 0));
 }
 
 TEST_F(BeringeiGetResultTest, Complete) {
