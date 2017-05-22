@@ -8,14 +8,13 @@
  */
 
 #include <gtest/gtest.h>
-#include <ext/hash_map>
+#include <unordered_map>
 
 #include <folly/String.h>
 #include "TestKeyList.h"
 
 #include "beringei/lib/CaseUtils.h"
 
-using __gnu_cxx::hash;
 using namespace ::testing;
 using namespace facebook::gorilla;
 
@@ -55,7 +54,7 @@ TEST(CaseUtilsTest, Perf) {
 }
 
 TEST(CaseUtilsTest, PerfComparison) {
-  __gnu_cxx::hash<const char*> hsh;
+  std::hash<std::string> hsh;
   TestKeyList keyList(kKeyListSize);
   size_t x = 0;
   for (int i = 0; i < kNumHashes; i++) {
