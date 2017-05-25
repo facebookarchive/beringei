@@ -15,6 +15,7 @@
 #include "beringei/lib/FileUtils.h"
 #include "beringei/lib/GorillaStatsManager.h"
 #include "beringei/lib/GorillaTimeConstants.h"
+#include "beringei/lib/TimeSeries.h"
 #include "beringei/lib/tests/MockMemoryUsageGuard.h"
 #include "beringei/service/BeringeiServiceHandler.h"
 
@@ -91,7 +92,6 @@ class BeringeiServiceHandlerTest : public testing::Test {
     FLAGS_create_directories = true;
     FLAGS_buckets = 6;
     FLAGS_bucket_size = 4 * kGorillaSecondsPerHour;
-    fLI::FLAGS_allowed_timestamp_ahead = kGorillaSecondsPerDay;
     FLAGS_disable_shard_refresh = true;
   }
 
@@ -172,6 +172,47 @@ class BeringeiServiceHandlerTest : public testing::Test {
     EXPECT_EQ(0, result.data.size());
   }
 
+  void checkGeneratedGetResults(GetDataResult& result, int numKeys, int total) {
+    ASSERT_EQ(numKeys, result.results.size());
+    for (int i = 0; i < numKeys; i++) {
+      EXPECT_NE(0, result.results[i].data.size());
+      int sum = 0;
+      for (auto& block : result.results[i].data) {
+        sum += block.count;
+      }
+      EXPECT_EQ(total, sum);
+      EXPECT_EQ(StatusCode::OK, result.results[i].status);
+    }
+  }
+
+  void checkGeneratedGetResults(
+      GetDataResult& result,
+      int numKeys,
+      int64_t begin,
+      int64_t end) {
+    checkGeneratedGetResults(result, numKeys, (end - begin) / 60 + 1);
+  }
+
+  void checkAtLeastOneGetResults(GetDataResult& result, int numKeys) {
+    ASSERT_EQ(numKeys, result.results.size());
+    for (int i = 0; i < numKeys; i++) {
+      ASSERT_NE(0, result.results[i].data.size());
+      EXPECT_NE(0, result.results[i].data[0].count);
+      EXPECT_EQ(StatusCode::OK, result.results[i].status);
+    }
+  }
+
+  void checkBadGeneratedGetResults(
+      GetDataResult& result,
+      int numKeys,
+      StatusCode code) {
+    ASSERT_EQ(numKeys, result.results.size());
+    for (int i = 0; i < numKeys; i++) {
+      EXPECT_EQ(0, result.results[i].data.size());
+      EXPECT_EQ(code, result.results[i].status);
+    }
+  }
+
   void dropShardAndWait(BeringeiServiceHandler* handler, int64_t shardId) {
     handler->shards_.dropShardForTests(shardId);
   }
@@ -194,8 +235,11 @@ class BeringeiServiceHandlerTest : public testing::Test {
     return handler->shards_.addShardAsync(shardId);
   }
 
-  void
-  shardTest(BeringeiServiceHandler* handler, int64_t shardId, bool expectData) {
+  void shardTest(
+      BeringeiServiceHandler* handler,
+      int64_t shardId,
+      bool expectData,
+      bool allData = true) {
     int64_t startTime = time(nullptr) - 1800;
     int64_t endTime = startTime + 1800;
     string keyPrefix = "key";
@@ -216,38 +260,40 @@ class BeringeiServiceHandlerTest : public testing::Test {
         generateGetRequest(1000, startTime, endTime, keyPrefix, shardId);
     handler->getData(result, std::move(getRequest));
 
-    ASSERT_EQ(1000, result.results.size());
-    for (int i = 0; i < 1000; i++) {
-      if (expectData) {
-        EXPECT_NE(0, result.results[i].data.size());
-        EXPECT_EQ(StatusCode::OK, result.results[i].status);
+    if (expectData) {
+      if (allData) {
+        checkGeneratedGetResults(result, 1000, startTime, endTime);
       } else {
-        EXPECT_EQ(0, result.results[i].data.size());
-        EXPECT_EQ(StatusCode::DONT_OWN_SHARD, result.results[i].status);
+        checkAtLeastOneGetResults(result, 1000);
       }
+    } else {
+      checkBadGeneratedGetResults(result, 1000, StatusCode::DONT_OWN_SHARD);
     }
   }
+};
+
+class BeringeiServiceHandlerForTest : public BeringeiServiceHandler {
+ public:
+  explicit BeringeiServiceHandlerForTest(bool adjustTimestamps = false)
+      : BeringeiServiceHandler(
+            std::make_shared<MockConfigurationAdapter>(),
+            std::make_shared<MockMemoryUsageGuard>(),
+            "mock_beringei_service",
+            9999,
+            adjustTimestamps) {}
 };
 
 TEST_F(BeringeiServiceHandlerTest, EmptyTimeSeries) {
   TemporaryDirectory dir("beringei_data_block");
   FLAGS_data_directory = dir.dirname();
 
-  BeringeiServiceHandler handler(
-      std::make_shared<MockConfigurationAdapter>(),
-      std::make_shared<MockMemoryUsageGuard>(),
-      "mock_beringei_service",
-      9999);
+  BeringeiServiceHandlerForTest handler;
 
   GetDataResult result;
 
   auto request = generateGetRequest(1000, 1000, 9999);
   handler.getData(result, std::move(request));
-  ASSERT_EQ(1000, result.results.size());
-  for (int i = 0; i < 1000; i++) {
-    EXPECT_EQ(0, result.results[i].data.size());
-    EXPECT_EQ(StatusCode::KEY_MISSING, result.results[i].status);
-  }
+  checkBadGeneratedGetResults(result, 1000, StatusCode::KEY_MISSING);
 
   // Run again to get better performance numbers.
   // The first run is much slower than the seconds run because
@@ -261,11 +307,7 @@ TEST_F(BeringeiServiceHandlerTest, GetShardDataBucketTimeElapse) {
   FLAGS_data_directory = dir.dirname();
   FLAGS_allowed_timestamp_ahead = kGorillaSecondsPerHour * 30;
 
-  BeringeiServiceHandler handler(
-      std::make_shared<MockConfigurationAdapter>(),
-      std::make_shared<MockMemoryUsageGuard>(),
-      "mock_beringei_service",
-      9999);
+  BeringeiServiceHandlerForTest handler;
 
   // FLAGS_bucket_size datapoints shift one bucket back.
   int64_t oneBucketBack = time(nullptr) - FLAGS_bucket_size;
@@ -305,10 +347,7 @@ TEST_F(BeringeiServiceHandlerTest, GetShardDataBucketTimeElapse) {
   auto getRequest =
       generateGetRequest(1000, startTime, endTime, keyPrefix, shardId);
   handler.getData(result, std::move(getRequest));
-
-  EXPECT_EQ(1000, result.results.size());
-  EXPECT_EQ(1, result.results[0].data.size());
-  EXPECT_NE(0, result.results[0].data[0].count);
+  checkGeneratedGetResults(result, 1000, startTime, endTime);
 
   handler.finalizeBucket(endTime);
   GetShardDataBucketResult getDataResultAfter;
@@ -338,11 +377,7 @@ TEST_F(BeringeiServiceHandlerTest, GetShardDataTimeElapse) {
   FLAGS_data_directory = dir.dirname();
   FLAGS_allowed_timestamp_ahead = kGorillaSecondsPerHour * 30;
 
-  BeringeiServiceHandler handler(
-      std::make_shared<MockConfigurationAdapter>(),
-      std::make_shared<MockMemoryUsageGuard>(),
-      "mock_beringei_service",
-      9999);
+  BeringeiServiceHandlerForTest handler;
 
   // FLAGS_bucket_size datapoints, shift one bucket back.
   int64_t oneBucketBack = time(nullptr) - FLAGS_bucket_size;
@@ -361,10 +396,7 @@ TEST_F(BeringeiServiceHandlerTest, GetShardDataTimeElapse) {
       generateGetRequest(1000, startTime, endTime, keyPrefix, shardId);
   // Data is queried, so it should be recent.
   handler.getData(result, std::move(getRequest));
-
-  EXPECT_EQ(1000, result.results.size());
-  EXPECT_EQ(1, result.results[0].data.size());
-  EXPECT_NE(0, result.results[0].data[0].count);
+  checkGeneratedGetResults(result, 1000, startTime, endTime);
 
   handler.finalizeBucket(endTime);
   GetShardDataBucketResult getDataResult;
@@ -425,11 +457,7 @@ TEST_F(BeringeiServiceHandlerTest, GetShardDataBucket) {
   FLAGS_data_directory = dir.dirname();
   FLAGS_allowed_timestamp_ahead = kGorillaSecondsPerHour * 30;
 
-  BeringeiServiceHandler handler(
-      std::make_shared<MockConfigurationAdapter>(),
-      std::make_shared<MockMemoryUsageGuard>(),
-      "mock_beringei_service",
-      9999);
+  BeringeiServiceHandlerForTest handler;
 
   // FLAGS_bucket_size datapoints shift one bucket back.
   int64_t oneBucketBack = time(nullptr) - FLAGS_bucket_size;
@@ -492,14 +520,10 @@ TEST_F(BeringeiServiceHandlerTest, OneHourOfOneMinuteData) {
   TemporaryDirectory dir("beringei_data_block");
   FLAGS_data_directory = dir.dirname();
 
-  BeringeiServiceHandler handler(
-      std::make_shared<MockConfigurationAdapter>(),
-      std::make_shared<MockMemoryUsageGuard>(),
-      "mock_beringei_service",
-      9999);
+  BeringeiServiceHandlerForTest handler;
 
-  int64_t startTime = time(nullptr) - 1800;
-  int64_t endTime = startTime + 1800;
+  int64_t startTime = time(nullptr) - kGorillaSecondsPerHour;
+  int64_t endTime = startTime + kGorillaSecondsPerHour;
 
   auto putRequest = generatePutRequest(1000, startTime, endTime);
   putDataPoints(handler, std::move(putRequest));
@@ -508,26 +532,14 @@ TEST_F(BeringeiServiceHandlerTest, OneHourOfOneMinuteData) {
   auto getRequest = generateGetRequest(1000, startTime, endTime);
   handler.getData(result, std::move(getRequest));
 
-  getRequest = generateGetRequest(1000, startTime, endTime);
-  handler.getData(result, std::move(getRequest));
-
-  ASSERT_EQ(1000, result.results.size());
-  for (int i = 0; i < 1000; i++) {
-    EXPECT_NE(0, result.results[i].data.size());
-    EXPECT_NE(0, result.results[i].data[0].count);
-    EXPECT_EQ(StatusCode::OK, result.results[i].status);
-  }
+  checkGeneratedGetResults(result, 1000, startTime, endTime);
 }
 
 TEST_F(BeringeiServiceHandlerTest, OldData) {
   TemporaryDirectory dir("beringei_data_block");
   FLAGS_data_directory = dir.dirname();
 
-  BeringeiServiceHandler handler(
-      std::make_shared<MockConfigurationAdapter>(),
-      std::make_shared<MockMemoryUsageGuard>(),
-      "mock_beringei_service",
-      9999);
+  BeringeiServiceHandlerForTest handler(true);
 
   int64_t now = time(nullptr);
   int64_t startTime = now - kGorillaSecondsPerHour * 2;
@@ -540,23 +552,14 @@ TEST_F(BeringeiServiceHandlerTest, OldData) {
   auto getRequest = generateGetRequest(10, now, now + kGorillaSecondsPerMinute);
   handler.getData(result, std::move(getRequest));
 
-  ASSERT_EQ(10, result.results.size());
-  for (int i = 0; i < 10; i++) {
-    EXPECT_NE(0, result.results[i].data.size());
-    EXPECT_NE(0, result.results[i].data[0].count);
-    EXPECT_EQ(StatusCode::OK, result.results[i].status);
-  }
+  checkGeneratedGetResults(result, 10, 1);
 }
 
 TEST_F(BeringeiServiceHandlerTest, DataInTheFuture) {
   TemporaryDirectory dir("beringei_data_block");
   FLAGS_data_directory = dir.dirname();
 
-  BeringeiServiceHandler handler(
-      std::make_shared<MockConfigurationAdapter>(),
-      std::make_shared<MockMemoryUsageGuard>(),
-      "mock_beringei_service",
-      9999);
+  BeringeiServiceHandlerForTest handler(true);
 
   int64_t startTime = time(nullptr) + FLAGS_allowed_timestamp_ahead;
   int64_t endTime = startTime + kGorillaSecondsPerMinute * 5;
@@ -568,23 +571,14 @@ TEST_F(BeringeiServiceHandlerTest, DataInTheFuture) {
   auto getRequest = generateGetRequest(10, startTime, endTime);
   handler.getData(result, std::move(getRequest));
 
-  ASSERT_EQ(10, result.results.size());
-  for (int i = 0; i < 10; i++) {
-    EXPECT_NE(0, result.results[i].data.size());
-    EXPECT_EQ(1, result.results[i].data[0].count);
-    EXPECT_EQ(StatusCode::OK, result.results[i].status);
-  }
+  checkGeneratedGetResults(result, 10, 1);
 }
 
 TEST_F(BeringeiServiceHandlerTest, DataAtTimeZero) {
   TemporaryDirectory dir("beringei_data_block");
   FLAGS_data_directory = dir.dirname();
 
-  BeringeiServiceHandler handler(
-      std::make_shared<MockConfigurationAdapter>(),
-      std::make_shared<MockMemoryUsageGuard>(),
-      "mock_beringei_service",
-      9999);
+  BeringeiServiceHandlerForTest handler(true);
 
   int64_t startTime = time(nullptr);
   int64_t endTime = startTime;
@@ -596,12 +590,7 @@ TEST_F(BeringeiServiceHandlerTest, DataAtTimeZero) {
   auto getRequest = generateGetRequest(10, startTime, endTime);
   handler.getData(result, std::move(getRequest));
 
-  ASSERT_EQ(10, result.results.size());
-  for (int i = 0; i < 10; i++) {
-    EXPECT_NE(0, result.results[i].data.size());
-    EXPECT_EQ(1, result.results[i].data[0].count);
-    EXPECT_EQ(StatusCode::OK, result.results[i].status);
-  }
+  checkGeneratedGetResults(result, 10, 1);
 }
 
 TEST_F(BeringeiServiceHandlerTest, TooLongKey) {
@@ -610,11 +599,8 @@ TEST_F(BeringeiServiceHandlerTest, TooLongKey) {
 
   string keyPrefix(500, '?');
 
-  BeringeiServiceHandler handler(
-      std::make_shared<MockConfigurationAdapter>(),
-      std::make_shared<MockMemoryUsageGuard>(),
-      "mock_beringei_service",
-      9999);
+  BeringeiServiceHandlerForTest handler;
+
   int64_t startTime = time(nullptr) - 1800;
   int64_t endTime = time(nullptr);
 
@@ -625,22 +611,14 @@ TEST_F(BeringeiServiceHandlerTest, TooLongKey) {
   auto getRequest = generateGetRequest(10, startTime, endTime, keyPrefix);
   handler.getData(result, std::move(getRequest));
 
-  ASSERT_EQ(10, result.results.size());
-  for (int i = 0; i < 10; i++) {
-    EXPECT_EQ(0, result.results[i].data.size());
-    EXPECT_EQ(StatusCode::KEY_MISSING, result.results[i].status);
-  }
+  checkBadGeneratedGetResults(result, 10, StatusCode::KEY_MISSING);
 }
 
 TEST_F(BeringeiServiceHandlerTest, DropShardWithData) {
   TemporaryDirectory dir("beringei_data_block");
   FLAGS_data_directory = dir.dirname();
 
-  BeringeiServiceHandler handler(
-      std::make_shared<MockConfigurationAdapter>(),
-      std::make_shared<MockMemoryUsageGuard>(),
-      "mock_beringei_service",
-      9999);
+  BeringeiServiceHandlerForTest handler;
 
   int64_t startTime = time(nullptr) - 1800;
   int64_t endTime = startTime + 1800;
@@ -658,22 +636,14 @@ TEST_F(BeringeiServiceHandlerTest, DropShardWithData) {
       generateGetRequest(1000, startTime, endTime, keyPrefix, shardId);
   handler.getData(result, std::move(getRequest));
 
-  ASSERT_EQ(1000, result.results.size());
-  for (int i = 0; i < 1000; i++) {
-    EXPECT_EQ(0, result.results[i].data.size());
-    EXPECT_EQ(StatusCode::DONT_OWN_SHARD, result.results[i].status);
-  }
+  checkBadGeneratedGetResults(result, 1000, StatusCode::DONT_OWN_SHARD);
 }
 
 TEST_F(BeringeiServiceHandlerTest, PutDataPointsToDroppedShard) {
   TemporaryDirectory dir("beringei_data_block");
   FLAGS_data_directory = dir.dirname();
 
-  BeringeiServiceHandler handler(
-      std::make_shared<MockConfigurationAdapter>(),
-      std::make_shared<MockMemoryUsageGuard>(),
-      "mock_beringei_service",
-      9999);
+  BeringeiServiceHandlerForTest handler;
   int64_t shardId = 14;
   dropShardAndWait(&handler, shardId);
 
@@ -693,11 +663,7 @@ TEST_F(BeringeiServiceHandlerTest, AddDataToDroppedShard) {
   TemporaryDirectory dir("beringei_data_block");
   FLAGS_data_directory = dir.dirname();
 
-  BeringeiServiceHandler handler(
-      std::make_shared<MockConfigurationAdapter>(),
-      std::make_shared<MockMemoryUsageGuard>(),
-      "mock_beringei_service",
-      9999);
+  BeringeiServiceHandlerForTest handler;
   int64_t shardId = 14;
   dropShardAndWait(&handler, shardId);
   shardTest(&handler, shardId, false);
@@ -707,11 +673,8 @@ TEST_F(BeringeiServiceHandlerTest, AddDroppedShardBack) {
   TemporaryDirectory dir("beringei_data_block");
   FLAGS_data_directory = dir.dirname();
 
-  BeringeiServiceHandler handler(
-      std::make_shared<MockConfigurationAdapter>(),
-      std::make_shared<MockMemoryUsageGuard>(),
-      "mock_beringei_service",
-      9999);
+  // Fatals if adjustTimestamps is off.
+  BeringeiServiceHandlerForTest handler(true);
 
   int64_t startTime = time(nullptr) - 1800;
   int64_t endTime = startTime + 1800;
@@ -724,18 +687,14 @@ TEST_F(BeringeiServiceHandlerTest, AddDroppedShardBack) {
 
   dropShardAndWait(&handler, shardId);
   addShardAndWait(&handler, shardId);
-  shardTest(&handler, shardId, true);
+  shardTest(&handler, shardId, true, false);
 }
 
 TEST_F(BeringeiServiceHandlerTest, SetShardsToOwnSingleShard) {
   TemporaryDirectory dir("beringei_data_block");
   FLAGS_data_directory = dir.dirname();
 
-  BeringeiServiceHandler handler(
-      std::make_shared<MockConfigurationAdapter>(),
-      std::make_shared<MockMemoryUsageGuard>(),
-      "mock_beringei_service",
-      9999);
+  BeringeiServiceHandlerForTest handler;
   setShardsAndWait(&handler, {14});
   shardTest(&handler, 13, false);
   shardTest(&handler, 14, true);
@@ -745,11 +704,7 @@ TEST_F(BeringeiServiceHandlerTest, SetShardsToDifferentSet) {
   TemporaryDirectory dir("beringei_data_block");
   FLAGS_data_directory = dir.dirname();
 
-  BeringeiServiceHandler handler(
-      std::make_shared<MockConfigurationAdapter>(),
-      std::make_shared<MockMemoryUsageGuard>(),
-      "mock_beringei_service",
-      9999);
+  BeringeiServiceHandlerForTest handler;
   setShardsAndWait(&handler, {14});
   setShardsAndWait(&handler, {13});
   shardTest(&handler, 14, false);
@@ -760,35 +715,32 @@ TEST_F(BeringeiServiceHandlerTest, ShuffleShards) {
   TemporaryDirectory dir("beringei_data_block");
   FLAGS_data_directory = dir.dirname();
 
-  BeringeiServiceHandler handler(
-      std::make_shared<MockConfigurationAdapter>(),
-      std::make_shared<MockMemoryUsageGuard>(),
-      "mock_beringei_service",
-      9999);
+  // Fatals if adjustTimestamps is off.
+  BeringeiServiceHandlerForTest handler(true);
   std::set<int64_t> shards = {11, 12, 13};
 
   setShardsAndWait(&handler, shards);
   EXPECT_EQ(shards, getShards(&handler));
-  shardTest(&handler, 11, true);
-  shardTest(&handler, 12, true);
-  shardTest(&handler, 13, true);
+  shardTest(&handler, 11, true, false);
+  shardTest(&handler, 12, true, false);
+  shardTest(&handler, 13, true, false);
   shardTest(&handler, 14, false);
 
   shards = {12, 13, 14};
   setShardsAndWait(&handler, shards);
   EXPECT_EQ(shards, getShards(&handler));
   shardTest(&handler, 11, false);
-  shardTest(&handler, 12, true);
-  shardTest(&handler, 13, true);
-  shardTest(&handler, 14, true);
+  shardTest(&handler, 12, true, false);
+  shardTest(&handler, 13, true, false);
+  shardTest(&handler, 14, true, false);
 
   shards = {11, 14};
   setShardsAndWait(&handler, shards);
   EXPECT_EQ(shards, getShards(&handler));
-  shardTest(&handler, 11, true);
+  shardTest(&handler, 11, true, false);
   shardTest(&handler, 12, false);
   shardTest(&handler, 13, false);
-  shardTest(&handler, 14, true);
+  shardTest(&handler, 14, true, false);
 
   shards = {};
   setShardsAndWait(&handler, shards);
@@ -803,12 +755,7 @@ TEST_F(BeringeiServiceHandlerTest, AddDropSetShards) {
   TemporaryDirectory dir("beringei_data_block");
   FLAGS_data_directory = dir.dirname();
 
-  BeringeiServiceHandler handler(
-      std::make_shared<MockConfigurationAdapter>(),
-      std::make_shared<MockMemoryUsageGuard>(),
-      "mock_beringei_service",
-      9999);
-
+  BeringeiServiceHandlerForTest handler;
   std::set<int64_t> expected = {12, 13};
   addShardAndWait(&handler, 11);
   setShardsAndWait(&handler, {12, 13});
@@ -836,11 +783,7 @@ TEST_F(BeringeiServiceHandlerTest, AddShardAsync) {
   TemporaryDirectory dir("beringei_data_block");
   FLAGS_data_directory = dir.dirname();
 
-  BeringeiServiceHandler handler(
-      std::make_shared<MockConfigurationAdapter>(),
-      std::make_shared<MockMemoryUsageGuard>(),
-      "mock_beringei_service",
-      9999);
+  BeringeiServiceHandlerForTest handler;
   auto status = addShardAsync(&handler, 11);
   EXPECT_EQ(ShardData::BeringeiShardState::SUCCESS, status);
 
@@ -854,11 +797,7 @@ TEST_F(BeringeiServiceHandlerTest, GetLastUpdateTimes) {
   TemporaryDirectory dir("beringei_data_block");
   FLAGS_data_directory = dir.dirname();
 
-  BeringeiServiceHandler handler(
-      std::make_shared<MockConfigurationAdapter>(),
-      std::make_shared<MockMemoryUsageGuard>(),
-      "mock_beringei_service",
-      9999);
+  BeringeiServiceHandlerForTest handler;
 
   int64_t startTime = time(nullptr) - 300;
   int64_t endTime = startTime + 300;
@@ -894,11 +833,7 @@ TEST_F(BeringeiServiceHandlerTest, GetLastUpdateTimesWithNoMatches) {
   TemporaryDirectory dir("beringei_data_block");
   FLAGS_data_directory = dir.dirname();
 
-  BeringeiServiceHandler handler(
-      std::make_shared<MockConfigurationAdapter>(),
-      std::make_shared<MockMemoryUsageGuard>(),
-      "mock_beringei_service",
-      9999);
+  BeringeiServiceHandlerForTest handler;
 
   int64_t startTime = time(nullptr) - 300;
   int64_t endTime = startTime + 300;

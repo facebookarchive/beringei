@@ -33,11 +33,13 @@ class BeringeiServiceHandler : virtual public BeringeiServiceSvIf {
  public:
   static const int kAsyncDropShardsDelaySecs;
 
+  // Disabling adjustTimestamps is used for tests only.
   BeringeiServiceHandler(
       std::shared_ptr<BeringeiConfigurationAdapterIf> configAdapter,
       std::shared_ptr<MemoryUsageGuardIf> memoryUsageGuard,
       const std::string& serviceName,
-      int port);
+      int port,
+      bool adjustTimestamps = true);
 
   virtual ~BeringeiServiceHandler();
 
@@ -83,6 +85,7 @@ class BeringeiServiceHandler : virtual public BeringeiServiceSvIf {
   std::shared_ptr<MemoryUsageGuardIf> memoryUsageGuard_;
   const std::string serviceName_;
   const int32_t port_;
+  const bool adjustTimestamps_;
 
   folly::FunctionScheduler purgeThread_;
   folly::FunctionScheduler cleanThread_;

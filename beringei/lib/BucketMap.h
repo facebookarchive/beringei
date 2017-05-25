@@ -111,8 +111,6 @@ class BucketMap {
 
   BucketStorage* getStorage();
 
-  void flushKeyList();
-
   void compactKeyList();
 
   void deleteOldBlockFiles();

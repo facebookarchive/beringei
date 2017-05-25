@@ -119,12 +119,14 @@ BeringeiServiceHandler::BeringeiServiceHandler(
     std::shared_ptr<BeringeiConfigurationAdapterIf> configAdapter,
     std::shared_ptr<MemoryUsageGuardIf> memoryUsageGuard,
     const std::string& serviceName,
-    const int32_t port)
+    const int32_t port,
+    const bool adjustTimestamps)
     : shards_(FLAGS_shards, FLAGS_add_shard_threads),
       configAdapter_(std::move(configAdapter)),
       memoryUsageGuard_(std::move(memoryUsageGuard)),
       serviceName_(serviceName),
-      port_(port) {
+      port_(port),
+      adjustTimestamps_(adjustTimestamps) {
   // the number of threads for each thread pool must exceed 0
   CHECK_GT(fLI::FLAGS_key_writer_threads, 0);
   CHECK_GT(fLI::FLAGS_log_writer_threads, 0);
@@ -297,19 +299,21 @@ void BeringeiServiceHandler::putDataPoints(
   for (auto& dp : req->data) {
     auto originalUnixTime = dp.value.unixTime;
 
-    // Set time 0 to now.
-    if (dp.value.unixTime == 0) {
-      dp.value.unixTime = now;
-    }
+    // Adjust 0, late, or early timestamps to now. Disable only for testing.
+    if (adjustTimestamps_) {
+      if (dp.value.unixTime == 0) {
+        dp.value.unixTime = now;
+      }
 
-    if (dp.value.unixTime < now - FLAGS_allowed_timestamp_behind) {
-      dp.value.unixTime = now;
-      GorillaStatsManager::addStatValue(kDatapointsBehind);
-    }
+      if (dp.value.unixTime < now - FLAGS_allowed_timestamp_behind) {
+        dp.value.unixTime = now;
+        GorillaStatsManager::addStatValue(kDatapointsBehind);
+      }
 
-    if (dp.value.unixTime > now + FLAGS_allowed_timestamp_ahead) {
-      dp.value.unixTime = now;
-      GorillaStatsManager::addStatValue(kDatapointsAhead);
+      if (dp.value.unixTime > now + FLAGS_allowed_timestamp_ahead) {
+        dp.value.unixTime = now;
+        GorillaStatsManager::addStatValue(kDatapointsAhead);
+      }
     }
 
     if (dp.key.key.length() > kMaxKeyLength) {

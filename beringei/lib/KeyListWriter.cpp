@@ -97,7 +97,7 @@ void KeyListWriter::disable(int64_t shardId) {
 }
 
 void KeyListWriter::flushQueue() {
-  // Stop thread to flush keysl
+  // Stop thread to flush keys
   stopWriterThread();
   startWriterThread();
 }
