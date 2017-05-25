@@ -387,8 +387,8 @@ void BeringeiServiceHandler::getData(
       if (row.get()) {
         keysFound++;
         row->second.get(
-            shards_[0]->bucket(req->begin),
-            shards_[0]->bucket(req->end),
+            map->bucket(req->begin),
+            map->bucket(req->end),
             ret.results[i].data,
             map->getStorage());
         row->second.setQueried();

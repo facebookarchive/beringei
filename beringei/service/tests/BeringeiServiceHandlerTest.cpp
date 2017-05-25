@@ -525,14 +525,45 @@ TEST_F(BeringeiServiceHandlerTest, OneHourOfOneMinuteData) {
   int64_t startTime = time(nullptr) - kGorillaSecondsPerHour;
   int64_t endTime = startTime + kGorillaSecondsPerHour;
 
-  auto putRequest = generatePutRequest(1000, startTime, endTime);
+  string keyPrefix = "key";
+  int shardId = 14;
+
+  auto putRequest =
+      generatePutRequest(1000, startTime, endTime, keyPrefix, shardId);
   putDataPoints(handler, std::move(putRequest));
 
   GetDataResult result;
-  auto getRequest = generateGetRequest(1000, startTime, endTime);
+  auto getRequest =
+      generateGetRequest(1000, startTime, endTime, keyPrefix, shardId);
   handler.getData(result, std::move(getRequest));
 
   checkGeneratedGetResults(result, 1000, startTime, endTime);
+}
+
+TEST_F(BeringeiServiceHandlerTest, AllShards) {
+  TemporaryDirectory dir("beringei_data_block");
+  FLAGS_data_directory = dir.dirname();
+  FLAGS_bucket_size = kGorillaSecondsPerHour;
+
+  BeringeiServiceHandlerForTest handler;
+
+  int64_t startTime = time(nullptr) - kGorillaSecondsPerMinute * 5;
+  int64_t endTime = startTime + kGorillaSecondsPerMinute * 5;
+
+  string keyPrefix = "key";
+
+  for (int shardId = 0; shardId < 100; shardId++) {
+    auto putRequest =
+        generatePutRequest(5, startTime, endTime, keyPrefix, shardId);
+    putDataPoints(handler, std::move(putRequest));
+
+    GetDataResult result;
+    auto getRequest =
+        generateGetRequest(5, startTime, endTime, keyPrefix, shardId);
+    handler.getData(result, std::move(getRequest));
+
+    checkGeneratedGetResults(result, 5, startTime, endTime);
+  }
 }
 
 TEST_F(BeringeiServiceHandlerTest, OldData) {
