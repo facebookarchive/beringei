@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-FB_VERSION="2017.04.24.00"
+FB_VERSION="2017.05.22.00"
 ZSTD_VERSION="1.1.1"
 
 echo "This script configures ubuntu with everything needed to run beringei."
