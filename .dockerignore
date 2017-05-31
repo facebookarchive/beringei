@@ -1,0 +1,21 @@
+# Docker
+**/.dockerignore
+**/*Dockerfile
+
+# Circle-ci
+**/*circle.yml
+
+# Vagrant
+**/*Vagrantfile
+**/.vagrant/
+
+# Vim swap files
+**/.*.sw[po]
+
+
+**/*CONTRIBUTING.md
+**/*PATENTS
+
+# Beringei builds
+build/
+beringei/if/gen-cpp2/
