@@ -20,7 +20,7 @@ namespace gorilla {
 
 class TimeSeries {
  public:
-  // Build a TimeSeriesBlock from the given TimeValues.
+  // Build a TimeSeriesBlock from the given TimeValues. Test comment.
   static void writeValues(
       const std::vector<TimeValuePair>& values,
       TimeSeriesBlock& block);
