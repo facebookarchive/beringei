@@ -44,30 +44,24 @@ namespace py facebook.gorilla.beringei_grafana
   and folly::toJson().
 
 */
-
-struct QueryRawRange {
-  1: string from,
-  2: string to,
+struct KeyData {
+  1: i64 keyId,
+  2: string key,
+  10: optional string displayName,
+  11: optional string linkName,
+  20: optional string node,
+  21: optional string nodeName,
+  30: optional string siteName,
 }
 
-struct QueryRange {
-  1: string from,
-  2: string to,
-  3: QueryRawRange raw,
-}
-
-struct QueryTarget {
-  1: string target,
-  2: string refId,
+struct Query {
+  1: string type,
+  2: list<i64> key_ids,
+  3: list<KeyData> data,
+  4: i32 min_ago,
+  5: string agg_type,
 }
 
 struct QueryRequest {
-  1: i32 panelId,
-  2: QueryRange range,
-  3: QueryRawRange rangeRaw,
-  4: string interval,
-  5: i32 intervalMs,
-  6: list<QueryTarget> targets,
-  7: string format,
-  8: i32 maxDataPoints,
+  1: list<Query> queries,
 }
