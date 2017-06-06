@@ -84,26 +84,34 @@ void QueryHandler::logRequest(QueryRequest request) { }
 void QueryHandler::columnNames() {
   // set column names
   if (query_.agg_type == "top" ||
-      query_.agg_type == "bottom") {
+      query_.agg_type == "bottom" ||
+      query_.agg_type == "none") {
     // top, bottom, none
     std::unordered_set<std::string> keyNames;
     std::unordered_set<std::string> linkNames;
+    std::unordered_set<std::string> nodeNames;
     std::unordered_set<std::string> displayNames;
     for (const auto& keyData : query_.data) {
       keyNames.insert(keyData.key);
       linkNames.insert(keyData.linkName);
+      nodeNames.insert(keyData.nodeName);
       displayNames.insert(keyData.displayName);
     }
     for (const auto& keyData : query_.data) {
       std::string columnName = keyData.node;
-      if (keyData.linkName.length()) {
+      if (keyData.linkName.length() &&
+          linkNames.size() == query_.key_ids.size()) {
         columnName = keyData.linkName;
-      } else if (keyData.displayName.length() && displayNames.size() > 1) {
+      } else if (keyData.displayName.length() &&
+                 displayNames.size() == query_.key_ids.size()) {
         columnName = keyData.displayName;
-      } else if (keyNames.size() > 1) {
+      } else if (keyNames.size() == query_.key_ids.size()) {
         columnName = keyData.key;
-      } else if (keyData.nodeName.length()) {
+      } else if (keyData.nodeName.length() &&
+                 nodeNames.size() == query_.key_ids.size()) {
         columnName = keyData.nodeName;
+      } else {
+        columnName = folly::sformat("{} / {}", keyData.nodeName, keyData.key);
       }
       std::replace(columnName.begin(), columnName.end(), '.', ' ');
       columnNames_.push_back(columnName);
@@ -304,14 +312,6 @@ folly::fbstring QueryHandler::transform() {
                                           0);
         double countAvg = countSum / (double)(endBucketId - startBucketId + 1);
         aggSeries_[query_.agg_type].push_back(countAvg);
-      } else if (query_.agg_type == "event") {
-        // event aggregation
-        // I0524 19:17:35.861244 23268 QueryHandler.cpp:190] Bucket[0][2877] = 964
-        // I0524 19:17:35.861249 23268 QueryHandler.cpp:190] Bucket[0][2878] = 2136
-        // I0524 19:17:35.861253 23268 QueryHandler.cpp:190] Bucket[0][2879] = 3308
-        for (int e = startBucketId; e <= endBucketId; e++) {
-          LOG(INFO) << "Bucket[" << i << "][" << e << "] = " << timeSeries[i][e];
-        }
       } else {
         // no aggregation
         cTimeSeries[i][timeBucketId] = avg;
@@ -328,7 +328,7 @@ folly::fbstring QueryHandler::transform() {
   // now we have time aggregated data
   // sort by avg value across time series if needed
   folly::dynamic datapoints = folly::dynamic::array();
-  for (int i = 0; i < (timeBucketCount / dataPointAggCount); i++) {
+  for (int i = 0; i < condensedBucketCount; i++) {
     datapoints.push_back(folly::dynamic::array(
       (startTime_ + (i * dataPointAggCount * 30)) * 1000));
   }
@@ -342,8 +342,10 @@ folly::fbstring QueryHandler::transform() {
       for (int i = 0; i < keyCount; i++) {
         keySums.push_back(std::make_pair(i, sumSeries[i]));
       }
-      auto sortLess = [](auto& lhs, auto& rhs) {return lhs.second < rhs.second;};
-      auto sortGreater = [](auto& lhs, auto& rhs) {return lhs.second > rhs.second;};
+      auto sortLess = [](auto& lhs, auto& rhs) {
+        return lhs.second < rhs.second;};
+      auto sortGreater = [](auto& lhs, auto& rhs) {
+        return lhs.second > rhs.second;};
       if (query_.agg_type == "bottom") {
         std::sort(keySums.begin(), keySums.end(), sortLess);
       } else {
@@ -353,8 +355,8 @@ folly::fbstring QueryHandler::transform() {
       for (const auto& kv : keySums) {
         columns.push_back(columnNames_[kv.first]);
         // loop over time series
-        for (int i = 0; i < (timeBucketCount / dataPointAggCount); i++) {
-          datapoints[i].push_back(timeSeries[kv.first][i]);
+        for (int i = 0; i < condensedBucketCount; i++) {
+          datapoints[i].push_back(cTimeSeries[kv.first][i]);
         }
       }
     } else {
@@ -390,6 +392,15 @@ folly::fbstring QueryHandler::transform() {
     columns.push_back("avg");
     for (int i = 0; i < condensedBucketCount; i++) {
       datapoints[i].push_back(sumTimeBucket[i] / keyCount);
+    }
+  } else if (query_.agg_type == "none") {
+    // agg series
+    for (int i = 0; i < keyCount; i++) {
+      columns.push_back(columnNames_[i]);
+      // loop over time series
+      for (int e = 0; e < condensedBucketCount; e++) {
+        datapoints[e].push_back(cTimeSeries[i][e]);
+      }
     }
   }
   folly::dynamic response = folly::dynamic::object;
