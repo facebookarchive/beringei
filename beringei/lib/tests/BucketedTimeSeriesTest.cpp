@@ -55,7 +55,7 @@ void test(
 
 class BucketedTimeSeriesTest : public testing::Test {
  protected:
-  void SetUp() {
+  void SetUp() override {
     tv[0].unixTime = 60;
     tv[0].value = 0.0;
     tv[1].unixTime = 120;

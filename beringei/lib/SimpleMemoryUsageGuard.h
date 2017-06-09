@@ -23,7 +23,7 @@ class SimpleMemoryUsageGuard : public MemoryUsageGuardIf {
   SimpleMemoryUsageGuard();
   explicit SimpleMemoryUsageGuard(double memFractionToUse);
 
-  bool weAreLowOnMemory();
+  bool weAreLowOnMemory() override;
 
  private:
   void updateMemoryStats();

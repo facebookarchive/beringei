@@ -21,13 +21,13 @@ using namespace std;
 
 class KeyListWriterTest : public testing::Test {
  protected:
-  void SetUp() {
+  void SetUp() override {
     dir_.reset(new TemporaryDirectory("gorilla_test"));
     FileUtils files(321, "", dir_->dirname());
     files.createDirectories();
   }
 
-  void TearDown() {}
+  void TearDown() override {}
 
   std::unique_ptr<TemporaryDirectory> dir_;
 };

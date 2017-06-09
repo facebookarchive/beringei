@@ -87,7 +87,7 @@ static bool toKey(
 
 class BeringeiServiceHandlerTest : public testing::Test {
  public:
-  virtual void SetUp() override {
+  void SetUp() override {
     FLAGS_add_shard_threads = 1;
     FLAGS_create_directories = true;
     FLAGS_buckets = 6;
