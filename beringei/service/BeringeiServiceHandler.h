@@ -58,6 +58,10 @@ class BeringeiServiceHandler : virtual public BeringeiServiceSvIf {
       int32_t offset,
       int32_t limit) override;
 
+  virtual void scanShard(
+      ScanShardResult& ret,
+      std::unique_ptr<ScanShardRequest> req) override;
+
   virtual BucketMap* getShardMap(int64_t shardId);
 
   void getLastUpdateTimes(

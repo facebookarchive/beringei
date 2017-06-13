@@ -9,6 +9,8 @@
 
 #include "BeringeiConfigurationAdapter.h"
 
+#include "beringei/lib/CaseUtils.h"
+
 DEFINE_string(
     beringei_configuration_path,
     "",
@@ -145,6 +147,13 @@ void BeringeiConfigurationAdapter::getShardsForHost(
     shardList = service.shardsPerHostMap[compactHostInfo];
   }
   return;
+}
+
+uint64_t BeringeiConfigurationAdapter::getShardForKey(
+    folly::StringPiece key,
+    uint64_t totalShards,
+    uint64_t seed) {
+  return CaseHash::hash(key, seed) % totalShards;
 }
 
 std::string BeringeiConfigurationAdapter::getNearestReadService() {

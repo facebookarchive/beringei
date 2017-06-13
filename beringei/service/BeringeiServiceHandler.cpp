@@ -115,6 +115,9 @@ const static std::string kUsPerGetLastUpdateTimes =
 const int kMaxKeyLength = 400;
 const int kRefreshShardMapInterval = 60; // poll every minute
 
+// Unique hash seed for the `scanShard` thrift call.
+const uint64_t kDataScanSeed = 0xDA7A5CA9;
+
 BeringeiServiceHandler::BeringeiServiceHandler(
     std::shared_ptr<BeringeiConfigurationAdapterIf> configAdapter,
     std::shared_ptr<MemoryUsageGuardIf> memoryUsageGuard,
@@ -476,6 +479,76 @@ void BeringeiServiceHandler::getShardDataBucket(
   }
 
   LOG(INFO) << "Data fetch for shard " << shardId << " complete in "
+            << timer.get() << "us with " << ret.keys.size() << " keys returned";
+}
+
+void BeringeiServiceHandler::scanShard(
+    ScanShardResult& ret,
+    std::unique_ptr<ScanShardRequest> req) {
+  req->begin =
+      BucketUtils::floorTimestamp(req->begin, FLAGS_bucket_size, req->shardId);
+  req->end =
+      BucketUtils::floorTimestamp(req->end, FLAGS_bucket_size, req->shardId);
+
+  LOG(INFO) << "Fetching data for shard " << req->shardId << " between time "
+            << req->begin << " and " << req->end;
+
+  Timer timer(true);
+
+  auto map = shards_.getShardMap(req->shardId);
+  if (!map) {
+    ret.status = StatusCode::RPC_FAIL;
+    return;
+  }
+  auto state = map->getState();
+  if (state != BucketMap::OWNED) {
+    ret.status = state <= BucketMap::UNOWNED ? StatusCode::DONT_OWN_SHARD
+                                             : StatusCode::SHARD_IN_PROGRESS;
+    return;
+  }
+
+  // Don't allow data fetches until the bucket has been finalized.
+  if (map->bucket(req->end) > map->getLastFinalizedBucket()) {
+    ret.status = StatusCode::BUCKET_NOT_FINALIZED;
+    return;
+  }
+
+  std::vector<BucketMap::Item> rows;
+  map->getEverything(rows);
+  auto storage = map->getStorage();
+
+  size_t sizeEstimate = (req->numSubshards <= 1)
+      ? rows.size()
+      : rows.size() / (req->numSubshards - 1);
+  ret.keys.reserve(sizeEstimate);
+  ret.data.reserve(sizeEstimate);
+  ret.queriedRecently.reserve(sizeEstimate);
+
+  uint32_t begin = map->bucket(req->begin);
+  uint32_t end = map->bucket(req->end);
+
+  for (auto& row : rows) {
+    if (row.get()) {
+      folly::StringPiece key(row->first);
+      if (configAdapter_->getShardForKey(
+              key, req->numSubshards, kDataScanSeed) != req->subshard) {
+        continue;
+      }
+
+      std::vector<TimeSeriesBlock> blocks;
+      row->second.get(begin, end, blocks, storage);
+
+      if (blocks.size() > 0) {
+        ret.keys.push_back(key.str());
+        ret.data.push_back(std::move(blocks));
+        ret.queriedRecently.push_back(
+            row->second.getQueriedBucketsAgo() <=
+            map->buckets(kGorillaSecondsPerDay));
+      }
+    }
+  }
+
+  LOG(INFO) << "Data fetch for shard " << req->shardId << " complete in "
             << timer.get() << "us with " << ret.keys.size() << " keys returned";
 }
 

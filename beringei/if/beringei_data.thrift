@@ -84,6 +84,30 @@ struct GetShardDataBucketResult {
   5: bool moreEntries,
 }
 
+// Query all data from a single shard between two inclusive timestamps.
+// This may return additional data on either end of the time range due to
+// internal bucket boundaries.
+//
+// It is possible to request a fraction of the data via subsharding.
+// Issuing multiple requests with `numSubshards` == n and `subshard` scanning
+// over [0, n) will return each key once.
+struct ScanShardRequest {
+  1: i64 shardId,
+  2: i64 begin,
+  3: i64 end,
+  4: i64 subshard = 0,
+  5: i64 numSubshards = 1,
+}
+
+struct ScanShardResult {
+  1: StatusCode status,
+  2: list<string> keys,
+  3: list<list<TimeSeriesBlock>> data,
+
+  // True for each key if data for that key has been queried recently.
+  4: list<bool> queriedRecently,
+}
+
 // Structs that represent the configuration of Beringei services.
 
 // Represents which shard is owned by which host

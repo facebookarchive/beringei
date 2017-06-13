@@ -9,15 +9,11 @@
 
 #pragma once
 
+#include <folly/Range.h>
 #include <cstring>
 
 namespace facebook {
 namespace gorilla {
-
-// A 12x faster implementation of tolower().
-inline unsigned char fastToLower(unsigned char c) {
-  return c >= 'A' && c <= 'Z' ? c + ('a' - 'A') : c;
-}
 
 // Case-insensitive comparison.
 struct CaseEq {
@@ -27,6 +23,8 @@ struct CaseEq {
 // Case-insensitive hash.
 struct CaseHash {
   size_t operator()(const char* s) const;
+
+  static uint64_t hash(folly::StringPiece s, uint64_t seed);
 };
 }
 } // facebook::gorilla

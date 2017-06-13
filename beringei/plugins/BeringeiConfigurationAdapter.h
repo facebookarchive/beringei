@@ -42,6 +42,11 @@ class BeringeiConfigurationAdapter : public BeringeiConfigurationAdapterIf {
       const std::string& serviceName,
       std::set<int64_t>& shardList) override;
 
+  uint64_t getShardForKey(
+      folly::StringPiece key,
+      uint64_t totalShards,
+      uint64_t seed) override;
+
   std::vector<std::string> getReadServices() override;
 
   std::vector<std::string> getWriteServices() override;

@@ -8,12 +8,15 @@
  */
 #pragma once
 
+#include <random>
 #include <string>
 #include <vector>
 
 class TestKeyList {
  public:
-  explicit TestKeyList(int listSize);
+  // Results will be deterministic if a non-zero seed is provided.
+  explicit TestKeyList(int listSize, uint32_t seed = 0);
+
   // Return a random c style string.
   const char* testStr(int i);
 
@@ -28,4 +31,6 @@ class TestKeyList {
 
   int size_;
   std::vector<std::string> keyList_;
+
+  std::mt19937 rand_;
 };
