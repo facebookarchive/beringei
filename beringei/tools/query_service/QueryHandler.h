@@ -16,7 +16,7 @@
 
 #include "beringei/client/BeringeiClient.h"
 #include "beringei/client/BeringeiConfigurationAdapterIf.h"
-#include "beringei/if/gen-cpp2/beringei_grafana_types_custom_protocol.h"
+#include "beringei/if/gen-cpp2/beringei_query_types_custom_protocol.h"
 
 
 namespace facebook {
@@ -50,25 +50,6 @@ class QueryHandler : public proxygen::RequestHandler {
       const Query& request,
       const int numShards);
 
-/*  folly::dynamic columnNames(
-    const std::string& aggType,
-    const std::vector<KeyData>& keyDataList);
-
-  folly::dynamic transformData(
-    const std::string& aggType,
-    const std::vector<KeyData>& keyDataList,
-    const TimeSeries& timeSeries);
-
-  folly::fbstring handleKeyQuery(
-    const std::string& aggType,
-    const std::vector<KeyData>& keyDataList,
-    const TimeSeries& timeSeries);
-
-  void postprocessData(
-    folly::dynamic& datapoints,
-    const std::string& aggType,
-    const std::vector<KeyData>& keyDataList);*/
-
   /**
    * Determine column names to use based on KeyData
    */ 
@@ -81,6 +62,8 @@ class QueryHandler : public proxygen::RequestHandler {
   folly::fbstring transform();
   folly::fbstring handleQuery();
   folly::fbstring eventHandler(int dataPointIncrementMs);
+  folly::dynamic makeEvent(int64_t startIndex, int64_t endIndex);
+  std::string getTimeStr(time_t timeSec);
 
   std::shared_ptr<BeringeiConfigurationAdapterIf> configurationAdapter_;
   std::unique_ptr<folly::IOBuf> body_;

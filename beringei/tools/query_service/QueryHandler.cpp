@@ -48,7 +48,18 @@ void QueryHandler::onBody(std::unique_ptr<folly::IOBuf> body) noexcept {
 
 void QueryHandler::onEOM() noexcept {
   auto body = body_->moveToFbString();
-  auto request = SimpleJSONSerializer::deserialize<QueryRequest>(body);
+  QueryRequest request;
+  try {
+    request = SimpleJSONSerializer::deserialize<QueryRequest>(body);
+  } catch (const std::exception&) {
+    LOG(INFO) << "Error deserializing QueryRequest";
+    ResponseBuilder(downstream_)
+        .status(500, "OK")
+        .header("Content-Type", "application/json")
+        .body("Failed de-serializing QueryRequest")
+      .sendWithEOM();
+    return;
+  }
   logRequest(request);
   columnNames_.clear();
   timeSeries_.clear();
@@ -152,6 +163,8 @@ folly::fbstring QueryHandler::eventHandler(int dataPointIncrementMs) {
     folly::dynamic onlineEvents = folly::dynamic::array;
     for (int timeIndex = 0; timeIndex < timeBucketCount; timeIndex++) {
       double timeVal = timeSeries[keyIndex][timeIndex];
+      VLOG(1) << "VERBOSE: timeSeries[" << keyIndex << "][" << timeIndex
+              << "] = " << timeVal;
       if (timeVal == 0) {
         missingCounter++;
         // missing data
@@ -164,7 +177,10 @@ folly::fbstring QueryHandler::eventHandler(int dataPointIncrementMs) {
           if (completeIntervals >= missingCounter) {
             // we covered up all missing data points
             upPoints += missingCounter;
-            LOG(INFO) << "[" << timeIndex << "] Filled all " << missingCounter << " missed data buckets";
+            LOG(INFO) << "[" << timeIndex << "] Filled all " << missingCounter
+                      << " missed data buckets, complete intervals covered: "
+                      << completeIntervals << ", partial seconds (total): "
+                      << partialIntervalSec;
             // online events
             if (startOnlineIndex == -1) {
               startOnlineIndex = timeIndex - missingCounter;
@@ -177,17 +193,19 @@ folly::fbstring QueryHandler::eventHandler(int dataPointIncrementMs) {
             double remainIntervalSec = partialIntervalSec - (wholeIntervals * 30);
             LOG(INFO) << "[" << timeIndex << "] Filled partial missing data buckets. Missing intervals: "
                       << missingCounter << ", covered intervals: " << completeIntervals
-                      << " (" << wholeIntervals << "), partial seconds: " << remainIntervalSec;
+                      << " (" << wholeIntervals << "), partial seconds: " << remainIntervalSec
+                      << " start interval: " << startOnlineIndex;
             partialSeconds += remainIntervalSec;
+            // only part of the interval recovered, we must have an event
+            onlineEvents.push_back(makeEvent(startOnlineIndex,
+                                             timeIndex - missingCounter));
             // events, ignore partial intervals
-            if (startOnlineIndex == -1) {
-              startOnlineIndex = timeIndex - wholeIntervals;
-            }
+            startOnlineIndex = timeIndex - wholeIntervals;
           }
           missingCounter = 0;
         }
         if (startOnlineIndex == -1) {
-          LOG(INFO) << "Marking start index: " << timeIndex;
+          //LOG(INFO) << "Marking start index: " << timeIndex;
           startOnlineIndex = timeIndex;
         }
         upPoints++;
@@ -200,27 +218,26 @@ folly::fbstring QueryHandler::eventHandler(int dataPointIncrementMs) {
         if (startOnlineIndex >= 0) {
           // partial interval, mark this interval as down
           LOG(INFO) << "[" << timeIndex << "] Partially online interval, marking offline. We were online for: "
-                    << (timeIndex - startOnlineIndex) << " intervals, missing counter: " << missingCounter;
-          // push event
-          onlineEvents.push_back(folly::dynamic::object
-            ("startTime", (startTime_ + (startOnlineIndex * 30)))
-            ("endTime", (startTime_ + ((timeIndex - missingCounter) * 30)))
-            ("title", ("Online Partial " + std::to_string(startOnlineIndex) +
-                       " <-> " + std::to_string(timeIndex - missingCounter))));
-          startOnlineIndex = -1;
+                    << (timeIndex - missingCounter - startOnlineIndex)
+                    << " intervals, missing counter: " << missingCounter
+                    << ", event start: " << startOnlineIndex
+                    << ", end: " << (timeIndex - missingCounter);;
+          onlineEvents.push_back(makeEvent(startOnlineIndex,
+                                           timeIndex - missingCounter));
+          // we're online now
+          startOnlineIndex = timeIndex;
         }
         // reset missing counter, which only tracks whole intervals offline
         missingCounter = 0;
       }
       // finalize events
       if ((timeIndex + 1) == timeBucketCount && startOnlineIndex >= 0) {
-        LOG(INFO) << "Start online index set, push event from start: "
-                  << startOnlineIndex << " to: " << timeIndex;
-        onlineEvents.push_back(folly::dynamic::object
-          ("startTime", (startTime_ + (startOnlineIndex * 30)))
-          ("endTime", (endTime_))
-          ("title", ("Online " + std::to_string(startOnlineIndex) +
-                     " <-> " + std::to_string(timeIndex))));
+        LOG(INFO) << "[END] Start online index set, push event from start: "
+                  << startOnlineIndex << " to: "
+                  << (timeIndex - missingCounter)
+                  << ", missing counter: " << missingCounter;
+        onlineEvents.push_back(makeEvent(startOnlineIndex,
+                                         timeIndex - missingCounter));
       }
     }
     // seconds of uptime / seconds in period
@@ -246,6 +263,29 @@ folly::fbstring QueryHandler::eventHandler(int dataPointIncrementMs) {
   response["end"] = endTime_ * 1000;
   return folly::toJson(response);
 
+}
+std::string QueryHandler::getTimeStr(time_t timeSec) {
+  char timeStr[100];
+  std::strftime(timeStr,
+                sizeof(timeStr),
+                "%T",
+                std::localtime(&timeSec));
+  return std::string(timeStr);
+}
+/*
+ * Create a single event
+ */
+folly::dynamic QueryHandler::makeEvent(int64_t startIndex, int64_t endIndex) {
+  int uptimeDurationSec = (endIndex - startIndex) * 30;
+  // Online for [duration text] from [start time] to [end time]
+  std::string title = folly::sformat("{} minutes from {} to {}",
+                                     (uptimeDurationSec / 60),
+                                     getTimeStr(startTime_ + (startIndex * 30)),
+                                     getTimeStr(startTime_ + (endIndex * 30)));
+  return folly::dynamic::object
+            ("startTime", (startTime_ + (startIndex * 30)))
+            ("endTime", (startTime_ + (endIndex * 30)))
+            ("title", title);
 }
 
 folly::fbstring QueryHandler::transform() {
@@ -461,9 +501,17 @@ int QueryHandler::getShardId(const std::string& key, const int numShards) {
 GetDataRequest QueryHandler::createBeringeiRequest(
     const Query& request,
     const int numShards) {
-  // TODO - absolute time
-  startTime_ = std::time(nullptr) - (request.min_ago * 60);
-  endTime_ = std::time(nullptr);
+  if (request.__isset.start_ts &&
+      request.__isset.end_ts) {
+    // TODO - sanity check time
+    LOG(INFO) << "Start/end time set, use that";
+    startTime_ = std::ceil(request.start_ts / 30.0) * 30;
+    endTime_ = std::ceil(request.end_ts / 30.0) * 30;
+  } else {
+    // default to 1 day here
+    startTime_ = std::time(nullptr) - (24 * 60 * 60);
+    endTime_ = std::time(nullptr);
+  }
   GetDataRequest beringeiRequest;
 
   beringeiRequest.begin = startTime_;

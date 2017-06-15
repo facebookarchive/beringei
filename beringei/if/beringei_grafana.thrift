@@ -1,12 +1,3 @@
-/**
- * Copyright (c) 2016-present, Facebook, Inc.
- * All rights reserved.
- *
- * This source code is licensed under the BSD-style license found in the
- * LICENSE file in the root directory of this source tree. An additional grant
- * of patent rights can be found in the PATENTS file in the same directory.
- */
-
 namespace cpp2 facebook.gorilla
 namespace py facebook.gorilla.beringei_grafana
 
@@ -44,24 +35,30 @@ namespace py facebook.gorilla.beringei_grafana
   and folly::toJson().
 
 */
-struct KeyData {
-  1: i64 keyId,
-  2: string key,
-  10: optional string displayName,
-  11: optional string linkName,
-  20: optional string node,
-  21: optional string nodeName,
-  30: optional string siteName,
+
+struct QueryRawRange {
+  1: string from,
+  2: string to,
 }
 
-struct Query {
-  1: string type,
-  2: list<i64> key_ids,
-  3: list<KeyData> data,
-  4: i32 min_ago,
-  5: string agg_type,
+struct QueryRange {
+  1: string from,
+  2: string to,
+  3: QueryRawRange raw,
+}
+
+struct QueryTarget {
+  1: string target,
+  2: string refId,
 }
 
 struct QueryRequest {
-  1: list<Query> queries,
+  1: i32 panelId,
+  2: QueryRange range,
+  3: QueryRawRange rangeRaw,
+  4: string interval,
+  5: i32 intervalMs,
+  6: list<QueryTarget> targets,
+  7: string format,
+  8: i32 maxDataPoints,
 }
