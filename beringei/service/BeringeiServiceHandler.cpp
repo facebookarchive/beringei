@@ -26,7 +26,7 @@
 #include "beringei/lib/TimeSeries.h"
 #include "beringei/lib/Timer.h"
 
-DEFINE_int32(shards, 100, "Number of maps to use");
+DECLARE_int32(gorilla_shards);
 DEFINE_int32(buckets, 13, "Number of historical buckets to use");
 DEFINE_int32(
     bucket_size,
@@ -124,7 +124,7 @@ BeringeiServiceHandler::BeringeiServiceHandler(
     const std::string& serviceName,
     const int32_t port,
     const bool adjustTimestamps)
-    : shards_(FLAGS_shards, FLAGS_add_shard_threads),
+    : shards_(FLAGS_gorilla_shards, FLAGS_add_shard_threads),
       configAdapter_(std::move(configAdapter)),
       memoryUsageGuard_(std::move(memoryUsageGuard)),
       serviceName_(serviceName),
@@ -151,7 +151,7 @@ BeringeiServiceHandler::BeringeiServiceHandler(
   KeyListWriter::startMonitoring();
   BucketStorage::startMonitoring();
 
-  BucketLogWriter::setNumShards(FLAGS_shards);
+  BucketLogWriter::setNumShards(FLAGS_gorilla_shards);
 
   std::vector<std::shared_ptr<KeyListWriter>> keyWriters;
   for (int i = 0; i < FLAGS_key_writer_threads; i++) {
@@ -169,7 +169,7 @@ BeringeiServiceHandler::BeringeiServiceHandler(
   }
 
   srandom(folly::randomNumberSeed());
-  for (int i = 0; i < FLAGS_shards; i++) {
+  for (int i = 0; i < FLAGS_gorilla_shards; i++) {
     // Select the bucket log writer and block writer for each shard by
     // random instead of by modulo to allow better distribution
     // because sharding algorithm used by Shard Manager is
@@ -679,7 +679,7 @@ void BeringeiServiceHandler::finalizeBucketsThread() {
   uint64_t timestamp = time(nullptr) - FLAGS_allowed_timestamp_behind -
       kGorillaSecondsPerMinute - BucketUtils::duration(1, FLAGS_bucket_size);
   bool behind = false;
-  for (int i = 0; i < FLAGS_shards; i++) {
+  for (int i = 0; i < FLAGS_gorilla_shards; i++) {
     uint32_t bucketToFinalize = shards_[i]->bucket(timestamp);
     if (shards_[i]->isBehind(bucketToFinalize)) {
       behind = true;
@@ -699,8 +699,8 @@ void BeringeiServiceHandler::finalizeBucket(const uint64_t timestamp) {
 
   // Put all the shards in the queue even if they are not owned
   // because they might be owned 5 minutes later.
-  folly::MPMCQueue<uint32_t> queue(FLAGS_shards);
-  for (int i = 0; i < FLAGS_shards; i++) {
+  folly::MPMCQueue<uint32_t> queue(FLAGS_gorilla_shards);
+  for (int i = 0; i < FLAGS_gorilla_shards; i++) {
     queue.write(i);
   }
 
