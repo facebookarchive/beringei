@@ -448,41 +448,7 @@ void BeringeiClientImpl::get(
     GetDataRequest& request,
     GetDataResult& result,
     const std::string& serviceOverride) {
-  std::vector<std::shared_ptr<BeringeiNetworkClient>> readClientCopies;
-
-  {
-    // Take a copy of the read clients inside the lock if it changes
-    // while reading.
-    folly::RWSpinLock::ReadHolder guard(&readClientLock_);
-    readClientCopies = readClients_;
-  }
-
-  if (!serviceOverride.empty()) {
-    bool found = false;
-    for (auto& client : readClientCopies) {
-      if (client->isCorrespondingService(serviceOverride)) {
-        found = true;
-        readClientCopies = {client};
-      }
-    }
-
-    if (!found) {
-      // Service wasn't on the list. Try making a new temporary
-      // client. If the service is invalid, let the exception go to the
-      // caller.
-
-      if (!configurationAdapter_->isValidReadService(serviceOverride)) {
-        GorillaStatsManager::addStatValue(kBadReadServices);
-      } else {
-        auto client =
-            createNetworkClient(serviceOverride, configurationAdapter_, false);
-
-        // Don't stick this in readClients_ because we don't want normal queries
-        // to use the overwritten service.
-        readClientCopies = {client};
-      }
-    }
-  }
+  auto readClientCopies = getAllReadClients(serviceOverride);
 
   // Make a copy of the request we'll use for doing a per client request
   // Then clear keys, so we can reorder them as we get successful responses
@@ -580,41 +546,7 @@ void BeringeiClientImpl::get(
 BeringeiGetResult BeringeiClientImpl::get(
     GetDataRequest& request,
     const std::string& serviceOverride) {
-  std::vector<std::shared_ptr<BeringeiNetworkClient>> readClientCopies;
-
-  {
-    // Take a copy of the read clients inside the lock if it changes
-    // while reading.
-    folly::RWSpinLock::ReadHolder guard(&readClientLock_);
-    readClientCopies = readClients_;
-  }
-
-  if (!serviceOverride.empty()) {
-    bool found = false;
-    for (auto& client : readClientCopies) {
-      if (client->isCorrespondingService(serviceOverride)) {
-        found = true;
-        readClientCopies = {client};
-      }
-    }
-
-    if (!found) {
-      // Service wasn't on the list. Try making a new temporary
-      // client. If the service is invalid, let the exception go to the
-      // caller.
-
-      if (!configurationAdapter_->isValidReadService(serviceOverride)) {
-        GorillaStatsManager::addStatValue(kBadReadServices);
-      } else {
-        auto client =
-            createNetworkClient(serviceOverride, configurationAdapter_, false);
-
-        // Don't stick this in readClients_ because we don't want normal queries
-        // to use the overwritten service.
-        readClientCopies = {client};
-      }
-    }
-  }
+  auto readClientCopies = getAllReadClients(serviceOverride);
 
   auto results = std::make_shared<BeringeiGetResultCollector>(
       request.keys.size(), readClientCopies.size(), request.begin, request.end);
@@ -856,9 +788,46 @@ void BeringeiClientImpl::stopRequests() {
   readClientCopy->stopRequests();
 }
 
+std::vector<std::shared_ptr<BeringeiNetworkClient>>
+BeringeiClientImpl::getAllReadClients(const std::string& serviceOverride) {
+  std::vector<std::shared_ptr<BeringeiNetworkClient>> readClientCopies;
+
+  {
+    folly::RWSpinLock::ReadHolder guard(&readClientLock_);
+    readClientCopies = readClients_;
+  }
+
+  if (!serviceOverride.empty()) {
+    bool found = false;
+    for (auto& client : readClientCopies) {
+      if (client->isCorrespondingService(serviceOverride)) {
+        found = true;
+        readClientCopies = {client};
+      }
+    }
+
+    if (!found) {
+      // Service wasn't on the list. Try making a new temporary
+      // client. If the service is invalid, let the exception go to the
+      // caller.
+
+      if (!configurationAdapter_->isValidReadService(serviceOverride)) {
+        GorillaStatsManager::addStatValue(kBadReadServices);
+      } else {
+        auto client =
+            createNetworkClient(serviceOverride, configurationAdapter_, false);
+
+        // Don't stick this in readClients_ because we don't want normal queries
+        // to use the overwritten service.
+        readClientCopies = {client};
+      }
+    }
+  }
+
+  return readClientCopies;
+}
+
 std::shared_ptr<BeringeiNetworkClient> BeringeiClientImpl::getReadClientCopy() {
-  // Take a copy of the read clients inside the lock if it changes
-  // while reading.
   folly::RWSpinLock::ReadHolder guard(&readClientLock_);
   if (readClients_.empty()) {
     LOG(ERROR) << "No read clients enabled for Beringei";

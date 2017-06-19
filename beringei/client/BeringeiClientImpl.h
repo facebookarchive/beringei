@@ -150,6 +150,8 @@ class BeringeiClientImpl {
   // Constructor that does nothing. Used from tests.
   explicit BeringeiClientImpl() {}
 
+  std::vector<std::shared_ptr<BeringeiNetworkClient>> getAllReadClients(
+      const std::string& serviceOverride);
   std::shared_ptr<BeringeiNetworkClient> getReadClientCopy();
 
   std::vector<std::unique_ptr<WriteClient>> writeClients_;
