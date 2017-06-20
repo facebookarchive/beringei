@@ -135,7 +135,7 @@ class BucketMap {
   // transition is not allowed or already in that state.
   bool setState(State state);
 
-  State getState();
+  State getState() const;
 
   // Returns the time in milliseconds it took to add this shard from
   // PRE_OWNED state to OWNED state. If called before the shard is

@@ -313,7 +313,7 @@ bool BucketMap::setState(BucketMap::State state) {
   return true;
 }
 
-BucketMap::State BucketMap::getState() {
+BucketMap::State BucketMap::getState() const {
   folly::RWSpinLock::ReadHolder guard(lock_);
   return state_;
 }
@@ -382,7 +382,7 @@ int BucketMap::finalizeBuckets(uint32_t lastBucketToFinalize) {
 }
 
 bool BucketMap::isBehind(uint32_t bucketToFinalize) const {
-  return lastFinalizedBucket_ != 0 &&
+  return getState() == OWNED && lastFinalizedBucket_ != 0 &&
       bucketToFinalize > lastFinalizedBucket_ + 1;
 }
 
