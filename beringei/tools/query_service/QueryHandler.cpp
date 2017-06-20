@@ -104,7 +104,12 @@ void QueryHandler::columnNames() {
     std::unordered_set<std::string> displayNames;
     for (const auto& keyData : query_.data) {
       keyNames.insert(keyData.key);
-      linkNames.insert(keyData.linkName);
+      // add title append
+      if (keyData.__isset.linkTitleAppend) {
+        linkNames.insert(keyData.linkName + " " + keyData.linkTitleAppend);
+      } else {
+        linkNames.insert(keyData.linkName);
+      }
       nodeNames.insert(keyData.nodeName);
       displayNames.insert(keyData.displayName);
     }
@@ -112,7 +117,11 @@ void QueryHandler::columnNames() {
       std::string columnName = keyData.node;
       if (keyData.linkName.length() &&
           linkNames.size() == query_.key_ids.size()) {
-        columnName = keyData.linkName;
+        if (keyData.__isset.linkTitleAppend) {
+          columnName = keyData.linkName + " " + keyData.linkTitleAppend;
+        } else {
+          columnName = keyData.linkName;
+        }
       } else if (keyData.displayName.length() &&
                  displayNames.size() == query_.key_ids.size()) {
         columnName = keyData.displayName;
