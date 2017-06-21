@@ -516,6 +516,9 @@ GetDataRequest QueryHandler::createBeringeiRequest(
     LOG(INFO) << "Start/end time set, use that";
     startTime_ = std::ceil(request.start_ts / 30.0) * 30;
     endTime_ = std::ceil(request.end_ts / 30.0) * 30;
+  } else if (request.__isset.min_ago) {
+    startTime_ = std::time(nullptr) - (60 * request.min_ago);
+    endTime_ = std::time(nullptr);
   } else {
     // default to 1 day here
     startTime_ = std::time(nullptr) - (24 * 60 * 60);
