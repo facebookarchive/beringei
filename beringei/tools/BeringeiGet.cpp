@@ -86,14 +86,16 @@ int main(int argc, char** argv) {
 
   LOG(INFO) << "Key is in shard_id: " << FLAGS_shard_id;
 
-  gorilla::GetShardDataBucketResult shardResult;
-  beringeiClient->getShardDataBucket(
-      FLAGS_start_time - 1201,
-      FLAGS_end_time - 599,
-      FLAGS_shard_id,
-      0,
-      10000,
-      shardResult);
+  gorilla::ScanShardRequest shardRequest;
+
+  shardRequest.shardId = FLAGS_shard_id;
+  shardRequest.begin = FLAGS_start_time - 1201;
+  shardRequest.end = FLAGS_end_time - 599;
+  shardRequest.subshard = 0;
+  shardRequest.numSubshards = 1;
+
+  gorilla::ScanShardResult shardResult;
+  beringeiClient->scanShard(shardRequest, shardResult);
 
   LOG(INFO) << "Get whole shard stats:";
   LOG(INFO) << "Request status: " << (int)shardResult.status;

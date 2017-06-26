@@ -226,19 +226,15 @@ folly::Future<GetDataResult> BeringeiNetworkClient::performGet(
   return getBeringeiThriftClient(hostInfo)->future_getData(request);
 }
 
-void BeringeiNetworkClient::performShardDataBucketGet(
-    int64_t begin,
-    int64_t end,
-    int64_t shardId,
-    int32_t offset,
-    int32_t limit,
-    GetShardDataBucketResult& result) {
+void BeringeiNetworkClient::performScanShard(
+    const ScanShardRequest& request,
+    ScanShardResult& result) {
   std::pair<std::string, int> hostInfo;
-  bool success = getHostForShard(shardId, hostInfo);
+  bool success = getHostForShard(request.shardId, hostInfo);
 
   if (!success) {
     result.status = StatusCode::RPC_FAIL;
-    LOG(ERROR) << "Could not get host for shard " << shardId;
+    LOG(ERROR) << "Could not get host for shard " << request.shardId;
     return;
   }
 
@@ -254,7 +250,7 @@ void BeringeiNetworkClient::performShardDataBucketGet(
   }
 
   try {
-    client->sync_getShardDataBucket(result, begin, end, shardId, offset, limit);
+    client->sync_scanShard(result, request);
   } catch (const std::exception& e) {
     result.status = StatusCode::RPC_FAIL;
     LOG(ERROR) << "Got exception talking to Gorilla: " << e.what();

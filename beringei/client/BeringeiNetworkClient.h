@@ -106,13 +106,9 @@ class BeringeiNetworkClient {
     return shardCache_.size();
   }
 
-  virtual void performShardDataBucketGet(
-      int64_t begin,
-      int64_t end,
-      int64_t shardId,
-      int32_t offset,
-      int32_t limit,
-      GetShardDataBucketResult& result);
+  virtual void performScanShard(
+      const ScanShardRequest& request,
+      ScanShardResult& result);
 
   static uint32_t getTimeoutMs();
 

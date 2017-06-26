@@ -856,21 +856,16 @@ int64_t BeringeiClientImpl::getNumShardsFromWriteClient() {
   return writeClients_[0]->client->getNumShards();
 }
 
-void BeringeiClientImpl::getShardDataBucket(
-    int64_t begin,
-    int64_t end,
-    int64_t shardId,
-    int32_t offset,
-    int32_t limit,
-    GetShardDataBucketResult& result) {
+void BeringeiClientImpl::scanShard(
+    const ScanShardRequest& request,
+    ScanShardResult& result) {
   auto readClientCopy = getReadClientCopy();
   if (!readClientCopy) {
     result.status = StatusCode::RPC_FAIL;
     return;
   }
 
-  readClientCopy->performShardDataBucketGet(
-      begin, end, shardId, offset, limit, result);
+  readClientCopy->performScanShard(request, result);
 }
 
 void BeringeiClientImpl::setQueueCapacity(int& queueCapacity) {

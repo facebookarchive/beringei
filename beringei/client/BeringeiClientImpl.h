@@ -100,13 +100,7 @@ class BeringeiClientImpl {
   void stopRequests();
 
   // Fetch all data for the given shard for a time-window range.
-  void getShardDataBucket(
-      int64_t begin,
-      int64_t end,
-      int64_t shardId,
-      int32_t offset,
-      int32_t limit,
-      GetShardDataBucketResult& result);
+  void scanShard(const ScanShardRequest& request, ScanShardResult& result);
 
   void flushQueue();
 
