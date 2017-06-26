@@ -52,66 +52,49 @@ void BitUtil::addValueToBitString(
 }
 
 uint64_t BitUtil::readValueFromBitString(
-    const char* bitString,
+    folly::StringPiece data,
     uint64_t& bitPos,
     uint32_t bitsToRead) {
+  if (bitPos + bitsToRead > data.size() * 8) {
+    throw std::runtime_error("Trying to read too many bits");
+  }
   uint64_t value = 0;
   for (int i = 0; i < bitsToRead; i++) {
     value <<= 1;
-    uint64_t bit = (bitString[bitPos >> 3] >> (7 - (bitPos & 0x7))) & 1;
+    uint64_t bit = (data.data()[bitPos >> 3] >> (7 - (bitPos & 0x7))) & 1;
     value += bit;
     bitPos++;
   }
-
   return value;
 }
 
-uint64_t BitUtil::readValueFromBitString(
-    const char* bitString,
-    size_t bitStringLenBytes,
-    uint64_t& bitPos,
-    uint32_t bitsToRead) {
-  if (bitPos + bitsToRead > bitStringLenBytes * 8) {
-    throw std::runtime_error("Trying to read too many bits");
-  }
-
-  return readValueFromBitString(bitString, bitPos, bitsToRead);
-}
-
 uint32_t BitUtil::findTheFirstZeroBit(
-    const char* bitString,
+    folly::StringPiece data,
     uint64_t& bitPos,
     uint32_t limit) {
   uint32_t bits = 0;
-
   while (bits < limit) {
-    uint32_t bit = BitUtil::readValueFromBitString(bitString, bitPos, 1);
+    uint32_t bit = BitUtil::readValueFromBitString(data, bitPos, 1);
     if (bit == 0) {
       return bits;
     }
-
     bits++;
   }
-
   return bits;
 }
 
 uint32_t BitUtil::readValueThroughFirstZero(
-    const char* bitString,
-    size_t bitStringLenBytes,
+    folly::StringPiece data,
     uint64_t& bitPos,
     uint32_t limit) {
   uint32_t value = 0;
-
   for (uint32_t bits = 0; bits < limit; bits++) {
-    uint32_t bit = BitUtil::readValueFromBitString(
-        bitString, bitStringLenBytes, bitPos, 1);
+    uint32_t bit = BitUtil::readValueFromBitString(data, bitPos, 1);
     value = (value << 1) + bit;
     if (bit == 0) {
       return value;
     }
   }
-
   return value;
 }
 }

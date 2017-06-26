@@ -38,9 +38,9 @@ TEST(BitUtilTest, Ones) {
   ASSERT_EQ('\xFF', str[1]);
 
   uint64_t bitPos = 0;
-
+  folly::StringPiece data(str.c_str(), str.size());
   for (int i = 0; i < 16; i++) {
-    uint64_t v = BitUtil::readValueFromBitString(str.c_str(), bitPos, 1);
+    uint64_t v = BitUtil::readValueFromBitString(data, bitPos, 1);
     ASSERT_EQ(1, v);
   }
 }
@@ -59,10 +59,11 @@ TEST(BitUtilTest, Facebook) {
   ASSERT_EQ('\xB0', str[2]);
   ASSERT_EQ('\x0C', str[3]);
 
+  folly::StringPiece data(str.c_str(), str.size());
   uint64_t bitPos = 0;
-  uint64_t v1 = BitUtil::readValueFromBitString(str.c_str(), bitPos, 16);
+  uint64_t v1 = BitUtil::readValueFromBitString(data, bitPos, 16);
   ASSERT_EQ(16, bitPos);
-  uint64_t v2 = BitUtil::readValueFromBitString(str.c_str(), bitPos, 16);
+  uint64_t v2 = BitUtil::readValueFromBitString(data, bitPos, 16);
   ASSERT_EQ(32, bitPos);
 
   ASSERT_EQ(0xFACE, v1);
@@ -85,14 +86,15 @@ TEST(BitUtilTest, SmallChunks) {
   ASSERT_EQ('\xC3', str[1]);
   ASSERT_EQ('\x4E', str[2]);
 
+  folly::StringPiece data(str.c_str(), str.size());
   uint64_t bitPos = 0;
-  uint64_t v = BitUtil::readValueFromBitString(str.c_str(), bitPos, 6);
+  uint64_t v = BitUtil::readValueFromBitString(data, bitPos, 6);
   ASSERT_EQ(11, v);
-  v = BitUtil::readValueFromBitString(str.c_str(), bitPos, 6);
+  v = BitUtil::readValueFromBitString(data, bitPos, 6);
   ASSERT_EQ(12, v);
-  v = BitUtil::readValueFromBitString(str.c_str(), bitPos, 6);
+  v = BitUtil::readValueFromBitString(data, bitPos, 6);
   ASSERT_EQ(13, v);
-  v = BitUtil::readValueFromBitString(str.c_str(), bitPos, 6);
+  v = BitUtil::readValueFromBitString(data, bitPos, 6);
   ASSERT_EQ(14, v);
 }
 
@@ -117,25 +119,25 @@ TEST(BitUtilTest, BigAndSmallChunks) {
   ASSERT_EQ('\x00', str[4]);
   ASSERT_EQ('\x50', str[5]);
 
+  folly::StringPiece data(str.c_str(), str.size());
   uint64_t bitPos = 0;
-  uint64_t v = BitUtil::readValueFromBitString(str.c_str(), bitPos, 9);
+  uint64_t v = BitUtil::readValueFromBitString(data, bitPos, 9);
   ASSERT_EQ(511, v);
-  v = BitUtil::readValueFromBitString(str.c_str(), bitPos, 10);
+  v = BitUtil::readValueFromBitString(data, bitPos, 10);
   ASSERT_EQ(512, v);
-  v = BitUtil::readValueFromBitString(str.c_str(), bitPos, 3);
+  v = BitUtil::readValueFromBitString(data, bitPos, 3);
   ASSERT_EQ(5, v);
-  v = BitUtil::readValueFromBitString(str.c_str(), bitPos, 9);
+  v = BitUtil::readValueFromBitString(data, bitPos, 9);
   ASSERT_EQ(511, v);
-  v = BitUtil::readValueFromBitString(str.c_str(), bitPos, 10);
+  v = BitUtil::readValueFromBitString(data, bitPos, 10);
   ASSERT_EQ(512, v);
-  v = BitUtil::readValueFromBitString(str.c_str(), bitPos, 3);
+  v = BitUtil::readValueFromBitString(data, bitPos, 3);
   ASSERT_EQ(5, v);
 }
 
 TEST(BitUtilTest, ReadTooMuch) {
   fbstring str;
   uint64_t bitPos = 0;
-
-  ASSERT_ANY_THROW(
-      BitUtil::readValueThroughFirstZero(str.data(), str.length(), bitPos, 10));
+  folly::StringPiece data(str.c_str(), str.size());
+  ASSERT_ANY_THROW(BitUtil::readValueThroughFirstZero(data, bitPos, 10));
 }

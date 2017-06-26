@@ -213,20 +213,17 @@ int DataLogReader::readLog(
   int64_t prevTime = baseTime;
   std::vector<double> previousValues;
   uint64_t bitPos = 0;
-
+  folly::StringPiece data(buffer.get(), len);
   // Need at least three bytes for a complete value.
   while (bitPos <= len * 8 - kMinBytesNeeded * 8) {
     try {
       // Read the id of the time series.
-      int idControlBit =
-          BitUtil::readValueFromBitString(buffer.get(), len, bitPos, 1);
+      int idControlBit = BitUtil::readValueFromBitString(data, bitPos, 1);
       uint32_t id;
       if (idControlBit == kShortIdControlBit) {
-        id = BitUtil::readValueFromBitString(
-            buffer.get(), len, bitPos, kShortIdBits);
+        id = BitUtil::readValueFromBitString(data, bitPos, kShortIdBits);
       } else {
-        id = BitUtil::readValueFromBitString(
-            buffer.get(), len, bitPos, kLongIdBits);
+        id = BitUtil::readValueFromBitString(data, bitPos, kLongIdBits);
       }
 
       if (id > FLAGS_max_allowed_timeseries_id) {
@@ -237,24 +234,24 @@ int DataLogReader::readLog(
       // Read the time stamp delta based on the the number of bits in
       // the delta.
       uint32_t timeDeltaControlValue =
-          BitUtil::readValueThroughFirstZero(buffer.get(), len, bitPos, 3);
+          BitUtil::readValueThroughFirstZero(data, bitPos, 3);
       int64_t timeDelta = 0;
       switch (timeDeltaControlValue) {
         case kZeroDeltaControlValue:
           break;
         case kShortDeltaControlValue:
-          timeDelta = BitUtil::readValueFromBitString(
-                          buffer.get(), len, bitPos, kShortDeltaBits) +
+          timeDelta =
+              BitUtil::readValueFromBitString(data, bitPos, kShortDeltaBits) +
               kShortDeltaMin;
           break;
         case kMediumDeltaControlValue:
-          timeDelta = BitUtil::readValueFromBitString(
-                          buffer.get(), len, bitPos, kMediumDeltaBits) +
+          timeDelta =
+              BitUtil::readValueFromBitString(data, bitPos, kMediumDeltaBits) +
               kMediumDeltaMin;
           break;
         case kLargeDeltaControlValue:
-          timeDelta = BitUtil::readValueFromBitString(
-                          buffer.get(), len, bitPos, kLargeDeltaBits) +
+          timeDelta =
+              BitUtil::readValueFromBitString(data, bitPos, kLargeDeltaBits) +
               kLargeDeltaMin;
           break;
         default:
@@ -273,17 +270,16 @@ int DataLogReader::readLog(
       // Finally read the value.
       double value;
       uint32_t sameValueControlBit =
-          BitUtil::readValueFromBitString(buffer.get(), len, bitPos, 1);
+          BitUtil::readValueFromBitString(data, bitPos, 1);
       if (sameValueControlBit == kSameValueControlBit) {
         value = previousValues[id];
       } else {
-        uint32_t leadingZeros = BitUtil::readValueFromBitString(
-            buffer.get(), len, bitPos, kLeadingZerosBits);
-        uint32_t blockSize = BitUtil::readValueFromBitString(
-                                 buffer.get(), len, bitPos, kBlockSizeBits) +
-            1;
-        uint64_t blockValue = BitUtil::readValueFromBitString(
-            buffer.get(), len, bitPos, blockSize);
+        uint32_t leadingZeros =
+            BitUtil::readValueFromBitString(data, bitPos, kLeadingZerosBits);
+        uint32_t blockSize =
+            BitUtil::readValueFromBitString(data, bitPos, kBlockSizeBits) + 1;
+        uint64_t blockValue =
+            BitUtil::readValueFromBitString(data, bitPos, blockSize);
 
         // Shift to left by the number of trailing zeros
         blockValue <<= (64 - blockSize - leadingZeros);

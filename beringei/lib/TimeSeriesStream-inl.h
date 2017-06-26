@@ -61,59 +61,61 @@ int TimeSeriesStream::readValues(
   if (data.empty() || n == 0) {
     return 0;
   }
-
-  reserve(&out, out.size() + n);
-
-  uint64_t previousValue = 0;
-  uint64_t previousLeadingZeros = 0;
-  uint64_t previousTrailingZeros = 0;
-  uint64_t bitPos = 0;
-  int64_t previousTimestampDelta = kDefaultDelta;
-
-  int64_t firstTimestamp = BitUtil::readValueFromBitString(
-      data.data(), bitPos, kBitsForFirstTimestamp);
-  double firstValue = readNextValue(
-      data.data(),
-      bitPos,
-      previousValue,
-      previousLeadingZeros,
-      previousTrailingZeros);
-  int64_t previousTimestamp = firstTimestamp;
-
-  // If the first data point is after the query range, return nothing.
-  if (firstTimestamp > end) {
-    return 0;
-  }
-
   int count = 0;
-  if (firstTimestamp >= begin) {
-    addValueToOutput(out, firstTimestamp, firstValue);
-    count++;
-  }
+  try {
+    reserve(&out, out.size() + n);
 
-  for (int i = 1; i < n; i++) {
-    int64_t unixTime = readNextTimestamp(
-        data.data(), bitPos, previousTimestamp, previousTimestampDelta);
-    double value = readNextValue(
-        data.data(),
+    uint64_t previousValue = 0;
+    uint64_t previousLeadingZeros = 0;
+    uint64_t previousTrailingZeros = 0;
+    uint64_t bitPos = 0;
+    int64_t previousTimestampDelta = kDefaultDelta;
+
+    int64_t firstTimestamp =
+        BitUtil::readValueFromBitString(data, bitPos, kBitsForFirstTimestamp);
+    double firstValue = readNextValue(
+        data,
         bitPos,
         previousValue,
         previousLeadingZeros,
         previousTrailingZeros);
+    int64_t previousTimestamp = firstTimestamp;
 
-    if (unixTime > end) {
-      break;
+    // If the first data point is after the query range, return nothing.
+    if (firstTimestamp > end) {
+      return 0;
     }
 
-    if (unixTime >= begin) {
-      if (unixTime < FLAGS_gorilla_blacklisted_time_min ||
-          unixTime > FLAGS_gorilla_blacklisted_time_max) {
-        addValueToOutput(out, unixTime, value);
-        count++;
+    if (firstTimestamp >= begin) {
+      addValueToOutput(out, firstTimestamp, firstValue);
+      count++;
+    }
+
+    for (int i = 1; i < n; i++) {
+      int64_t unixTime = readNextTimestamp(
+          data, bitPos, previousTimestamp, previousTimestampDelta);
+      double value = readNextValue(
+          data,
+          bitPos,
+          previousValue,
+          previousLeadingZeros,
+          previousTrailingZeros);
+
+      if (unixTime > end) {
+        break;
+      }
+
+      if (unixTime >= begin) {
+        if (unixTime < FLAGS_gorilla_blacklisted_time_min ||
+            unixTime > FLAGS_gorilla_blacklisted_time_max) {
+          addValueToOutput(out, unixTime, value);
+          count++;
+        }
       }
     }
+  } catch (const std::runtime_error& e) {
+    LOG(ERROR) << "Error decoding data from Gorilla: " << e.what();
   }
-
   return count;
 }
 }
