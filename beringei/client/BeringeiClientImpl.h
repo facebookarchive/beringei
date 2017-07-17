@@ -27,7 +27,6 @@ class FacebookBase2;
 
 namespace facebook {
 namespace gorilla {
-
 using GorillaResultVector =
     std::vector<std::pair<Key, std::vector<TimeValuePair>>>;
 using GorillaServicesVector = std::vector<std::string>;
@@ -83,6 +82,11 @@ class BeringeiClientImpl {
   // If set, serviceOverride bypasses the gorilla_read_services property.
   virtual BeringeiGetResult get(
       GetDataRequest& request,
+      const std::string& serviceOverride = "");
+
+  folly::Future<BeringeiGetResult> futureGet(
+      GetDataRequest& request,
+      folly::EventBase* eb,
       const std::string& serviceOverride = "");
 
   // Returns true if reading from gorilla is enabled, false otherwise.

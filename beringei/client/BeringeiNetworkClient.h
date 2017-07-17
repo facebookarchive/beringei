@@ -61,7 +61,8 @@ class BeringeiNetworkClient {
 
   virtual folly::Future<GetDataResult> performGet(
       const std::pair<std::string, int>& hostInfo,
-      const GetDataRequest& request);
+      const GetDataRequest& request,
+      folly::EventBase* eb = getEventBase());
 
   // Fetches the last update times from all the servers in parallel
   // and calls the callback multiple times with partial results. The
@@ -113,7 +114,8 @@ class BeringeiNetworkClient {
   static uint32_t getTimeoutMs();
 
   virtual std::shared_ptr<BeringeiServiceAsyncClient> getBeringeiThriftClient(
-      const std::pair<std::string, int>& hostInfo);
+      const std::pair<std::string, int>& hostInfo,
+      folly::EventBase* eb = getEventBase());
 
   // Gets keys stored in specified shard. Returns true if there are more keys
   // to be fetched.

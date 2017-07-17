@@ -80,7 +80,8 @@ class BeringeiClientMock : public BeringeiNetworkClient {
 
   Future<GetDataResult> performGet(
       const std::pair<std::string, int>& hostInfo,
-      const GetDataRequest& request) override {
+      const GetDataRequest& request,
+      folly::EventBase*) override {
     std::vector<int64_t> shards;
     for (auto& k : request.keys) {
       shards.push_back(k.shardId);

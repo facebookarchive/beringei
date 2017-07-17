@@ -222,8 +222,9 @@ void BeringeiNetworkClient::performGet(GetRequestMap& requests) {
 
 folly::Future<GetDataResult> BeringeiNetworkClient::performGet(
     const std::pair<std::string, int>& hostInfo,
-    const GetDataRequest& request) {
-  return getBeringeiThriftClient(hostInfo)->future_getData(request);
+    const GetDataRequest& request,
+    folly::EventBase* eb) {
+  return getBeringeiThriftClient(hostInfo, eb)->future_getData(request);
 }
 
 void BeringeiNetworkClient::performScanShard(
@@ -429,10 +430,10 @@ uint32_t BeringeiNetworkClient::getTimeoutMs() {
 
 std::shared_ptr<BeringeiServiceAsyncClient>
 BeringeiNetworkClient::getBeringeiThriftClient(
-    const std::pair<std::string, int>& hostInfo) {
+    const std::pair<std::string, int>& hostInfo,
+    folly::EventBase* eb) {
   folly::SocketAddress address(hostInfo.first, hostInfo.second, true);
-  auto socket =
-      apache::thrift::async::TAsyncSocket::newSocket(getEventBase(), address);
+  auto socket = apache::thrift::async::TAsyncSocket::newSocket(eb, address);
   auto channel =
       apache::thrift::HeaderClientChannel::newChannel(std::move(socket));
   channel->setTimeout(getTimeoutMs());

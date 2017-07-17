@@ -10,9 +10,11 @@
 #pragma once
 
 #include <folly/fibers/TimedMutex.h>
+#include <folly/futures/Future.h>
 #include <bitset>
 #include <vector>
 
+#include "beringei/client/BeringeiNetworkClient.h"
 #include "beringei/if/gen-cpp2/beringei_data_types.h"
 
 namespace facebook {
