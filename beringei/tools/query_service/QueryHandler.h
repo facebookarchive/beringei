@@ -46,6 +46,7 @@ class QueryHandler : public proxygen::RequestHandler {
 
   int getShardId(const std::string& key, const int numShards);
 
+  void validateQuery(const Query& request);
   GetDataRequest createBeringeiRequest(
       const Query& request,
       const int numShards);
