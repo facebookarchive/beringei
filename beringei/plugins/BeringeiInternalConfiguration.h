@@ -30,7 +30,7 @@ class BeringeiInternalServiceInfo {
   bool isLoggingNewKeysEnabled;
 
   // map of <shardId, InternalHostInfo>
-  std::map<int, BeringeiInternalHostInfo> shardMap;
+  std::vector<BeringeiInternalHostInfo> shardMap;
 
   std::unordered_map<std::string, std::set<int64_t>> shardsPerHostMap;
 };

@@ -111,14 +111,14 @@ bool BeringeiConfigurationAdapter::getHostForShardId(
     }
 
     auto& service = serviceIterator->second;
-    auto shardIterator = service.shardMap.find(shardId);
 
-    if (shardIterator == service.shardMap.end()) {
+    if (shardId >= service.shardMap.size() || shardId < 0) {
       return false;
     }
+    const auto& shardHostInfo = service.shardMap.at(shardId);
 
-    hostInfo.first = shardIterator->second.hostAddress;
-    hostInfo.second = shardIterator->second.port;
+    hostInfo.first = shardHostInfo.hostAddress;
+    hostInfo.second = shardHostInfo.port;
     return true;
   }
 

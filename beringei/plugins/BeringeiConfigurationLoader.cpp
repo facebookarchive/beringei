@@ -104,6 +104,7 @@ BeringeiConfigurationLoader::getInternalConfiguration(
     BeringeiInternalServiceInfo serviceInfo;
     serviceInfo.location = service.location;
     serviceInfo.isLoggingNewKeysEnabled = service.isLoggingNewKeysEnabled;
+    serviceInfo.shardMap.resize(service.shardMap.size());
 
     for (auto& shard : service.shardMap) {
       BeringeiInternalHostInfo hostInfo;
