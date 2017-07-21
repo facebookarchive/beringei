@@ -25,7 +25,9 @@ TEST(PersistentKeyListTest, writeAndRead) {
   bool called = false;
   keys.clearEntireListForTests();
   PersistentKeyList::readKeys(
-      7, dir.dirname(), [&](uint32_t id, const char* key, uint16_t category) {
+      7,
+      dir.dirname(),
+      [&](uint32_t /*id*/, const char* /*key*/, uint16_t /*category*/) {
         called = true;
         return true;
       });
@@ -105,7 +107,9 @@ TEST(PersistentKeyListTest, partialData) {
 
   vector<int> results = {0, 0};
   PersistentKeyList::readKeys(
-      8, dir.dirname(), [&](uint32_t id, const char* key, uint16_t category) {
+      8,
+      dir.dirname(),
+      [&](uint32_t id, const char* /*key*/, uint16_t /*category*/) {
         results.at(id)++;
         return true;
       });

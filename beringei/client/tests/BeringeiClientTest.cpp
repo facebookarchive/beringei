@@ -45,7 +45,7 @@ class BeringeiClientMock : public BeringeiNetworkClient {
   bool addDataPointToRequest(
       DataPoint& dp,
       BeringeiNetworkClient::PutRequestMap& requests,
-      bool& dropped) override {
+      bool& /*dropped*/) override {
     auto& request = requests[make_pair("", dp.key.shardId)];
     request.data.push_back(dp);
     return true;

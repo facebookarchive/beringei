@@ -284,7 +284,7 @@ bool BeringeiNetworkClient::getShardKeys(
 }
 
 void BeringeiNetworkClient::getLastUpdateTimesForHost(
-    uint32_t minLastUpdateTime,
+    uint32_t /*minLastUpdateTime*/,
     uint32_t maxKeysPerRequest,
     const std::string& host,
     int port,

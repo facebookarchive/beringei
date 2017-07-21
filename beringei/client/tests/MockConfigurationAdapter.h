@@ -51,7 +51,7 @@ class MockConfigurationAdapter : public BeringeiConfigurationAdapterIf {
 
   MOCK_METHOD1(isValidReadService, bool(const std::string&));
 
-  bool isLoggingNewKeysEnabled(const std::string& serviceName) override {
+  bool isLoggingNewKeysEnabled(const std::string& /*serviceName*/) override {
     return false;
   }
 };
