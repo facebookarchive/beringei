@@ -125,7 +125,7 @@ vector<DataPoint> BeringeiNetworkClient::performPut(PutRequestMap& requests) {
                         std::make_move_iterator(request.second.data.end()));
                   }
                 } else {
-                  auto exn = state.exceptionWrapper();
+                  auto exn = state.exception();
                   auto error = exn.what().toStdString();
                   LOG(ERROR) << "putDataPoints Failed. Reason: " << error;
 
@@ -198,7 +198,7 @@ void BeringeiNetworkClient::performGet(GetRequestMap& requests) {
                   request.second.first, request.second.second);
             }
           } else {
-            auto exn = state.exceptionWrapper();
+            auto exn = state.exception();
             auto error = exn.what().toStdString();
             LOG(ERROR) << "getData failed. Reason: " << error;
 
