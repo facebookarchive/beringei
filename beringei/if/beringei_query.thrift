@@ -40,3 +40,33 @@ struct Query {
 struct QueryRequest {
   1: list<Query> queries,
 }
+
+struct Stat {
+  1: string key,
+  2: i64 ts,
+  3: double value,
+}
+
+struct Agent {
+  1: string mac,
+  2: string name,
+  3: string site,
+  4: list<Stat> stats,
+}
+
+struct Topology {
+  1: string name,
+}
+
+struct WriteRequest {
+  1: Topology topology,
+  2: list<Agent> agents,
+}
+
+struct MySqlNodeData {
+  1: i64 id,
+  2: string node,
+  3: string mac,
+  4: string network,
+  5: string site,
+}

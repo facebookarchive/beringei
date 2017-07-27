@@ -30,8 +30,11 @@ const int MAX_COLUMNS = 7;
 const int MAX_DATA_POINTS = 60;
 
 QueryHandler::QueryHandler(
-    std::shared_ptr<BeringeiConfigurationAdapterIf> configurationAdapter)
-    : RequestHandler(), configurationAdapter_(configurationAdapter) {}
+    std::shared_ptr<BeringeiConfigurationAdapterIf> configurationAdapter,
+    std::shared_ptr<BeringeiClient> beringeiClient)
+    : RequestHandler(),
+      configurationAdapter_(configurationAdapter),
+      beringeiClient_(beringeiClient) {}
 
 void QueryHandler::onRequest(
     std::unique_ptr<HTTPMessage> /* unused */) noexcept {
@@ -68,7 +71,6 @@ void QueryHandler::onEOM() noexcept {
   LOG(INFO) << "Request for " << query_.key_ids.size() << " key ids of "
             << query_.agg_type << " aggregation, for " << query_.min_ago
             << " minutes ago.";
- 
   folly::fbstring jsonResp;
   try {
     jsonResp = handleQuery();
@@ -276,7 +278,6 @@ folly::fbstring QueryHandler::eventHandler(int dataPointIncrementMs) {
     linkMap[linkName]["alive"] = uptimePerc;
     linkMap[linkName]["events"] = onlineEvents;
   }
-      
   folly::dynamic response = folly::dynamic::object;
   response["links"] = linkMap;
   response["start"] = startTime_ * 1000;
@@ -480,11 +481,9 @@ folly::fbstring QueryHandler::handleQuery() {
   auto f = p.getFuture();
   folly::EventBase eb;
   eb.runInLoop([this, p = std::move(p)] () mutable {
-    BeringeiClient client(
-        configurationAdapter_, 1, BeringeiClient::kNoWriterThreads);
-    int numShards = client.getNumShards();
+    int numShards = beringeiClient_->getNumShards();
     auto beringeiRequest = createBeringeiRequest(query_, numShards);
-    client.get(beringeiRequest, beringeiTimeSeries_);
+    beringeiClient_->get(beringeiRequest, beringeiTimeSeries_);
   });
   std::thread tEb([&eb]() { eb.loop(); });
   tEb.join();
@@ -501,7 +500,7 @@ folly::fbstring QueryHandler::handleQuery() {
   }
   auto endTime = (int64_t)duration_cast<milliseconds>(
         system_clock::now().time_since_epoch()).count();
-  LOG(INFO) << "Query completed. " 
+  LOG(INFO) << "Query completed. "
             << "Fetch: " << (fetchTime - startTime) << "ms, "
             << "Column names: " << (columnNamesTime - fetchTime) << "ms, "
             << "Transform: " << (endTime - columnNamesTime) << "ms, "
