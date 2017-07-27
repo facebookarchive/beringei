@@ -152,11 +152,11 @@ void MySqlClient::updateNodeKeys(
     prep_stmt = con->prepareStatement(
         "INSERT IGNORE INTO `ts_key` (`node_id`, `key`) VALUES (?, ?)");
 
-    for (auto it = nodeKeys.begin(); it != nodeKeys.end(); /* empty */) {
-      LOG(INFO) << "updateNodeKeys => node_id: " << it->first
-                << " Num of keys: " << it->second.size();
-      for (const auto& nodeKey : it->second) {
-        prep_stmt->setInt(1, it->first);
+    for (const auto& keys : nodeKeys) {
+      LOG(INFO) << "updateNodeKeys => node_id: " << keys.first
+                << " Num of keys: " << keys.second.size();
+      for (const auto& nodeKey : keys.second) {
+        prep_stmt->setInt(1, keys.first);
         prep_stmt->setString(2, nodeKey);
         prep_stmt->execute();
       }
