@@ -119,6 +119,10 @@ int64_t ShardData::getNumShards() {
   return numShards_;
 }
 
+int64_t ShardData::getNumShardsOwnedInProgress() {
+  return numShards_ + numShardsBeingAdded_;
+}
+
 int64_t ShardData::getTotalNumShards() {
   return totalShards_;
 }
