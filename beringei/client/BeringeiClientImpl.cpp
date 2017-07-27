@@ -14,12 +14,11 @@
 #include <folly/String.h>
 #include <folly/gen/Base.h>
 #include <thrift/lib/cpp2/async/RequestChannel.h>
-#include <future>
+#include <wangle/concurrent/GlobalExecutor.h>
 
 #include "beringei/lib/GorillaStatsManager.h"
 #include "beringei/lib/TimeSeries.h"
 #include "beringei/lib/Timer.h"
-#include "wangle/concurrent/GlobalExecutor.h"
 
 using namespace apache::thrift;
 using namespace folly::gen;
@@ -604,7 +603,7 @@ folly::Future<BeringeiGetResult> BeringeiClientImpl::futureGet(
                 getContext,
                 clientId,
                 indices = std::move(r.second.second)
-              ](GetDataResult result) {
+              ](GetDataResult && result) {
                 if (getContext->resultCollector->addResults(
                         result, indices, clientId)) {
                   getContext->oneComplete.setValue();
@@ -627,7 +626,7 @@ folly::Future<BeringeiGetResult> BeringeiClientImpl::futureGet(
           .then([](const std::vector<folly::Try<folly::Unit>>&) {}));
   return folly::collectAny(either).then(
       [ getContext, shouldThrow = throwExceptionOnTransientFailure_ ](
-          std::pair<unsigned long, folly::Try<folly::Unit>>) {
+          std::pair<unsigned long, folly::Try<folly::Unit>> &&) {
         return getContext->resultCollector->finalize(
             shouldThrow, getContext->clientNames);
       });
