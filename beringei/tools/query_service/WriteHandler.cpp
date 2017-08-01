@@ -140,7 +140,7 @@ void WriteHandler::writeData(WriteRequest request) {
         bRow.value = timePair;
         bRows.push_back(bRow);
       } else {
-        // LOG(INFO) << "Missing cache for " << *nodeId << "/" << stat.key;
+        VLOG(2) << "Missing cache for " << *nodeId << "/" << stat.key;
         missingNodeKey[*nodeId].insert(stat.key);
       }
     }
@@ -150,7 +150,7 @@ void WriteHandler::writeData(WriteRequest request) {
   mySqlClient_->updateNodeKeys(missingNodeKey);
 
   // insert rows
-  if (bRows.size()) {
+  if (!bRows.empty()) {
     folly::EventBase eb;
     eb.runInLoop([this, &bRows]() mutable {
       auto pushedPoints = beringeiClient_->putDataPoints(bRows);
@@ -167,7 +167,7 @@ void WriteHandler::writeData(WriteRequest request) {
     LOG(INFO) << "writeData completed. "
               << "Total: " << (endTime - startTime) << "ms.";
   } else {
-    LOG(INFO) << "writeData request failures";
+    LOG(INFO) << "No stats data to write";
   }
 }
 
@@ -186,18 +186,18 @@ void WriteHandler::onEOM() noexcept {
     return;
   }
   logRequest(request);
-  LOG(INFO) << "Stats write request from \"" << request.topology.name
+  LOG(INFO) << "Stats writer request from \"" << request.topology.name
             << "\" for " << request.agents.size() << " nodes";
 
   folly::fbstring jsonResp;
   try {
     writeData(request);
   } catch (const std::exception& ex) {
-    LOG(ERROR) << "Unable to handle stats_write request: " << ex.what();
+    LOG(ERROR) << "Unable to handle stats_writer request: " << ex.what();
     ResponseBuilder(downstream_)
         .status(500, "OK")
         .header("Content-Type", "application/json")
-        .body("Failed handling stats_write request")
+        .body("Failed handling stats_writer request")
         .sendWithEOM();
     return;
   }

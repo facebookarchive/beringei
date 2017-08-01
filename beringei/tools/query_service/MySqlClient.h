@@ -14,6 +14,14 @@
 #include <folly/futures/Future.h>
 
 #include "beringei/if/gen-cpp2/beringei_query_types_custom_protocol.h"
+#include "mysql_connection.h"
+#include "mysql_driver.h"
+
+#include <cppconn/driver.h>
+#include <cppconn/exception.h>
+#include <cppconn/prepared_statement.h>
+#include <cppconn/resultset.h>
+#include <cppconn/statement.h>
 
 namespace facebook {
 namespace gorilla {
@@ -42,6 +50,8 @@ class MySqlClient {
       const std::string& keyName) const;
 
  private:
+  sql::Driver* driver_;
+  std::unique_ptr<sql::Connection> connection_;
   MacToNodeMap macAddrToNode_{};
   NodeKeyMap nodeKeyIds_{};
 };

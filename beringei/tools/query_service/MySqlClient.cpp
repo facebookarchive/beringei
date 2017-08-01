@@ -16,15 +16,6 @@
 #include <thrift/lib/cpp/util/ThriftSerializer.h>
 #include <thrift/lib/cpp2/protocol/Serializer.h>
 
-#include "mysql_connection.h"
-#include "mysql_driver.h"
-
-#include <cppconn/driver.h>
-#include <cppconn/exception.h>
-#include <cppconn/prepared_statement.h>
-#include <cppconn/resultset.h>
-#include <cppconn/statement.h>
-
 DEFINE_string(mysql_url, "localhost", "mysql host");
 DEFINE_string(mysql_user, "root", "mysql user");
 DEFINE_string(mysql_pass, "", "mysql passward");
@@ -34,19 +25,22 @@ namespace facebook {
 namespace gorilla {
 
 MySqlClient::MySqlClient() {
+  try {
+    driver_ = sql::mysql::get_driver_instance();
+    connection_ = std::unique_ptr<sql::Connection>(
+        driver_->connect(FLAGS_mysql_url, FLAGS_mysql_user, FLAGS_mysql_pass));
+    connection_->setSchema(FLAGS_mysql_database);
+  } catch (sql::SQLException& e) {
+    LOG(ERROR) << "ERR: " << e.what();
+    LOG(ERROR) << " (MySQL error code: " << e.getErrorCode();
+  }
   refreshNodes();
   refreshNodeKeys();
 }
 
 void MySqlClient::refreshNodes() noexcept {
   try {
-    sql::Driver* driver = sql::mysql::get_driver_instance();
-    /* Using the Driver to create a connection */
-    std::unique_ptr<sql::Connection> con(
-        driver->connect(FLAGS_mysql_url, FLAGS_mysql_user, FLAGS_mysql_pass));
-    con->setSchema(FLAGS_mysql_database);
-
-    std::unique_ptr<sql::Statement> stmt(con->createStatement());
+    std::unique_ptr<sql::Statement> stmt(connection_->createStatement());
     std::unique_ptr<sql::ResultSet> res(
         stmt->executeQuery("SELECT * FROM `nodes`"));
 
@@ -71,13 +65,7 @@ void MySqlClient::refreshNodes() noexcept {
 
 void MySqlClient::refreshNodeKeys() noexcept {
   try {
-    sql::Driver* driver = sql::mysql::get_driver_instance();
-    /* Using the Driver to create a connection */
-    std::unique_ptr<sql::Connection> con(
-        driver->connect(FLAGS_mysql_url, FLAGS_mysql_user, FLAGS_mysql_pass));
-    con->setSchema(FLAGS_mysql_database);
-
-    std::unique_ptr<sql::Statement> stmt(con->createStatement());
+    std::unique_ptr<sql::Statement> stmt(connection_->createStatement());
     std::unique_ptr<sql::ResultSet> res(
         stmt->executeQuery("SELECT `id`, `node_id`, `key` FROM `ts_key`"));
 
@@ -107,14 +95,8 @@ void MySqlClient::addNodes(
     return;
   }
   try {
-    sql::Driver* driver = sql::mysql::get_driver_instance();
-    /* Using the Driver to create a connection */
-    std::unique_ptr<sql::Connection> con(
-        driver->connect(FLAGS_mysql_url, FLAGS_mysql_user, FLAGS_mysql_pass));
-    con->setSchema(FLAGS_mysql_database);
-
     std::unique_ptr<sql::PreparedStatement> prep_stmt(
-        con->prepareStatement("INSERT IGNORE INTO `nodes` (`mac`, `node`, "
+        connection_->prepareStatement("INSERT IGNORE INTO `nodes` (`mac`, `node`, "
                               "`site`, `network`) VALUES (?, ?, ?, ?)"));
 
     for (const auto& node : newNodes) {
@@ -142,14 +124,8 @@ void MySqlClient::updateNodeKeys(
   }
   LOG(INFO) << "updateNodeKeys for " << nodeKeys.size() << " nodes";
   try {
-    sql::Driver* driver = sql::mysql::get_driver_instance();
-    /* Using the Driver to create a connection */
-    std::unique_ptr<sql::Connection> con(
-        driver->connect(FLAGS_mysql_url, FLAGS_mysql_user, FLAGS_mysql_pass));
-    con->setSchema(FLAGS_mysql_database);
-
     sql::PreparedStatement* prep_stmt;
-    prep_stmt = con->prepareStatement(
+    prep_stmt = connection_->prepareStatement(
         "INSERT IGNORE INTO `ts_key` (`node_id`, `key`) VALUES (?, ?)");
 
     for (const auto& keys : nodeKeys) {
