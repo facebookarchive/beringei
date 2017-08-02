@@ -16,11 +16,11 @@
 namespace facebook {
 namespace gorilla {
 
-const static std::string kNumShards = ".num_shards";
-const static std::string kMsPerShardAdd = ".ms_per_shard_add";
-const static std::string kShardsAdded = ".shards_added";
-const static std::string kShardsBeingAdded = ".shards_being_added";
-const static std::string kShardsDropped = ".shards_dropped";
+const static std::string kNumShards = "num_shards";
+const static std::string kMsPerShardAdd = "ms_per_shard_add";
+const static std::string kShardsAdded = "shards_added";
+const static std::string kShardsBeingAdded = "shards_being_added";
+const static std::string kShardsDropped = "shards_dropped";
 
 const int ShardData::kAsyncDropShardsDelaySecs = 30;
 

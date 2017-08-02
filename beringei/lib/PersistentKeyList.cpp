@@ -29,7 +29,7 @@ const static int kTempFileId = 0;
 const int KRetryFileOpen = 3;
 
 const static std::string kFileType = "key_list";
-const static std::string kFailedCounter = ".failed_writes." + kFileType;
+const static std::string kFailedCounter = "failed_writes." + kFileType;
 
 // Marker bytes to determine if the file is compressed or not and if
 // there are categories or not.

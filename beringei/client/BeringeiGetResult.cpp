@@ -136,7 +136,7 @@ struct DeltaCompareInserter
 namespace facebook {
 namespace gorilla {
 
-static const std::string kMismatchesKey = ".gorilla_client.mismatches";
+static const std::string kMismatchesKey = "gorilla_client.mismatches";
 
 BeringeiGetResultCollector::BeringeiGetResultCollector(
     size_t size,
@@ -249,9 +249,9 @@ BeringeiGetResult BeringeiGetResultCollector::finalize(
   int64_t maxMismatches = 0;
   for (size_t i = 0; i < numServices_; i++) {
     GorillaStatsManager::addStatValue(
-        ".gorilla_client.missing_points." + serviceNames[i], drops[i], SUM);
+        "gorilla_client.missing_points." + serviceNames[i], drops[i], SUM);
     GorillaStatsManager::addStatValue(
-        ".gorilla_client.failed_keys." + serviceNames[i], missings[i], SUM);
+        "gorilla_client.failed_keys." + serviceNames[i], missings[i], SUM);
 
     if (FLAGS_gorilla_compare_reads) {
       if (maxMismatches < mismatches_[1ull << i]) {
@@ -272,7 +272,7 @@ BeringeiGetResult BeringeiGetResultCollector::finalize(
     numDatapoints += ts.size();
   }
   GorillaStatsManager::addStatValue(
-      ".gorilla_client.num_datapoints", numDatapoints, SUM);
+      "gorilla_client.num_datapoints", numDatapoints, SUM);
 
   result_.memoryEstimate = sizeof(this) + vectorMemory(result_.results) +
       vectorMemory(complete_) + vectorMemory(drops_);

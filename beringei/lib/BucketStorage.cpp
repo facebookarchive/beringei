@@ -44,11 +44,10 @@ const std::string BucketStorage::kCompletePrefix = "complete_block";
 
 static const size_t kLargeFileBuffer = 1024 * 1024;
 
-static const std::string kBlockFileReadFailures = ".block_file_read_failures";
-static const std::string kDedupedTimeSeriesSize =
-    ".timeseries_block_dedup_size";
+static const std::string kBlockFileReadFailures = "block_file_read_failures";
+static const std::string kDedupedTimeSeriesSize = "timeseries_block_dedup_size";
 static const std::string kWrittenTimeSeriesSize =
-    ".timeseries_block_written_size";
+    "timeseries_block_written_size";
 
 BucketStorage::BucketStorage(
     uint8_t numBuckets,

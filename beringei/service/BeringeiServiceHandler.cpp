@@ -77,38 +77,38 @@ DEFINE_bool(
 namespace facebook {
 namespace gorilla {
 
-const static std::string kPurgedTimeSeries = ".purged_time_series";
+const static std::string kPurgedTimeSeries = "purged_time_series";
 const static std::string kPurgedTimeSeriesInCategoryPrefix =
-    ".purged_time_series_in_category_";
+    "purged_time_series_in_category_";
 const int kPurgeInterval = facebook::gorilla::kGorillaSecondsPerHour;
-const static std::string kMsPerKeyListCompact = ".ms_per_key_list_compact";
+const static std::string kMsPerKeyListCompact = "ms_per_key_list_compact";
 const int kCleanInterval = 6 * facebook::gorilla::kGorillaSecondsPerHour;
 const static std::string kTooSlowToFinalizeBuckets =
-    ".too_slow_to_finalize_buckets";
+    "too_slow_to_finalize_buckets";
 const static std::string kMsPerFinalizeShardBucket =
-    ".ms_per_finalize_shard_bucket";
-const static std::string kUsPerGet = ".us_per_get";
-const static std::string kUsPerGetPerKey = ".us_per_get_per_key";
-const static std::string kUsPerPut = ".us_per_put";
-const static std::string kUsPerPutPerKey = ".us_per_put_per_key";
-const static std::string kKeysPut = ".keys_put";
-const static std::string kKeysGot = ".keys_got";
-static const std::string kMissingTooMuchData = ".status_missing_too_much_data";
-const static std::string kNewKeys = ".new_keys";
-const static std::string kDatapointsAdded = ".datapoints_added";
-const static std::string kDatapointsDropped = ".datapoints_dropped";
-const static std::string kDatapointsBehind = ".datapoints_behind";
-const static std::string kDatapointsAhead = ".datapoints_ahead";
-const static std::string kDatapointsNotOwned = ".datapoints_not_owned";
-const static std::string kTooLongKeys = ".too_long_keys";
-const static std::string kNewTimeSeriesBlocked = ".new_time_series_blocked";
-const static std::string kNumShards = ".num_shards";
-const static std::string kMsPerShardAdd = ".ms_per_shard_add";
-const static std::string kShardsAdded = ".shards_added";
-const static std::string kShardsBeingAdded = ".shards_being_added";
-const static std::string kShardsDropped = ".shards_dropped";
+    "ms_per_finalize_shard_bucket";
+const static std::string kUsPerGet = "us_per_get";
+const static std::string kUsPerGetPerKey = "us_per_get_per_key";
+const static std::string kUsPerPut = "us_per_put";
+const static std::string kUsPerPutPerKey = "us_per_put_per_key";
+const static std::string kKeysPut = "keys_put";
+const static std::string kKeysGot = "keys_got";
+static const std::string kMissingTooMuchData = "status_missing_too_much_data";
+const static std::string kNewKeys = "new_keys";
+const static std::string kDatapointsAdded = "datapoints_added";
+const static std::string kDatapointsDropped = "datapoints_dropped";
+const static std::string kDatapointsBehind = "datapoints_behind";
+const static std::string kDatapointsAhead = "datapoints_ahead";
+const static std::string kDatapointsNotOwned = "datapoints_not_owned";
+const static std::string kTooLongKeys = "too_long_keys";
+const static std::string kNewTimeSeriesBlocked = "new_time_series_blocked";
+const static std::string kNumShards = "num_shards";
+const static std::string kMsPerShardAdd = "ms_per_shard_add";
+const static std::string kShardsAdded = "shards_added";
+const static std::string kShardsBeingAdded = "shards_being_added";
+const static std::string kShardsDropped = "shards_dropped";
 const static std::string kUsPerGetLastUpdateTimes =
-    ".us_per_get_last_update_times";
+    "us_per_get_last_update_times";
 
 // Max size for ODS key is 256 and entity 128. This will fit those and
 // some extra characters.

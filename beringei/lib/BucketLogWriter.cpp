@@ -21,9 +21,9 @@ namespace gorilla {
 DECLARE_int32(data_log_buffer_size);
 
 static const int kLogFileBufferSize = FLAGS_data_log_buffer_size;
-static const std::string kLogDataFailures = ".log_data_failures";
+static const std::string kLogDataFailures = "log_data_failures";
 static const std::string kLogFilesystemFailures =
-    ".failed_writes.log_filesystem";
+    "failed_writes.log_filesystem";
 
 // These are not valid indexes so they can be used to control starting
 // and stopping shards.

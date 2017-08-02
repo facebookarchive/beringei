@@ -16,8 +16,8 @@
 namespace facebook {
 namespace gorilla {
 
-static const std::string kKeyListFailures = ".key_list_write_failures";
-static const std::string kKeysPopped = ".key_list_queue_popped";
+static const std::string kKeyListFailures = "key_list_write_failures";
+static const std::string kKeysPopped = "key_list_queue_popped";
 
 KeyListWriter::KeyListWriter(const std::string& dataDirectory, size_t queueSize)
     : keyInfoQueue_(queueSize),

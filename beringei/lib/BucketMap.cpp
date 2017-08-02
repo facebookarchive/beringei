@@ -35,20 +35,20 @@ namespace gorilla {
 // on each resize.
 const int kRowsAtATime = 10000;
 
-static const std::string kMsPerKeyListRead = ".ms_per_key_list_read";
-static const std::string kMsPerLogFilesRead = ".ms_per_log_files_read";
-static const std::string kMsPerBlockFileRead = ".ms_per_block_file_read";
-static const std::string kMsPerQueueProcessing = ".ms_per_queue_processing";
-static const std::string kDataPointQueueDropped = ".data_point_queue_dropped";
-static const std::string kCorruptKeyFiles = ".corrupt_key_files";
-static const std::string kCorruptLogFiles = ".corrupt_log_files";
-static const std::string kUnknownKeysInLogFiles = ".unknown_keys_in_log_files";
+static const std::string kMsPerKeyListRead = "ms_per_key_list_read";
+static const std::string kMsPerLogFilesRead = "ms_per_log_files_read";
+static const std::string kMsPerBlockFileRead = "ms_per_block_file_read";
+static const std::string kMsPerQueueProcessing = "ms_per_queue_processing";
+static const std::string kDataPointQueueDropped = "data_point_queue_dropped";
+static const std::string kCorruptKeyFiles = "corrupt_key_files";
+static const std::string kCorruptLogFiles = "corrupt_log_files";
+static const std::string kUnknownKeysInLogFiles = "unknown_keys_in_log_files";
 static const std::string kUnknownKeysInBlockMetadataFiles =
-    ".unknown_keys_in_block_metadata_files";
-static const std::string kDataHoles = ".missing_blocks_and_logs";
-static const std::string kMissingLogs = ".missing_seconds_of_log_data";
-static const std::string kDeletionRaces = ".key_deletion_failures";
-static const std::string kDuplicateKeys = ".duplicate_keys_in_key_list";
+    "unknown_keys_in_block_metadata_files";
+static const std::string kDataHoles = "missing_blocks_and_logs";
+static const std::string kMissingLogs = "missing_seconds_of_log_data";
+static const std::string kDeletionRaces = "key_deletion_failures";
+static const std::string kDuplicateKeys = "duplicate_keys_in_key_list";
 
 static const size_t kMaxAllowedKeyLength = 400;
 

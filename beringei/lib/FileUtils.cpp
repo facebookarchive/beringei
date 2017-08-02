@@ -35,8 +35,8 @@ DEFINE_bool(
 namespace facebook {
 namespace gorilla {
 
-static const std::string kMsPerFileOpen = ".ms_per_file_open";
-static const std::string kFileOpenFailures = ".file_open_failures";
+static const std::string kMsPerFileOpen = "ms_per_file_open";
+static const std::string kFileOpenFailures = "file_open_failures";
 
 FileUtils::FileUtils(
     int64_t shardId,

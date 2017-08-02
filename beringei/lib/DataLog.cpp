@@ -74,7 +74,7 @@ const static int kMinBytesNeeded = 3;
 const static int kSameValueControlBit = 0;
 const static int kDifferentValueControlBit = 1;
 
-const static std::string kFailedCounter = ".failed_writes.log";
+const static std::string kFailedCounter = "failed_writes.log";
 
 DataLogWriter::DataLogWriter(FileUtils::File&& out, int64_t baseTime)
     : out_(out),
