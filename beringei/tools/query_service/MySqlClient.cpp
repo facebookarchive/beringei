@@ -35,7 +35,8 @@ MySqlClient::MySqlClient() {
     LOG(ERROR) << " (MySQL error code: " << e.getErrorCode();
   }
   refreshNodes();
-  refreshNodeKeys();
+  refreshStatKeys();
+  refreshEventCategories();
 }
 
 void MySqlClient::refreshNodes() noexcept {
@@ -63,13 +64,13 @@ void MySqlClient::refreshNodes() noexcept {
   }
 }
 
-void MySqlClient::refreshNodeKeys() noexcept {
+void MySqlClient::refreshStatKeys() noexcept {
   try {
     std::unique_ptr<sql::Statement> stmt(connection_->createStatement());
     std::unique_ptr<sql::ResultSet> res(
         stmt->executeQuery("SELECT `id`, `node_id`, `key` FROM `ts_key`"));
 
-    LOG(INFO) << "refreshNodeKeys: Number of keys: " << res->rowsCount();
+    LOG(INFO) << "refreshStatKeys: Number of keys: " << res->rowsCount();
     while (res->next()) {
       int64_t keyId = res->getInt("id");
       int64_t nodeId = res->getInt("node_id");
@@ -89,6 +90,36 @@ void MySqlClient::refreshNodeKeys() noexcept {
   }
 }
 
+void MySqlClient::refreshEventCategories() noexcept {
+  try {
+    std::unique_ptr<sql::Statement> stmt(connection_->createStatement());
+    std::unique_ptr<sql::ResultSet> res(stmt->executeQuery(
+        "SELECT `id`, `node_id`, `category` FROM `event_categories`"));
+
+    LOG(INFO) << "refreshEventCategories: Number of categories: "
+              << res->rowsCount();
+    while (res->next()) {
+      int64_t categoryId = res->getInt("id");
+      int64_t nodeId = res->getInt("node_id");
+      std::string categoryName = res->getString("category");
+
+      std::transform(
+          categoryName.begin(),
+          categoryName.end(),
+          categoryName.begin(),
+          ::tolower);
+      auto itNode = nodeCategoryIds_.find(nodeId);
+      if (nodeCategoryIds_.find(nodeId) == nodeCategoryIds_.end()) {
+        nodeCategoryIds_[nodeId] = {};
+      }
+      nodeCategoryIds_[nodeId][categoryName] = categoryId;
+    }
+  } catch (sql::SQLException& e) {
+    LOG(ERROR) << "ERR: " << e.what();
+    LOG(ERROR) << " (MySQL error code: " << e.getErrorCode();
+  }
+}
+
 void MySqlClient::addNodes(
     std::unordered_map<std::string, MySqlNodeData> newNodes) noexcept {
   if (!newNodes.size()) {
@@ -96,8 +127,9 @@ void MySqlClient::addNodes(
   }
   try {
     std::unique_ptr<sql::PreparedStatement> prep_stmt(
-        connection_->prepareStatement("INSERT IGNORE INTO `nodes` (`mac`, `node`, "
-                              "`site`, `network`) VALUES (?, ?, ?, ?)"));
+        connection_->prepareStatement(
+            "INSERT IGNORE INTO `nodes` (`mac`, `node`, "
+            "`site`, `network`) VALUES (?, ?, ?, ?)"));
 
     for (const auto& node : newNodes) {
       prep_stmt->setString(1, node.second.mac);
@@ -116,24 +148,24 @@ void MySqlClient::addNodes(
   refreshNodes();
 }
 
-void MySqlClient::updateNodeKeys(
+void MySqlClient::addStatKeys(
     std::unordered_map<int64_t, std::unordered_set<std::string>>
         nodeKeys) noexcept {
   if (!nodeKeys.size()) {
     return;
   }
-  LOG(INFO) << "updateNodeKeys for " << nodeKeys.size() << " nodes";
+  LOG(INFO) << "addStatKeys for " << nodeKeys.size() << " nodes";
   try {
     sql::PreparedStatement* prep_stmt;
     prep_stmt = connection_->prepareStatement(
         "INSERT IGNORE INTO `ts_key` (`node_id`, `key`) VALUES (?, ?)");
 
     for (const auto& keys : nodeKeys) {
-      LOG(INFO) << "updateNodeKeys => node_id: " << keys.first
+      LOG(INFO) << "addStatKeys => node_id: " << keys.first
                 << " Num of keys: " << keys.second.size();
-      for (const auto& nodeKey : keys.second) {
+      for (const auto& keyName : keys.second) {
         prep_stmt->setInt(1, keys.first);
-        prep_stmt->setString(2, nodeKey);
+        prep_stmt->setString(2, keyName);
         prep_stmt->execute();
       }
     }
@@ -142,7 +174,36 @@ void MySqlClient::updateNodeKeys(
     LOG(ERROR) << " (MySQL error code: " << e.getErrorCode();
   }
 
-  refreshNodeKeys();
+  refreshStatKeys();
+}
+
+void MySqlClient::addEventCategories(
+    std::unordered_map<int64_t, std::unordered_set<std::string>>
+        eventCategories) noexcept {
+  if (!eventCategories.size()) {
+    return;
+  }
+  LOG(INFO) << "addEventCategories for " << eventCategories.size() << " nodes";
+  try {
+    sql::PreparedStatement* prep_stmt;
+    prep_stmt = connection_->prepareStatement(
+        "INSERT IGNORE INTO `event_categories` (`node_id`, `category`) VALUES (?, ?)");
+
+    for (const auto& categories : eventCategories) {
+      LOG(INFO) << "addEventCategories => node_id: " << categories.first
+                << " Num of categories: " << categories.second.size();
+      for (const auto& category : categories.second) {
+        prep_stmt->setInt(1, categories.first);
+        prep_stmt->setString(2, category);
+        prep_stmt->execute();
+      }
+    }
+  } catch (sql::SQLException& e) {
+    LOG(ERROR) << "ERR: " << e.what();
+    LOG(ERROR) << " (MySQL error code: " << e.getErrorCode();
+  }
+
+  refreshEventCategories();
 }
 
 folly::Optional<int64_t> MySqlClient::getNodeId(
@@ -178,6 +239,107 @@ folly::Optional<int64_t> MySqlClient::getKeyId(
     }
   }
   return folly::none;
+}
+
+folly::Optional<int64_t> MySqlClient::getEventCategoryId(
+    const int64_t nodeId,
+    const std::string& category) const {
+  std::string categoryLower = category;
+  std::transform(
+      categoryLower.begin(),
+      categoryLower.end(),
+      categoryLower.begin(),
+      ::tolower);
+
+  auto itNode = nodeCategoryIds_.find(nodeId);
+  if (itNode != nodeCategoryIds_.end()) {
+    auto itCategory = itNode->second.find(categoryLower);
+    if (itCategory != itNode->second.end()) {
+      return (itCategory->second);
+    }
+  }
+  return folly::none;
+}
+
+/*
+void MySqlClient::addEvents(
+    std::vector<MySqlEventData> events) noexcept {
+  if (!events.size()) {
+    return;
+  }
+  try {
+    std::unique_ptr<sql::PreparedStatement> prep_stmt(
+        connection_->prepareStatement("INSERT INTO `events` (`sample`,
+`timestamp`, `category_id`) VALUES (?, ?, ?)"));
+
+    LOG(INFO) << "addEvents: " << events.size();
+    for (const auto& event : events) {
+      prep_stmt->setString(1, event.sample);
+      prep_stmt->setInt(2, event.timestamp);
+      prep_stmt->setInt(3, event.category_id);
+      prep_stmt->execute();
+    }
+  } catch (sql::SQLException& e) {
+    LOG(ERROR) << "ERR: " << e.what();
+    LOG(ERROR) << " (MySQL error code: " << e.getErrorCode();
+  }
+}
+*/
+
+void MySqlClient::addEvents(std::vector<MySqlEventData> events) noexcept {
+  if (!events.size()) {
+    return;
+  }
+  try {
+    std::string query =
+        "INSERT INTO `events` (`sample`, `timestamp`, `category_id`) VALUES ";
+    int64_t index = 0;
+    for (const auto& event : events) {
+      if (index++ == 0) {
+        query += "(?, ?, ?)";
+      } else {
+        query += ",(?, ?, ?)";
+      }
+    }
+    std::unique_ptr<sql::PreparedStatement> prep_stmt(
+        connection_->prepareStatement(query));
+
+    LOG(INFO) << "addEvents: " << events.size();
+    index = 0;
+    for (const auto& event : events) {
+      prep_stmt->setString(++index, event.sample);
+      prep_stmt->setDateTime(++index, event.timestamp);
+      prep_stmt->setInt(++index, event.category_id);
+    }
+    prep_stmt->execute();
+  } catch (sql::SQLException& e) {
+    LOG(ERROR) << "ERR: " << e.what();
+    LOG(ERROR) << " (MySQL error code: " << e.getErrorCode();
+  }
+}
+
+void MySqlClient::addAlert(MySqlAlertData alert) noexcept {
+  try {
+    std::string query =
+        "INSERT INTO `alerts` (`node_id`, `timestamp`, `alert_id`, `alert_regex`, `alert_threshold`, `alert_comparator`, `alert_level`, `trigger_key`, `trigger_value`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+    std::unique_ptr<sql::PreparedStatement> prep_stmt(
+        connection_->prepareStatement(query));
+
+    LOG(INFO) << "addAlert: " << alert.alert_id;
+    prep_stmt->setInt(1, alert.node_id);
+    prep_stmt->setDateTime(2, alert.timestamp);
+    prep_stmt->setString(3, alert.alert_id);
+    prep_stmt->setString(4, alert.alert_regex);
+    prep_stmt->setDouble(5, alert.alert_threshold);
+    prep_stmt->setString(6, alert.alert_comparator);
+    prep_stmt->setString(7, alert.alert_level);
+    prep_stmt->setString(8, alert.trigger_key);
+    prep_stmt->setDouble(9, alert.trigger_value);
+    prep_stmt->execute();
+  } catch (sql::SQLException& e) {
+    LOG(ERROR) << "ERR: " << e.what();
+    LOG(ERROR) << " (MySQL error code: " << e.getErrorCode();
+  }
 }
 }
 } // facebook::gorilla

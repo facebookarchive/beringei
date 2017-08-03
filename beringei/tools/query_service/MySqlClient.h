@@ -29,31 +29,48 @@ namespace gorilla {
 typedef std::unordered_map<std::string, MySqlNodeData> MacToNodeMap;
 typedef std::unordered_map<int64_t, std::unordered_map<std::string, int64_t>>
     NodeKeyMap;
+typedef std::unordered_map<int64_t, std::unordered_map<std::string, int64_t>>
+    NodeCategoryMap;
 
 class MySqlClient {
  public:
   MySqlClient();
-  void addNodes(
-      std::unordered_map<std::string, MySqlNodeData> newNodes) noexcept;
 
   void refreshNodes() noexcept;
 
-  void updateNodeKeys(
-      std::unordered_map<int64_t, std::unordered_set<std::string>>
-          nodeKeys) noexcept;
+  void refreshStatKeys() noexcept;
 
-  void refreshNodeKeys() noexcept;
+  void refreshEventCategories() noexcept;
+
+  void addNodes(
+      std::unordered_map<std::string, MySqlNodeData> newNodes) noexcept;
+
+  void addStatKeys(std::unordered_map<int64_t, std::unordered_set<std::string>>
+                       nodeKeys) noexcept;
+
+  void addEventCategories(
+      std::unordered_map<int64_t, std::unordered_set<std::string>>
+          eventCategories) noexcept;
 
   folly::Optional<int64_t> getNodeId(const std::string& macAddr) const;
+
   folly::Optional<int64_t> getKeyId(
       const int64_t nodeId,
       const std::string& keyName) const;
+
+  folly::Optional<int64_t> getEventCategoryId(
+      const int64_t nodeId,
+      const std::string& category) const;
+
+  void addEvents(std::vector<MySqlEventData> events) noexcept;
+  void addAlert(MySqlAlertData alert) noexcept;
 
  private:
   sql::Driver* driver_;
   std::unique_ptr<sql::Connection> connection_;
   MacToNodeMap macAddrToNode_{};
   NodeKeyMap nodeKeyIds_{};
+  NodeCategoryMap nodeCategoryIds_{};
 };
 }
 } // facebook::gorilla

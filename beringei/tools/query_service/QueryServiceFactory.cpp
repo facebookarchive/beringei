@@ -9,9 +9,12 @@
 
 #include "QueryServiceFactory.h"
 
+#include "AlertsWriteHandler.h"
+#include "EventsWriteHandler.h"
+#include "LogsWriteHandler.h"
 #include "NotFoundHandler.h"
 #include "QueryHandler.h"
-#include "WriteHandler.h"
+#include "StatsWriteHandler.h"
 
 #include "beringei/plugins/BeringeiConfigurationAdapter.h"
 
@@ -44,10 +47,16 @@ proxygen::RequestHandler* QueryServiceFactory::onRequest(
   LOG(INFO) << "Received a request for path " << path;
 
   if (path == "/stats_writer") {
-    return new WriteHandler(
+    return new StatsWriteHandler(
         configurationAdapter_, mySqlClient_, beringeiWriteClient_);
   } else if (path == "/query") {
     return new QueryHandler(configurationAdapter_, beringeiReadClient_);
+  } else if (path == "/events_writer") {
+    return new EventsWriteHandler(mySqlClient_);
+  } else if (path == "/alerts_writer") {
+    return new AlertsWriteHandler(mySqlClient_);
+  } else if (path == "/logs_writer") {
+    return new LogsWriteHandler();
   }
 
   // return not found for all other uris

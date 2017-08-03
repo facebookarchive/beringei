@@ -7,7 +7,7 @@
  * of patent rights can be found in the PATENTS file in the same directory.
  */
 
-#include "WriteHandler.h"
+#include "StatsWriteHandler.h"
 
 #include <utility>
 
@@ -39,7 +39,7 @@ DEFINE_int32(agg_bucket_seconds, 30, "time aggregation bucket size");
 namespace facebook {
 namespace gorilla {
 
-WriteHandler::WriteHandler(
+StatsWriteHandler::StatsWriteHandler(
     std::shared_ptr<BeringeiConfigurationAdapterIf> configurationAdapter,
     std::shared_ptr<MySqlClient> mySqlClient,
     std::shared_ptr<BeringeiClient> beringeiClient)
@@ -48,12 +48,12 @@ WriteHandler::WriteHandler(
       mySqlClient_(mySqlClient),
       beringeiClient_(beringeiClient) {}
 
-void WriteHandler::onRequest(
+void StatsWriteHandler::onRequest(
     std::unique_ptr<HTTPMessage> /* unused */) noexcept {
   // nothing to do
 }
 
-void WriteHandler::onBody(std::unique_ptr<folly::IOBuf> body) noexcept {
+void StatsWriteHandler::onBody(std::unique_ptr<folly::IOBuf> body) noexcept {
   if (body_) {
     body_->prependChain(move(body));
   } else {
@@ -100,7 +100,7 @@ int64_t timeCalc(int64_t timeIn) {
       FLAGS_agg_bucket_seconds;
 }
 
-void WriteHandler::writeData(WriteRequest request) {
+void StatsWriteHandler::writeData(StatsWriteRequest request) {
   std::unordered_map<std::string, MySqlNodeData> unknownNodes;
   std::unordered_map<int64_t, std::unordered_set<std::string>> missingNodeKey;
   std::vector<DataPoint> bRows;
@@ -147,7 +147,7 @@ void WriteHandler::writeData(WriteRequest request) {
   }
   // write newly found macs and node/key combos
   mySqlClient_->addNodes(unknownNodes);
-  mySqlClient_->updateNodeKeys(missingNodeKey);
+  mySqlClient_->addStatKeys(missingNodeKey);
 
   // insert rows
   if (!bRows.empty()) {
@@ -164,18 +164,18 @@ void WriteHandler::writeData(WriteRequest request) {
     auto endTime = (int64_t)duration_cast<milliseconds>(
                        system_clock::now().time_since_epoch())
                        .count();
-    LOG(INFO) << "writeData completed. "
+    LOG(INFO) << "Writing stats complete. "
               << "Total: " << (endTime - startTime) << "ms.";
   } else {
     LOG(INFO) << "No stats data to write";
   }
 }
 
-void WriteHandler::onEOM() noexcept {
+void StatsWriteHandler::onEOM() noexcept {
   auto body = body_->moveToFbString();
-  WriteRequest request;
+  StatsWriteRequest request;
   try {
-    request = SimpleJSONSerializer::deserialize<WriteRequest>(body);
+    request = SimpleJSONSerializer::deserialize<StatsWriteRequest>(body);
   } catch (const std::exception&) {
     LOG(INFO) << "Error deserializing stats_writer request";
     ResponseBuilder(downstream_)
@@ -208,19 +208,19 @@ void WriteHandler::onEOM() noexcept {
       .sendWithEOM();
 }
 
-void WriteHandler::onUpgrade(UpgradeProtocol /* unused */) noexcept {}
+void StatsWriteHandler::onUpgrade(UpgradeProtocol /* unused */) noexcept {}
 
-void WriteHandler::requestComplete() noexcept {
+void StatsWriteHandler::requestComplete() noexcept {
   delete this;
 }
 
-void WriteHandler::onError(ProxygenError /* unused */) noexcept {
+void StatsWriteHandler::onError(ProxygenError /* unused */) noexcept {
   LOG(ERROR) << "Proxygen reported error";
   // In QueryServiceFactory, we created this handler using new.
   // Proxygen does not delete the handler.
   delete this;
 }
 
-void WriteHandler::logRequest(WriteRequest request) {}
+void StatsWriteHandler::logRequest(StatsWriteRequest request) {}
 }
 } // facebook::gorilla
