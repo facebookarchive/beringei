@@ -1,0 +1,13 @@
+diff --git a/thrift/lib/thrift/Makefile.am b/thrift/lib/thrift/Makefile.am
+index e471129..72bf8c3 100644
+--- a/thrift/lib/thrift/Makefile.am
++++ b/thrift/lib/thrift/Makefile.am
+@@ -39,7 +39,7 @@ BUILT_SOURCES = \
+ 	gen-cpp2/frozen_data.cpp \
+ 	gen-cpp2/frozen_types.cpp
+ 
+-gen-cpp2/frozen_data.h gen-cpp2/frozen_types.h: frozen.thrift
++gen-cpp2/frozen_data.h gen-cpp2/frozen_types.h: frozen.thrift gen-cpp/frozen_types.h gen-cpp/reflection_types.h
+ 	PYTHONPATH=$(PY_LOCAL_PATH) $(PYTHON) -mthrift_compiler.main --gen cpp2 $<
+ 
+ gen-cpp2/frozen_constants.cpp: gen-cpp2/frozen_types.h

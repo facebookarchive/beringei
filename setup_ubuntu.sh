@@ -5,6 +5,8 @@ FB_VERSION="2017.07.31.00"
 WANGLE_COMMIT="e79e15163bc6cb1ee343b883ce769b8e3cbd1e96"
 ZSTD_VERSION="1.3.0"
 
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
 echo "This script configures ubuntu with everything needed to run beringei."
 echo "It requires that you run it as root. sudo works great for that."
 
@@ -98,6 +100,7 @@ make install
 popd
 
 pushd fbthrift-${FB_VERSION}/thrift
+patch -p2 -i "${SCRIPT_DIR}/fbthrift.patch"
 autoreconf -ivf
 ./configure --prefix=/usr/local/facebook-${FB_VERSION}
 make install
