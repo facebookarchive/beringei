@@ -293,19 +293,14 @@ void MySqlClient::addEvents(std::vector<MySqlEventData> events) noexcept {
   try {
     std::string query =
         "INSERT INTO `events` (`sample`, `timestamp`, `category_id`) VALUES ";
+    std::vector<std::string> vec(events.size(), "(?, ?, ?)");
+    query += folly::join(",", vec);
     int64_t index = 0;
-    for (const auto& event : events) {
-      if (index++ == 0) {
-        query += "(?, ?, ?)";
-      } else {
-        query += ",(?, ?, ?)";
-      }
-    }
+
     std::unique_ptr<sql::PreparedStatement> prep_stmt(
         connection_->prepareStatement(query));
 
     LOG(INFO) << "addEvents: " << events.size();
-    index = 0;
     for (const auto& event : events) {
       prep_stmt->setString(++index, event.sample);
       prep_stmt->setDateTime(++index, event.timestamp);
