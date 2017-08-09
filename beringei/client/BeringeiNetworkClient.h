@@ -182,10 +182,10 @@ class BeringeiNetworkClient {
   std::shared_ptr<BeringeiConfigurationAdapterIf> configurationAdapter_;
   std::string serviceName_;
   std::atomic<bool> stopRequests_;
-
- private:
   std::condition_variable stopping_;
   std::mutex stoppingMutex_;
+
+ private:
   std::vector<std::unique_ptr<ShardCacheEntry>> shardCache_;
   folly::RWSpinLock shardCacheLock_;
   bool isShadow_;
