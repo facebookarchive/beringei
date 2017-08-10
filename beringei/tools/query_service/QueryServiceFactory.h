@@ -8,8 +8,6 @@
  */
 #pragma once
 
-#include "MySqlClient.h"
-#include "beringei/client/BeringeiClient.h"
 #include "beringei/client/BeringeiConfigurationAdapterIf.h"
 
 #include <folly/Memory.h>
@@ -38,9 +36,6 @@ class QueryServiceFactory : public proxygen::RequestHandlerFactory {
  private:
   std::shared_ptr<BeringeiConfigurationAdapterIf> configurationAdapter_;
   folly::EventBase* eb_;
-  std::shared_ptr<MySqlClient> mySqlClient_;
-  std::shared_ptr<BeringeiClient> beringeiReadClient_;
-  std::shared_ptr<BeringeiClient> beringeiWriteClient_;
 };
 }
 } // facebook::gorilla

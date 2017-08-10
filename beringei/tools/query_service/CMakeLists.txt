@@ -12,10 +12,6 @@ set(BERINGEI_QUERY_SRCS
     NotFoundHandler.h
     QueryHandler.h
     QueryHandler.cpp
-    WriteHandler.h
-    WriteHandler.cpp
-    MySqlClient.cpp
-    MySqlClient.h
 )
 
 set(BERINGEI_QUERY_SERVICE_SRCS
@@ -33,8 +29,6 @@ target_link_libraries(
     ${LIBGLOG_LIBRARIES}
     ${PROXYGEN_LIBRARIES}
     Threads::Threads
-    mysqlclient
-    mysqlcppconn
 )
 
 add_executable(beringei_query_service ${BERINGEI_QUERY_SERVICE_SRCS})
