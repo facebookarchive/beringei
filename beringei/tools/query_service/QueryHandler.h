@@ -27,7 +27,8 @@ typedef std::vector<std::pair<Key, std::vector<TimeValuePair>>> TimeSeries;
 class QueryHandler : public proxygen::RequestHandler {
  public:
   explicit QueryHandler(
-      std::shared_ptr<BeringeiConfigurationAdapterIf> configurationAdapter);
+      std::shared_ptr<BeringeiConfigurationAdapterIf> configurationAdapter,
+      std::shared_ptr<BeringeiClient> beringeiClient);
   void onRequest(
       std::unique_ptr<proxygen::HTTPMessage> headers) noexcept override;
 
@@ -53,13 +54,13 @@ class QueryHandler : public proxygen::RequestHandler {
 
   /**
    * Determine column names to use based on KeyData
-   */ 
+   */
   void columnNames();
   /**
    * Transform the data from TimeValuePairs into lists of
    * data points, filling missing data with 0s.
    * timeBuckets_ size should be the same as each key's time series
-   */ 
+   */
   folly::fbstring transform();
   folly::fbstring handleQuery();
   folly::fbstring eventHandler(int dataPointIncrementMs);
@@ -67,6 +68,7 @@ class QueryHandler : public proxygen::RequestHandler {
   std::string getTimeStr(time_t timeSec);
 
   std::shared_ptr<BeringeiConfigurationAdapterIf> configurationAdapter_;
+  std::shared_ptr<BeringeiClient> beringeiClient_;
   std::unique_ptr<folly::IOBuf> body_;
   // request data
   Query query_;

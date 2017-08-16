@@ -11,6 +11,7 @@
 
 #include "NotFoundHandler.h"
 #include "QueryHandler.h"
+#include "WriteHandler.h"
 
 #include "beringei/plugins/BeringeiConfigurationAdapter.h"
 
@@ -18,16 +19,21 @@ using folly::EventBase;
 using folly::EventBaseManager;
 using folly::SocketAddress;
 
+DEFINE_int32(writer_queue_size, 100000, "Beringei writer queue size");
+
 namespace facebook {
 namespace gorilla {
 
 QueryServiceFactory::QueryServiceFactory() : RequestHandlerFactory() {
   configurationAdapter_ = std::make_shared<BeringeiConfigurationAdapter>();
+  mySqlClient_ = std::make_shared<MySqlClient>();
+  beringeiReadClient_ = std::make_shared<BeringeiClient>(
+      configurationAdapter_, 1, BeringeiClient::kNoWriterThreads);
+  beringeiWriteClient_ = std::make_shared<BeringeiClient>(
+      configurationAdapter_, FLAGS_writer_queue_size, 5);
 }
 
-void QueryServiceFactory::onServerStart(
-    folly::EventBase* evb) noexcept {
-}
+void QueryServiceFactory::onServerStart(folly::EventBase* evb) noexcept {}
 
 void QueryServiceFactory::onServerStop() noexcept {}
 
@@ -37,8 +43,11 @@ proxygen::RequestHandler* QueryServiceFactory::onRequest(
   auto path = httpMessage->getPath();
   LOG(INFO) << "Received a request for path " << path;
 
-  if (path == "/query") {
-    return new QueryHandler(configurationAdapter_);
+  if (path == "/stats_writer") {
+    return new WriteHandler(
+        configurationAdapter_, mySqlClient_, beringeiWriteClient_);
+  } else if (path == "/query") {
+    return new QueryHandler(configurationAdapter_, beringeiReadClient_);
   }
 
   // return not found for all other uris
