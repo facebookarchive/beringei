@@ -14,7 +14,6 @@
 #include <folly/String.h>
 #include <folly/gen/Base.h>
 #include <thrift/lib/cpp2/async/RequestChannel.h>
-#include <wangle/concurrent/GlobalExecutor.h>
 
 #include "beringei/lib/GorillaStatsManager.h"
 #include "beringei/lib/TimeSeries.h"
@@ -568,6 +567,7 @@ void BeringeiClientImpl::get(
 folly::Future<BeringeiGetResult> BeringeiClientImpl::futureGet(
     GetDataRequest& getDataRequest,
     folly::EventBase* eb,
+    folly::Executor* workExecutor,
     const std::string& serviceOverride) {
   auto getContext = std::make_shared<BeringeiFutureGetContext>(getDataRequest);
   getContext->readClients = getAllReadClients(serviceOverride);
@@ -598,7 +598,7 @@ folly::Future<BeringeiGetResult> BeringeiClientImpl::futureGet(
       getFutures.push_back(
           readClients[clientId]
               ->performGet(r.first, std::move(r.second.first), eb)
-              .via(wangle::getCPUExecutor().get())
+              .via(workExecutor)
               .then([
                 getContext,
                 clientId,
@@ -636,7 +636,8 @@ BeringeiGetResult BeringeiClientImpl::get(
     GetDataRequest& request,
     const std::string& serviceOverride) {
   auto eb = BeringeiNetworkClient::getEventBase();
-  return futureGet(request, eb, serviceOverride).getVia(eb);
+  return futureGet(request, eb, wangle::getCPUExecutor().get(), serviceOverride)
+      .getVia(eb);
 }
 
 void BeringeiClientImpl::writeDataPointsForever(WriteClient* writeClient) {
