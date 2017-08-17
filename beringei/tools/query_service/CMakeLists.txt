@@ -5,6 +5,11 @@
 # LICENSE file in the root directory of this source tree. An additional grant
 # of patent rights can be found in the PATENTS file in the same directory.
 
+find_library(MYSQL_CLIENT_LIB NAMES "mysqlclient"
+  PATHS "/usr/local/mysql/lib"
+  NO_DEFAULT_PATH
+)
+
 set(BERINGEI_QUERY_SRCS
     QueryServiceFactory.cpp
     QueryServiceFactory.h
@@ -39,7 +44,7 @@ target_link_libraries(
     ${LIBGLOG_LIBRARIES}
     ${PROXYGEN_LIBRARIES}
     Threads::Threads
-    mysqlclient
+    ${MYSQL_CLIENT_LIB}
     mysqlcppconn
 )
 
