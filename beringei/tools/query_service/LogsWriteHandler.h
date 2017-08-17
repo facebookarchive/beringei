@@ -9,26 +9,19 @@
 
 #pragma once
 
-#include "MySqlClient.h"
-
 #include <folly/Memory.h>
 #include <folly/dynamic.h>
 #include <folly/futures/Future.h>
 #include <proxygen/httpserver/RequestHandler.h>
 
-#include "beringei/client/BeringeiClient.h"
-#include "beringei/client/BeringeiConfigurationAdapterIf.h"
 #include "beringei/if/gen-cpp2/beringei_query_types_custom_protocol.h"
 
 namespace facebook {
 namespace gorilla {
 
-class WriteHandler : public proxygen::RequestHandler {
+class LogsWriteHandler : public proxygen::RequestHandler {
  public:
-  explicit WriteHandler(
-      std::shared_ptr<BeringeiConfigurationAdapterIf> configurationAdapter,
-      std::shared_ptr<MySqlClient> mySqlClient,
-      std::shared_ptr<BeringeiClient> beringeiClient);
+  explicit LogsWriteHandler();
 
   void onRequest(
       std::unique_ptr<proxygen::HTTPMessage> headers) noexcept override;
@@ -44,13 +37,10 @@ class WriteHandler : public proxygen::RequestHandler {
   void onError(proxygen::ProxygenError err) noexcept override;
 
  private:
-  void logRequest(WriteRequest request);
+  void logRequest(LogsWriteRequest request);
 
-  void writeData(WriteRequest request);
+  void writeData(LogsWriteRequest request);
 
-  std::shared_ptr<BeringeiConfigurationAdapterIf> configurationAdapter_;
-  std::shared_ptr<MySqlClient> mySqlClient_;
-  std::shared_ptr<BeringeiClient> beringeiClient_;
   std::unique_ptr<folly::IOBuf> body_;
 };
 }
