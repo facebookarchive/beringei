@@ -8,26 +8,23 @@
  */
 
 #include "AlertsWriteHandler.h"
-
-#include <ctime>
-#include <utility>
-
-#include <folly/DynamicConverter.h>
-#include <folly/io/IOBuf.h>
-#include <proxygen/httpserver/ResponseBuilder.h>
-#include <thrift/lib/cpp/util/ThriftSerializer.h>
-#include <thrift/lib/cpp2/protocol/Serializer.h>
-
 #include "mysql_connection.h"
 #include "mysql_driver.h"
+
+#include <algorithm>
+#include <ctime>
+#include <utility>
 
 #include <cppconn/driver.h>
 #include <cppconn/exception.h>
 #include <cppconn/prepared_statement.h>
 #include <cppconn/resultset.h>
 #include <cppconn/statement.h>
-
-#include <algorithm>
+#include <folly/DynamicConverter.h>
+#include <folly/io/IOBuf.h>
+#include <proxygen/httpserver/ResponseBuilder.h>
+#include <thrift/lib/cpp/util/ThriftSerializer.h>
+#include <thrift/lib/cpp2/protocol/Serializer.h>
 
 using apache::thrift::SimpleJSONSerializer;
 using std::chrono::duration_cast;
@@ -55,16 +52,8 @@ void AlertsWriteHandler::onBody(std::unique_ptr<folly::IOBuf> body) noexcept {
   }
 }
 
-std::string AlertsWriteHandler::getMySqlTimestamp(int64_t timeInUsec) {
-  time_t curr_time;
-  tm* curr_tm;
-  char date_string[100];
-
-  time(&curr_time);
-  curr_tm = localtime(&curr_time);
-
-  strftime(date_string, 50, "%Y-%m-%d %X", curr_tm);
-  return std::string(date_string);
+int64_t AlertsWriteHandler::getTimestamp(int64_t timeInUsec) {
+  return std::time(nullptr);
 }
 
 void AlertsWriteHandler::writeData(AlertsWriteRequest request) {
@@ -87,10 +76,9 @@ void AlertsWriteHandler::writeData(AlertsWriteRequest request) {
     return;
   }
 
-  std::string tsParsed = getMySqlTimestamp(request.timestamp);
   MySqlAlertData row;
   row.node_id = *nodeId;
-  row.timestamp = tsParsed;
+  row.timestamp = getTimestamp(request.timestamp);
   row.alert_id = request.alert_id;
   row.alert_regex = request.alert_regex;
   row.alert_threshold = request.alert_threshold;
@@ -107,7 +95,7 @@ void AlertsWriteHandler::writeData(AlertsWriteRequest request) {
   auto endTime = (int64_t)duration_cast<milliseconds>(
                      system_clock::now().time_since_epoch())
                      .count();
-  LOG(INFO) << "Writeing alerts complete. "
+  LOG(INFO) << "Writing alerts complete. "
             << "Total: " << (endTime - startTime) << "ms.";
 }
 
@@ -128,7 +116,6 @@ void AlertsWriteHandler::onEOM() noexcept {
   logRequest(request);
   LOG(INFO) << "Alerts writer request from \"" << request.node_topology << "\"";
 
-  folly::fbstring jsonResp;
   try {
     writeData(request);
   } catch (const std::exception& ex) {
@@ -143,7 +130,7 @@ void AlertsWriteHandler::onEOM() noexcept {
   ResponseBuilder(downstream_)
       .status(200, "OK")
       .header("Content-Type", "application/json")
-      .body(jsonResp)
+      .body("Success")
       .sendWithEOM();
 }
 

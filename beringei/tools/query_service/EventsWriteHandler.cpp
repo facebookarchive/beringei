@@ -8,26 +8,23 @@
  */
 
 #include "EventsWriteHandler.h"
-
-#include <ctime>
-#include <utility>
-
-#include <folly/DynamicConverter.h>
-#include <folly/io/IOBuf.h>
-#include <proxygen/httpserver/ResponseBuilder.h>
-#include <thrift/lib/cpp/util/ThriftSerializer.h>
-#include <thrift/lib/cpp2/protocol/Serializer.h>
-
 #include "mysql_connection.h"
 #include "mysql_driver.h"
+
+#include <algorithm>
+#include <ctime>
+#include <utility>
 
 #include <cppconn/driver.h>
 #include <cppconn/exception.h>
 #include <cppconn/prepared_statement.h>
 #include <cppconn/resultset.h>
 #include <cppconn/statement.h>
-
-#include <algorithm>
+#include <folly/DynamicConverter.h>
+#include <folly/io/IOBuf.h>
+#include <proxygen/httpserver/ResponseBuilder.h>
+#include <thrift/lib/cpp/util/ThriftSerializer.h>
+#include <thrift/lib/cpp2/protocol/Serializer.h>
 
 using apache::thrift::SimpleJSONSerializer;
 using std::chrono::duration_cast;
@@ -55,16 +52,8 @@ void EventsWriteHandler::onBody(std::unique_ptr<folly::IOBuf> body) noexcept {
   }
 }
 
-std::string EventsWriteHandler::getMySqlTimestamp(int64_t timeInUsec) {
-  time_t curr_time;
-  tm* curr_tm;
-  char date_string[100];
-
-  time(&curr_time);
-  curr_tm = localtime(&curr_time);
-
-  strftime(date_string, 50, "%Y-%m-%d %X", curr_tm);
-  return std::string(date_string);
+int64_t EventsWriteHandler::getTimestamp(int64_t timeInUsec) {
+  return std::time(nullptr);
 }
 
 void EventsWriteHandler::writeData(EventsWriteRequest request) {
@@ -91,8 +80,6 @@ void EventsWriteHandler::writeData(EventsWriteRequest request) {
     }
 
     for (const auto& event : agent.events) {
-      // check timestamp
-      std::string tsParsed = getMySqlTimestamp(event.ts);
       auto eventCategoryId =
           mySqlClient_->getEventCategoryId(*nodeId, event.category);
       // verify node/category combo exists
@@ -100,7 +87,7 @@ void EventsWriteHandler::writeData(EventsWriteRequest request) {
         // insert row for beringei
         MySqlEventData eventsRow;
         eventsRow.sample = event.sample;
-        eventsRow.timestamp = tsParsed;
+        eventsRow.timestamp = getTimestamp(event.ts);;
         eventsRow.category_id = *eventCategoryId;
         eventsRows.push_back(eventsRow);
       } else {
@@ -148,7 +135,6 @@ void EventsWriteHandler::onEOM() noexcept {
   LOG(INFO) << "Events writer request from \"" << request.topology.name
             << "\" for " << request.agents.size() << " nodes";
 
-  folly::fbstring jsonResp;
   try {
     writeData(request);
   } catch (const std::exception& ex) {
@@ -163,7 +149,7 @@ void EventsWriteHandler::onEOM() noexcept {
   ResponseBuilder(downstream_)
       .status(200, "OK")
       .header("Content-Type", "application/json")
-      .body(jsonResp)
+      .body("Success")
       .sendWithEOM();
 }
 

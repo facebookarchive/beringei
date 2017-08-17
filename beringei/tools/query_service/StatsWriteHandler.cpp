@@ -8,25 +8,22 @@
  */
 
 #include "StatsWriteHandler.h"
-
-#include <utility>
-
-#include <folly/DynamicConverter.h>
-#include <folly/io/IOBuf.h>
-#include <proxygen/httpserver/ResponseBuilder.h>
-#include <thrift/lib/cpp/util/ThriftSerializer.h>
-#include <thrift/lib/cpp2/protocol/Serializer.h>
-
 #include "mysql_connection.h"
 #include "mysql_driver.h"
+
+#include <algorithm>
+#include <utility>
 
 #include <cppconn/driver.h>
 #include <cppconn/exception.h>
 #include <cppconn/prepared_statement.h>
 #include <cppconn/resultset.h>
 #include <cppconn/statement.h>
-
-#include <algorithm>
+#include <folly/DynamicConverter.h>
+#include <folly/io/IOBuf.h>
+#include <proxygen/httpserver/ResponseBuilder.h>
+#include <thrift/lib/cpp/util/ThriftSerializer.h>
+#include <thrift/lib/cpp2/protocol/Serializer.h>
 
 using apache::thrift::SimpleJSONSerializer;
 using std::chrono::duration_cast;
@@ -189,7 +186,6 @@ void StatsWriteHandler::onEOM() noexcept {
   LOG(INFO) << "Stats writer request from \"" << request.topology.name
             << "\" for " << request.agents.size() << " nodes";
 
-  folly::fbstring jsonResp;
   try {
     writeData(request);
   } catch (const std::exception& ex) {
@@ -204,7 +200,7 @@ void StatsWriteHandler::onEOM() noexcept {
   ResponseBuilder(downstream_)
       .status(200, "OK")
       .header("Content-Type", "application/json")
-      .body(jsonResp)
+      .body("Success")
       .sendWithEOM();
 }
 

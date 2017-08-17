@@ -49,14 +49,14 @@ struct Stat {
 
 struct Event {
   1: string category,
-  2: i64 ts,
+  2: i64 ts, /* Timestamp in us */
   3: string sample,
 }
 
 struct Log {
-  1: i64 ts,
-  2: string file,
-  3: string log,
+  1: i64 ts, /* Timestamp in us */
+  2: string file, /* Filename */
+  3: string log, /* Log line */
 }
 
 struct NodeStates {
@@ -109,7 +109,7 @@ struct MySqlNodeData {
 
 struct MySqlEventData {
   1: string sample,
-  2: string timestamp,
+  2: i64 timestamp,
   3: i64 category_id,
 }
 
@@ -130,7 +130,7 @@ struct AlertsWriteRequest {
 
 struct MySqlAlertData {
   1: i64 node_id,
-  2: string timestamp,
+  2: i64 timestamp,
   3: string alert_id,
   4: string alert_regex,
   5: double alert_threshold,

@@ -9,6 +9,7 @@
 
 #include "LogsWriteHandler.h"
 
+#include <algorithm>
 #include <ctime>
 #include <fstream>
 #include <utility>
@@ -20,8 +21,6 @@
 #include <sys/stat.h>
 #include <thrift/lib/cpp/util/ThriftSerializer.h>
 #include <thrift/lib/cpp2/protocol/Serializer.h>
-
-#include <algorithm>
 
 using apache::thrift::SimpleJSONSerializer;
 using std::chrono::duration_cast;
@@ -107,7 +106,6 @@ void LogsWriteHandler::onEOM() noexcept {
   LOG(INFO) << "Logs writer request from \"" << request.topology.name
             << "\" for " << request.agents.size() << " nodes";
 
-  folly::fbstring jsonResp;
   try {
     writeData(request);
   } catch (const std::exception& ex) {
@@ -122,7 +120,7 @@ void LogsWriteHandler::onEOM() noexcept {
   ResponseBuilder(downstream_)
       .status(200, "OK")
       .header("Content-Type", "application/json")
-      .body(jsonResp)
+      .body("Success")
       .sendWithEOM();
 }
 

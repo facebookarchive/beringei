@@ -43,7 +43,7 @@ class AlertsWriteHandler : public proxygen::RequestHandler {
 
   void writeData(AlertsWriteRequest request);
 
-  std::string getMySqlTimestamp(int64_t timeInUsec);
+  int64_t getTimestamp(int64_t timeInUsec);
 
   std::shared_ptr<MySqlClient> mySqlClient_;
   std::unique_ptr<folly::IOBuf> body_;
