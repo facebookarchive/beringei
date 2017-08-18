@@ -67,26 +67,31 @@ void QueryHandler::onEOM() noexcept {
   columnNames_.clear();
   timeSeries_.clear();
   aggSeries_.clear();
-  query_ = request.queries[0];
-  LOG(INFO) << "Request for " << query_.key_ids.size() << " key ids of "
-            << query_.agg_type << " aggregation, for " << query_.min_ago
-            << " minutes ago.";
-  folly::fbstring jsonResp;
-  try {
-    jsonResp = handleQuery();
-  } catch (const std::exception& ex) {
-    LOG(ERROR) << "Unable to handle query: " << ex.what();
-    ResponseBuilder(downstream_)
-        .status(500, "OK")
-        .header("Content-Type", "application/json")
-        .body("Failed handling query")
-      .sendWithEOM();
-    return;
+  // one json response
+  folly::dynamic response = folly::dynamic::array();
+  for (const auto& query : request.queries) {
+    query_ = query;
+    LOG(INFO) << "Request for " << query_.key_ids.size() << " key ids of "
+              << query_.agg_type << " aggregation, for " << query_.min_ago
+              << " minutes ago.";
+    folly::dynamic jsonQueryResp;
+    try {
+      jsonQueryResp = handleQuery();
+    } catch (const std::exception& ex) {
+      LOG(ERROR) << "Unable to handle query: " << ex.what();
+      ResponseBuilder(downstream_)
+          .status(500, "OK")
+          .header("Content-Type", "application/json")
+          .body("Failed handling query")
+        .sendWithEOM();
+      return;
+    }
+    response.push_back(jsonQueryResp);
   }
   ResponseBuilder(downstream_)
       .status(200, "OK")
       .header("Content-Type", "application/json")
-      .body(jsonResp)
+      .body(folly::toJson(response))
     .sendWithEOM();
 }
 
@@ -158,7 +163,8 @@ void QueryHandler::columnNames() {
  * Uptime/availability
  * Iterate over all data points
  */
-folly::fbstring QueryHandler::eventHandler(int dataPointIncrementMs) {
+folly::dynamic QueryHandler::eventHandler(int dataPointIncrementMs,
+                                           const std::string& metricName) {
   int64_t timeBucketCount = (endTime_ - startTime_) / 30;
   int keyCount = beringeiTimeSeries_.size();
   // count is a special aggregation that will be missed due to default values
@@ -267,22 +273,22 @@ folly::fbstring QueryHandler::eventHandler(int dataPointIncrementMs) {
     if (upPoints > 0 || partialSeconds > 0) {
       uptimePerc = (upPoints * 30 + partialSeconds) / (timeBucketCount * 30) * 100.0;
     }
-    auto& linkName = query_.data[keyIndex].linkName;
+    auto& name = query_.data[keyIndex].displayName;
     VLOG(2) << "Key ID: " << query_.data[keyIndex].key
-            << ", Link name: " << linkName
+            << ", Name: " << name
             << ", Expected count: " << timeBucketCount
             << ", up count: " << upPoints
             << ", partial seconds: " << partialSeconds
             << ", uptime: " << uptimePerc << "%";
-    linkMap[linkName] = folly::dynamic::object;
-    linkMap[linkName]["alive"] = uptimePerc;
-    linkMap[linkName]["events"] = onlineEvents;
+    linkMap[name] = folly::dynamic::object;
+    linkMap[name][metricName] = uptimePerc;
+    linkMap[name]["events"] = onlineEvents;
   }
   folly::dynamic response = folly::dynamic::object;
-  response["links"] = linkMap;
+  response["metrics"] = linkMap;
   response["start"] = startTime_ * 1000;
   response["end"] = endTime_ * 1000;
-  return folly::toJson(response);
+  return response;
 
 }
 std::string QueryHandler::getTimeStr(time_t timeSec) {
@@ -309,7 +315,7 @@ folly::dynamic QueryHandler::makeEvent(int64_t startIndex, int64_t endIndex) {
             ("title", title);
 }
 
-folly::fbstring QueryHandler::transform() {
+folly::dynamic QueryHandler::transform() {
   // time align all data
   int64_t timeBucketCount = (endTime_ - startTime_) / 30;
   int keyCount = beringeiTimeSeries_.size();
@@ -468,20 +474,20 @@ folly::fbstring QueryHandler::transform() {
   response["name"] = "id";
   response["columns"] = columns;
   response["points"] = datapoints;
-  return "[" + folly::toJson(response) + "]";
+  return response;
 }
 
-folly::fbstring QueryHandler::handleQuery() {
+folly::dynamic QueryHandler::handleQuery() {
   auto startTime = (int64_t)duration_cast<milliseconds>(
         system_clock::now().time_since_epoch()).count();
   // validate first, prefer to throw here (no futures)
   validateQuery(query_);
   // fetch async data
-  folly::Promise<TimeSeries> p;
-  auto f = p.getFuture();
   folly::EventBase eb;
-  eb.runInLoop([this, p = std::move(p)] () mutable {
-    int numShards = beringeiClient_->getNumShards();
+  eb.runInLoop([this] () mutable {
+    BeringeiClient client(
+        configurationAdapter_, 1, BeringeiClient::kNoWriterThreads);
+    int numShards = client.getNumShards();
     auto beringeiRequest = createBeringeiRequest(query_, numShards);
     beringeiClient_->get(beringeiRequest, beringeiTimeSeries_);
   });
@@ -492,9 +498,11 @@ folly::fbstring QueryHandler::handleQuery() {
   columnNames();
   auto columnNamesTime = (int64_t)duration_cast<milliseconds>(
         system_clock::now().time_since_epoch()).count();
-  folly::fbstring results{};
+  folly::dynamic results{};
   if (query_.type == "event") {
-    results = eventHandler(26 /* ms for heartbeats */);
+    results = eventHandler(26 /* ms for heartbeats */, "alive");
+  } else if (query_.type == "uptime_sec") {
+    results = eventHandler(1000, "minion_uptime");
   } else {
     results = transform();
   }

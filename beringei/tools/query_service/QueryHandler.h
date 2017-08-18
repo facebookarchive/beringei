@@ -61,9 +61,10 @@ class QueryHandler : public proxygen::RequestHandler {
    * data points, filling missing data with 0s.
    * timeBuckets_ size should be the same as each key's time series
    */
-  folly::fbstring transform();
-  folly::fbstring handleQuery();
-  folly::fbstring eventHandler(int dataPointIncrementMs);
+  folly::dynamic transform();
+  folly::dynamic handleQuery();
+  folly::dynamic eventHandler(int dataPointIncrementMs,
+                              const std::string& metricName);
   folly::dynamic makeEvent(int64_t startIndex, int64_t endIndex);
   std::string getTimeStr(time_t timeSec);
 

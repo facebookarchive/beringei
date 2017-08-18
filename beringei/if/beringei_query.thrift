@@ -14,7 +14,7 @@ struct KeyData {
   1: i64 keyId,
   2: string key,
 
-  10: optional string displayName,
+  10: string displayName,
   11: optional string linkName,
   // extra title for link
   12: optional string linkTitleAppend,
