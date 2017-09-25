@@ -940,6 +940,12 @@ int BucketMap::indexDeviatingTimeSeries(
   }
 
   folly::RWSpinLock::WriteHolder guard(lock_);
+  if (state_ != OWNED) {
+    guard.reset();
+    LOG(WARNING) << "Shard " << shardId_
+                 << " ownership change while indexing deviations.";
+    return 0;
+  }
   int deviationsIndexed = 0;
   for (int i = indexingStartTime; i <= endTime; i += kGorillaSecondsPerMinute) {
     int pos = i / kGorillaSecondsPerMinute % totalMinutes;
