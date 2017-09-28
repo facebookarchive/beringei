@@ -560,7 +560,7 @@ TEST_F(BeringeiClientTest, MultiMasterGet) {
   // Client should not block forever and should claim to have succeeded.
   EXPECT_EQ(4, result.results.size());
   EXPECT_TRUE(result.allSuccess);
-  EXPECT_GT(result.memoryEstimate, 0);
+  EXPECT_GT(result.stats.memoryEstimate, 0);
 }
 
 TEST_F(BeringeiClientTest, NetworkClientHandleException) {

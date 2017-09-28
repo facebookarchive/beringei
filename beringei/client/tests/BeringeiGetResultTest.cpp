@@ -145,6 +145,7 @@ TEST_F(BeringeiGetResultTest, MergeCompare) {
   EXPECT_THAT(result.results, ContainerEq(expected));
   EXPECT_THAT(
       collector.getMismatchesForTesting(), ElementsAre(0, 2, 2, 0, 2, 0, 0, 0));
+  EXPECT_EQ(result.stats.mismatches, 2);
 }
 
 TEST_F(BeringeiGetResultTest, Complete) {
