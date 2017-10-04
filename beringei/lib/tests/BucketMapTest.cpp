@@ -149,6 +149,8 @@ TEST_F(BucketMapTest, Reload) {
       4 * kGorillaSecondsPerHour, dir.dirname(), 100, 0);
   bucketLogWriter->startShard(10);
 
+  int32_t ts2, ts3;
+
   {
     // Fill, then close the BucketMap.
     auto keyWriter = std::make_shared<KeyListWriter>(dir.dirname(), 100);
@@ -162,6 +164,9 @@ TEST_F(BucketMapTest, Reload) {
         bucketLogWriter,
         BucketMap::OWNED);
     test(map);
+
+    ts2 = map.timestamp(2);
+    ts3 = map.timestamp(3);
   }
 
   auto keyWriter = std::make_shared<KeyListWriter>(dir.dirname(), 100);
@@ -206,14 +211,17 @@ TEST_F(BucketMapTest, Reload) {
   }
 
   // Now wipe the key_list file and reload the data yet again.
-  // We have to give KeyListWriter at least one key to make it replace the file.
+  // Create a key with a timestamp that post-dates the data on disk so we can
+  // verify it doesn't get loaded.
   bool one = false;
-  keyWriter->compact(10, [&one]() {
+  keyWriter->compact(10, [&one, ts2]() {
     if (!one) {
       one = true;
-      return std::tuple<uint32_t, const char*, uint16_t>{0, "a_key", 0};
+      return std::tuple<uint32_t, const char*, uint16_t, int32_t>{
+          0, "a_key", 0, ts2};
     }
-    return std::tuple<uint32_t, const char*, uint16_t>{0, nullptr, 0};
+    return std::tuple<uint32_t, const char*, uint16_t, int32_t>{
+        0, nullptr, 0, 0};
   });
 
   // Read it all again.
@@ -239,7 +247,7 @@ TEST_F(BucketMapTest, Reload) {
   // data on disk.
   TimeValuePair tv;
   tv.value = 100.0;
-  tv.unixTime = map.timestamp(2);
+  tv.unixTime = ts2;
   map.put("another_key", tv, 0);
 
   while (map.readBlockFiles()) {
@@ -257,9 +265,12 @@ TEST_F(BucketMapTest, Reload) {
   }
   ASSERT_EQ(2, have); // "a_key" and "another_key".
 
-  // This key should not be associated with old data.
+  // Neither key should be associated with old data.
   BucketedTimeSeries::Output o;
-  map.get("another_key")->second.get(0, map.timestamp(3), o, map.getStorage());
+  map.get("a_key")->second.get(0, ts3, o, map.getStorage());
+  ASSERT_EQ(1, o.size());
+  o.clear();
+  map.get("another_key")->second.get(0, ts3, o, map.getStorage());
   ASSERT_EQ(1, o.size());
 }
 
@@ -494,8 +505,8 @@ TEST_F(BucketMapTest, CorruptKeys) {
 
   map.setState(BucketMap::PRE_OWNED);
 
-  keyWriter->addKey(10, 0, "key with valid id", 16);
-  keyWriter->addKey(10, 0xDEADBEEF, "key with too large id", 0);
+  keyWriter->addKey(10, 0, "key with valid id", 16, 0);
+  keyWriter->addKey(10, 0xDEADBEEF, "key with too large id", 0, 0);
   keyWriter->stopShard(10);
   keyWriter->flushQueue();
 
@@ -531,8 +542,8 @@ TEST_F(BucketMapTest, DuplicateKeys) {
 
   map.setState(BucketMap::PRE_OWNED);
 
-  keyWriter->addKey(10, 0, "duplicate key", 16);
-  keyWriter->addKey(10, 1, "duplicate key", 0);
+  keyWriter->addKey(10, 0, "duplicate key", 16, 0);
+  keyWriter->addKey(10, 1, "duplicate key", 0, 0);
   keyWriter->stopShard(10);
   keyWriter->flushQueue();
 

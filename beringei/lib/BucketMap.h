@@ -265,9 +265,6 @@ class BucketMap {
   std::mutex unreadBlockFilesMutex_;
   std::set<uint32_t> unreadBlockFiles_;
 
-  // Rows from key_list files. Used during shard loading and cleared after.
-  std::vector<Item> rowsFromDisk_;
-
   // Circular vector for the deviations.
   std::vector<std::vector<uint32_t>> deviations_;
 };

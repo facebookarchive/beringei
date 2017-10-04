@@ -25,7 +25,14 @@ namespace gorilla {
 class TimeSeriesStream {
  public:
   TimeSeriesStream();
+
+  // Clear and re-initialize the stream.
   void reset();
+
+  // Re-initialize the stream and disallow points before minTimestamp.
+  // Requires the same minTimestampDelta argument as the other methods in
+  // this class.
+  void reset(int64_t minTimestamp, int64_t minTimestampDelta);
 
   // Size in bytes of the data.
   uint32_t size();

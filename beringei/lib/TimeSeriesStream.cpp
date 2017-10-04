@@ -60,6 +60,16 @@ void TimeSeriesStream::reset() {
   // minTimestampDelta check across buckets.
 }
 
+void TimeSeriesStream::reset(int64_t minTimestamp, int64_t minTimestampDelta) {
+  reset();
+
+  // This is a pretty terrible hack to discard points before a particular time.
+  // appendTimestamp() gates discarding logic on prevTimestamp_ != 0 while it
+  // treats a point as the initial point if data_ is empty.
+  prevTimestamp_ =
+      std::max(minTimestamp, minTimestampDelta) - minTimestampDelta;
+}
+
 uint32_t TimeSeriesStream::size() {
   return data_.size();
 }

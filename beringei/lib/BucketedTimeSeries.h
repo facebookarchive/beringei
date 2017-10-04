@@ -28,9 +28,10 @@ class BucketedTimeSeries {
   ~BucketedTimeSeries();
 
   // Initialize a BucketedTimeSeries with n historical buckets and
-  // one active bucket.
+  // one active bucket. The BucketedTimeSeries will ignore any points
+  // that predate minTimestamp and loaded block files that predate minBucket.
   // Not thread-safe.
-  void reset(uint8_t n);
+  void reset(uint8_t n, uint32_t minBucket, int64_t minTimestamp);
 
   // Add a data point to the given bucket. Returns true if data was
   // added, false if it was dropped. If category pointer is defined,
@@ -66,7 +67,7 @@ class BucketedTimeSeries {
 
   void setDataBlock(
       uint32_t position,
-      uint8_t numBuckets,
+      BucketStorage* storage,
       BucketStorage::BucketStorageId id);
 
   // Sets the current bucket. Flushes data from the previous bucket to
@@ -86,6 +87,7 @@ class BucketedTimeSeries {
   // Sets the ODS category for this time series.
   void setCategory(uint16_t category);
 
+  int32_t getFirstUpdateTime(BucketStorage* storage, const BucketMap& map);
   uint32_t getLastUpdateTime(BucketStorage* storage, const BucketMap& map);
 
  private:

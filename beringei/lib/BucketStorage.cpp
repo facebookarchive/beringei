@@ -39,6 +39,9 @@ const uint32_t BucketStorage::kPageSize = kDataBlockSize;
 // Zero can be used as the invalid ID because no valid ID will ever be zero
 const BucketStorage::BucketStorageId BucketStorage::kInvalidId = 0;
 
+// Also an invalid ID because offset + length will be > page size.
+const BucketStorage::BucketStorageId BucketStorage::kDisabledId = ~0;
+
 const std::string BucketStorage::kDataPrefix = "block_data";
 const std::string BucketStorage::kCompletePrefix = "complete_block";
 
@@ -174,7 +177,7 @@ BucketStorage::FetchStatus BucketStorage::fetch(
     BucketStorage::BucketStorageId id,
     std::string& data,
     uint16_t& itemCount) {
-  if (id == kInvalidId) {
+  if (id == kInvalidId || id == kDisabledId) {
     return FAILURE;
   }
 

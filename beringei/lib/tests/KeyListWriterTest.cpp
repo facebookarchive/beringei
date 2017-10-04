@@ -35,21 +35,26 @@ class KeyListWriterTest : public testing::Test {
 TEST_F(KeyListWriterTest, writeAndRead) {
   KeyListWriter keyWriter(dir_->dirname(), 10);
   keyWriter.startShard(321);
-  keyWriter.addKey(321, 6, "hi", 43);
+  keyWriter.addKey(321, 6, "hi", 43, 60);
   keyWriter.stopShard(321);
-  keyWriter.addKey(321, 7, "bye", 44);
+  keyWriter.addKey(321, 7, "bye", 44, 61);
   keyWriter.flushQueue();
 
   uint32_t id;
   string key;
   uint16_t category;
+  int32_t timestamp;
   int keys = PersistentKeyList::readKeys(
       321,
       dir_->dirname(),
-      [&](uint32_t _id, const char* _key, uint16_t _category) {
+      [&](uint32_t _id,
+          const char* _key,
+          uint16_t _category,
+          int32_t _timestamp) {
         id = _id;
         key = _key;
         category = _category;
+        timestamp = _timestamp;
         return true;
       });
 
@@ -57,6 +62,7 @@ TEST_F(KeyListWriterTest, writeAndRead) {
   ASSERT_EQ("hi", key);
   ASSERT_EQ(1, keys);
   ASSERT_EQ(43, category);
+  ASSERT_EQ(60, timestamp);
 }
 
 TEST_F(KeyListWriterTest, compactAndRead) {
@@ -64,7 +70,8 @@ TEST_F(KeyListWriterTest, compactAndRead) {
   keyWriter.startShard(321);
   keyWriter.flushQueue();
 
-  auto key = std::make_tuple<uint32_t, const char*>(6, "hi", 72);
+  auto key = std::make_tuple<uint32_t, const char*, uint16_t, int32_t>(
+      6, "hi", 72, 90);
   keyWriter.compact(321, [&]() {
     auto key2 = key;
     get<1>(key) = nullptr;
@@ -74,13 +81,18 @@ TEST_F(KeyListWriterTest, compactAndRead) {
   uint32_t id;
   string key2;
   uint16_t category;
+  int32_t timestamp;
   int keys = PersistentKeyList::readKeys(
       321,
       dir_->dirname(),
-      [&](uint32_t _id, const char* _key, uint16_t _category) {
+      [&](uint32_t _id,
+          const char* _key,
+          uint16_t _category,
+          int32_t _timestamp) {
         id = _id;
         key2 = _key;
         category = _category;
+        timestamp = _timestamp;
         return true;
       });
 
@@ -88,6 +100,7 @@ TEST_F(KeyListWriterTest, compactAndRead) {
   ASSERT_EQ("hi", key2);
   ASSERT_EQ(1, keys);
   ASSERT_EQ(72, category);
+  ASSERT_EQ(90, timestamp);
 }
 
 TEST_F(KeyListWriterTest, CompactMore) {
@@ -95,28 +108,33 @@ TEST_F(KeyListWriterTest, CompactMore) {
   keyWriter.startShard(321);
   keyWriter.flushQueue();
 
-  vector<std::tuple<uint32_t, string, uint16_t>> keys = {
-      make_tuple<uint32_t, string, uint16_t>(15, "Testing1", 414),
-      make_tuple<uint32_t, string, uint16_t>(25, "Testing2", 415),
-      make_tuple<uint32_t, string, uint16_t>(35, "Testing3", 416),
-      make_tuple<uint32_t, string, uint16_t>(45, "Testing4", 417)};
+  vector<std::tuple<uint32_t, string, uint16_t, int32_t>> keys = {
+      make_tuple<uint32_t, string, uint16_t, int32_t>(15, "Testing1", 414, 900),
+      make_tuple<uint32_t, string, uint16_t, int32_t>(25, "Testing2", 415, 901),
+      make_tuple<uint32_t, string, uint16_t, int32_t>(35, "Testing3", 416, 902),
+      make_tuple<uint32_t, string, uint16_t, int32_t>(
+          45, "Testing4", 417, 903)};
 
   int i = -1;
   keyWriter.compact(321, [&]() {
     i++;
     if (i >= keys.size()) {
-      return std::tuple<uint32_t, const char*, uint16_t>{0, nullptr, 0};
+      return std::tuple<uint32_t, const char*, uint16_t, int32_t>{
+          0, nullptr, 0, 0};
     }
-    return std::tuple<uint32_t, const char*, uint16_t>{
-        get<0>(keys[i]), get<1>(keys[i]).c_str(), get<2>(keys[i])};
+    return std::tuple<uint32_t, const char*, uint16_t, int32_t>{
+        get<0>(keys[i]),
+        get<1>(keys[i]).c_str(),
+        get<2>(keys[i]),
+        get<3>(keys[i])};
   });
 
-  vector<std::tuple<uint32_t, string, uint16_t>> keys2;
+  vector<std::tuple<uint32_t, string, uint16_t, int32_t>> keys2;
   int numKeys = PersistentKeyList::readKeys(
       321,
       dir_->dirname(),
-      [&](uint32_t id, const char* key, uint16_t category) {
-        keys2.push_back(make_tuple(id, key, category));
+      [&](uint32_t id, const char* key, uint16_t category, int32_t timestamp) {
+        keys2.push_back(make_tuple(id, key, category, timestamp));
         return true;
       });
   ASSERT_EQ(keys.size(), numKeys);
