@@ -14,8 +14,8 @@
 
 #include <folly/Executor.h>
 #include <folly/RWSpinLock.h>
+#include <folly/executors/GlobalExecutor.h>
 #include <folly/experimental/FunctionScheduler.h>
-#include <wangle/concurrent/GlobalExecutor.h>
 
 #include "beringei/client/BeringeiConfigurationAdapterIf.h"
 #include "beringei/client/BeringeiGetResult.h"
