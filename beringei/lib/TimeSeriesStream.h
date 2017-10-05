@@ -25,7 +25,14 @@ namespace gorilla {
 class TimeSeriesStream {
  public:
   TimeSeriesStream();
+
+  // Clear and re-initialize the stream.
   void reset();
+
+  // Re-initialize the stream and disallow points before minTimestamp.
+  // Requires the same minTimestampDelta argument as the other methods in
+  // this class.
+  void reset(int64_t minTimestamp, int64_t minTimestampDelta);
 
   // Size in bytes of the data.
   uint32_t size();
@@ -90,13 +97,13 @@ class TimeSeriesStream {
 
   // Decompression methods.
   static double readNextValue(
-      const char* data,
+      folly::StringPiece data,
       uint64_t& bitPos,
       uint64_t& previousValue,
       uint64_t& previousLeadingZeros,
       uint64_t& previousTrailingZeros);
   static int64_t readNextTimestamp(
-      const char* data,
+      folly::StringPiece data,
       uint64_t& bitPos,
       int64_t& prevValue,
       int64_t& prevDelta);

@@ -61,6 +61,7 @@ class ShardData {
 
   // Returns the number of owned and total shards respectively.
   int64_t getNumShards();
+  int64_t getNumShardsOwnedInProgress();
   int64_t getTotalNumShards();
 
   // Synchronously add and drop shards by spinning until the corresponding

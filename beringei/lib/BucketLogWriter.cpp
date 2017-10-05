@@ -21,9 +21,9 @@ namespace gorilla {
 DECLARE_int32(data_log_buffer_size);
 
 static const int kLogFileBufferSize = FLAGS_data_log_buffer_size;
-static const std::string kLogDataFailures = ".log_data_failures";
+static const std::string kLogDataFailures = "log_data_failures";
 static const std::string kLogFilesystemFailures =
-    ".failed_writes.log_filesystem";
+    "failed_writes.log_filesystem";
 
 // These are not valid indexes so they can be used to control starting
 // and stopping shards.
@@ -107,14 +107,6 @@ uint64_t BucketLogWriter::duration(uint32_t buckets) const {
   return BucketUtils::duration(buckets, windowSize_);
 }
 
-uint64_t BucketLogWriter::getRandomNextClearDuration() const {
-  return random() % duration(1);
-}
-
-uint64_t BucketLogWriter::getRandomOpenNextDuration(int shardId) const {
-  return windowSize_ * (0.75 + 0.25 * shardId / numShards_);
-}
-
 void BucketLogWriter::flushQueue() {
   stopWriterThread();
   while (writeOneLogEntry(false))
@@ -163,10 +155,10 @@ bool BucketLogWriter::writeOneLogEntry(bool blockingRead) {
     if (info.index == kStartShardIndex) {
       ShardWriter writer;
 
-      // Randomly select the next clear time between windowSize_ and
-      // windowSize_ * 2 to spread out the clear operations.
-      writer.nextClearTimeSecs =
-          time(nullptr) + duration(1) + getRandomNextClearDuration();
+      // Select the next clear time to be the start of a bucket between
+      // windowSize_ and windowSize_ * 2 to spread out the clear operations.
+      writer.nextClearTimeSecs = BucketUtils::floorTimestamp(
+          time(nullptr) + duration(2), windowSize_, info.shardId);
       writer.fileUtils.reset(
           new FileUtils(info.shardId, kLogFilePrefix, dataDirectory_));
       shardWriters_.insert(std::make_pair(info.shardId, std::move(writer)));
@@ -203,11 +195,9 @@ bool BucketLogWriter::writeOneLogEntry(bool blockingRead) {
         }
       }
 
-      // Spread out opening the files for the next bucket in the last
-      // 1/4 of the time window based on the shard ID. This will avoid
-      // opening a lot of files simultaneously.
+      // Open files for the next bucket in the last 1/10 of the time window.
       uint32_t openNextFileTime =
-          timestamp(b, info.shardId) + getRandomOpenNextDuration(info.shardId);
+          timestamp(b, info.shardId) + windowSize_ * 0.9;
       if (time(nullptr) > openNextFileTime &&
           shardWriter.logWriters.find(b + 1) == shardWriter.logWriters.end()) {
         uint32_t baseTime = timestamp(b + 1, info.shardId);

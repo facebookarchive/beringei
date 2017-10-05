@@ -12,8 +12,11 @@
 #include <string>
 #include <vector>
 
+#include <folly/Executor.h>
 #include <folly/RWSpinLock.h>
+#include <folly/executors/GlobalExecutor.h>
 #include <folly/experimental/FunctionScheduler.h>
+
 #include "beringei/client/BeringeiConfigurationAdapterIf.h"
 #include "beringei/client/BeringeiGetResult.h"
 #include "beringei/client/BeringeiNetworkClient.h"
@@ -27,7 +30,6 @@ class FacebookBase2;
 
 namespace facebook {
 namespace gorilla {
-
 using GorillaResultVector =
     std::vector<std::pair<Key, std::vector<TimeValuePair>>>;
 using GorillaServicesVector = std::vector<std::string>;
@@ -85,6 +87,12 @@ class BeringeiClientImpl {
       GetDataRequest& request,
       const std::string& serviceOverride = "");
 
+  folly::Future<BeringeiGetResult> futureGet(
+      GetDataRequest& request,
+      folly::EventBase* eb,
+      folly::Executor* workExecutor = folly::getCPUExecutor().get(),
+      const std::string& serviceOverride = "");
+
   // Returns true if reading from gorilla is enabled, false otherwise.
   bool isReadingEnabled() {
     folly::RWSpinLock::ReadHolder guard(&readClientLock_);
@@ -100,13 +108,7 @@ class BeringeiClientImpl {
   void stopRequests();
 
   // Fetch all data for the given shard for a time-window range.
-  void getShardDataBucket(
-      int64_t begin,
-      int64_t end,
-      int64_t shardId,
-      int32_t offset,
-      int32_t limit,
-      GetShardDataBucketResult& result);
+  void scanShard(const ScanShardRequest& request, ScanShardResult& result);
 
   void flushQueue();
 
@@ -150,6 +152,8 @@ class BeringeiClientImpl {
   // Constructor that does nothing. Used from tests.
   explicit BeringeiClientImpl() {}
 
+  std::vector<std::shared_ptr<BeringeiNetworkClient>> getAllReadClients(
+      const std::string& serviceOverride);
   std::shared_ptr<BeringeiNetworkClient> getReadClientCopy();
 
   std::vector<std::unique_ptr<WriteClient>> writeClients_;

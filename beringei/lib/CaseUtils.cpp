@@ -9,7 +9,8 @@
 
 #include "CaseUtils.h"
 
-#include <folly/SpookyHashV2.h>
+#include <folly/String.h>
+#include <folly/hash/SpookyHashV2.h>
 
 namespace facebook {
 namespace gorilla {
@@ -17,19 +18,38 @@ namespace gorilla {
 // This is the max gorilla key length as specified in GorillaServiceHandler.
 const static size_t kBufferSize = 400;
 
+// Hash seed unique to this class.
+const static uint64_t kCaseHashSeed = 0xCA5E4A54;
+
 bool CaseEq::operator()(const char* s1, const char* s2) const {
   return strcasecmp(s1, s2) == 0;
 }
 
 size_t CaseHash::operator()(const char* s) const {
-  // Making a copy and then using a word-at-a-time hash is faster than feeding
-  // individual bytes into a byte-at-a-time hash.
+  return CaseHash::hash(s, kCaseHashSeed);
+}
+
+uint64_t CaseHash::hash(folly::StringPiece s, uint64_t seed) {
   char buf[kBufferSize];
-  int n = 0;
-  for (; s[n]; n++) {
-    buf[n] = fastToLower(s[n]);
-  }
-  return folly::hash::SpookyHashV2::Hash64(buf, n, 0);
+  folly::hash::SpookyHashV2 spooky;
+  spooky.Init(seed, seed);
+
+  // Repeatedly copy parts of the string onto the stack, downcase them in place,
+  // and feed them into SpookyHash.
+  // We could probably speed this up slightly by modifying SpookyHash to
+  // downcase words as it goes in order to avoid the copy, but this should be
+  // good enough.
+  do {
+    size_t l = std::min(s.size(), kBufferSize);
+    memcpy(buf, s.data(), l);
+    folly::toLowerAscii(buf, l);
+    spooky.Update(buf, l);
+    s.advance(l);
+  } while (UNLIKELY(s.size() > 0));
+
+  uint64_t hash1, hash2;
+  spooky.Final(&hash1, &hash2);
+  return hash1;
 }
 }
 } // facebook::gorilla

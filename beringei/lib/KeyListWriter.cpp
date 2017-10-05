@@ -16,8 +16,8 @@
 namespace facebook {
 namespace gorilla {
 
-static const std::string kKeyListFailures = ".key_list_write_failures";
-static const std::string kKeysPopped = ".key_list_queue_popped";
+static const std::string kKeyListFailures = "key_list_write_failures";
+static const std::string kKeysPopped = "key_list_queue_popped";
 
 KeyListWriter::KeyListWriter(const std::string& dataDirectory, size_t queueSize)
     : keyInfoQueue_(queueSize),
@@ -34,13 +34,15 @@ void KeyListWriter::addKey(
     int64_t shardId,
     uint32_t id,
     const std::string& key,
-    uint16_t category) {
+    uint16_t category,
+    int32_t timestamp) {
   KeyInfo info;
   info.shardId = shardId;
   info.key = key;
   info.keyId = id;
   info.type = KeyInfo::WRITE_KEY;
   info.category = category;
+  info.timestamp = timestamp;
 
   // It's better to delay the thrift handler than to completely lose a key.
   keyInfoQueue_.blockingWrite(std::move(info));
@@ -48,7 +50,8 @@ void KeyListWriter::addKey(
 
 void KeyListWriter::compact(
     int64_t shardId,
-    std::function<std::tuple<uint32_t, const char*, uint16_t>()> generator) {
+    std::function<std::tuple<uint32_t, const char*, uint16_t, int32_t>()>
+        generator) {
   auto writer = get(shardId);
   if (!writer) {
     LOG(ERROR) << "Trying to compact non-enabled shard " << shardId;
@@ -161,7 +164,8 @@ bool KeyListWriter::writeOneKey() {
                      << info.shardId;
           continue;
         }
-        if (!writer->appendKey(info.keyId, info.key.c_str(), info.category)) {
+        if (!writer->appendKey(
+                info.keyId, info.key.c_str(), info.category, info.timestamp)) {
           LOG(ERROR) << "Failed to write key '" << info.key
                      << "' to log for shard " << info.shardId;
           GorillaStatsManager::addStatValue(kKeyListFailures);

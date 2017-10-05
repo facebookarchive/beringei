@@ -60,6 +60,16 @@ void TimeSeriesStream::reset() {
   // minTimestampDelta check across buckets.
 }
 
+void TimeSeriesStream::reset(int64_t minTimestamp, int64_t minTimestampDelta) {
+  reset();
+
+  // This is a pretty terrible hack to discard points before a particular time.
+  // appendTimestamp() gates discarding logic on prevTimestamp_ != 0 while it
+  // treats a point as the initial point if data_ is empty.
+  prevTimestamp_ =
+      std::max(minTimestamp, minTimestampDelta) - minTimestampDelta;
+}
+
 uint32_t TimeSeriesStream::size() {
   return data_.size();
 }
@@ -241,7 +251,7 @@ void TimeSeriesStream::appendValue(double value) {
 }
 
 int64_t TimeSeriesStream::readNextTimestamp(
-    const char* data,
+    folly::StringPiece data,
     uint64_t& bitPos,
     int64_t& prevValue,
     int64_t& prevDelta) {
@@ -270,7 +280,7 @@ int64_t TimeSeriesStream::readNextTimestamp(
 }
 
 double TimeSeriesStream::readNextValue(
-    const char* data,
+    folly::StringPiece data,
     uint64_t& bitPos,
     uint64_t& previousValue,
     uint64_t& previousLeadingZeros,
@@ -296,7 +306,6 @@ double TimeSeriesStream::readNextValue(
     uint64_t blockSize =
         BitUtil::readValueFromBitString(data, bitPos, kBlockSizeLengthBits) +
         kBlockSizeAdjustment;
-
     previousTrailingZeros = 64 - blockSize - leadingZeros;
     xorValue = BitUtil::readValueFromBitString(data, bitPos, blockSize);
     xorValue <<= previousTrailingZeros;
@@ -316,8 +325,8 @@ uint32_t TimeSeriesStream::getFirstTimeStamp() {
   }
 
   uint64_t bitPos = 0;
-  return BitUtil::readValueFromBitString(
-      data_.c_str(), bitPos, kBitsForFirstTimestamp);
+  folly::StringPiece data(data_.c_str(), data_.size());
+  return BitUtil::readValueFromBitString(data, bitPos, kBitsForFirstTimestamp);
 }
 }
 } // facebook::gorilla

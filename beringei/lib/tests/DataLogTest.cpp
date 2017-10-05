@@ -9,6 +9,7 @@
 
 #include <folly/File.h>
 #include <folly/Random.h>
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <unistd.h>
 
@@ -22,6 +23,74 @@ using namespace ::testing;
 using namespace facebook;
 using namespace facebook::gorilla;
 using namespace std;
+
+class PartialDataLogWriter : public DataLogWriter {
+ public:
+  // Pass the expected partial writes as a first param.
+  PartialDataLogWriter(
+      std::vector<size_t>&& partialWrites,
+      FileUtils::File&& out,
+      int64_t baseTime)
+      : DataLogWriter(std::move(out), baseTime),
+        mockedPartialWrites_(partialWrites) {}
+  virtual size_t writeToFile(char* const buffer, const size_t bufferSize)
+      override {
+    if (bufferSize == 0 || mockedPartialWrites_.size() < counter_) {
+      return 0;
+    }
+
+    // Store received buffer sizes to check later.
+    receivedWrites_.push_back(bufferSize);
+
+    if (lastBuffer_ == nullptr) {
+      lastBuffer_ = buffer;
+    }
+    bufferOffsets_.push_back(buffer - lastBuffer_);
+    lastBuffer_ = buffer;
+
+    if (mockedPartialWrites_.size() == counter_) {
+      ++counter_;
+      return bufferSize; // Last write should write the whole thing.
+    }
+
+    return mockedPartialWrites_.at(counter_++);
+  }
+
+  std::vector<size_t> receivedWrites_;
+  std::vector<int64_t> bufferOffsets_;
+  char* lastBuffer_ = nullptr;
+
+ private:
+  std::vector<size_t> mockedPartialWrites_;
+  int counter_ = 0;
+};
+
+TEST(DataLogTest, partialWrites) {
+  FLAGS_gorilla_async_file_close = false;
+
+  TemporaryDirectory dir("gorilla_test");
+  boost::filesystem::create_directories(
+      FileUtils::joinPaths(dir.dirname(), "10"));
+
+  FileUtils files(10, "test_log", dir.dirname());
+  files.clearAll();
+
+  auto testFile = files.open(1, "ab", 100);
+  PartialDataLogWriter writer({10, 8, 12, 13, 7}, std::move(testFile), 0);
+  writer.append(0, 101, 2);
+  writer.append(3, 104, 5);
+  writer.append(1, 100, 0);
+  writer.append(3, 21, 4);
+  writer.append(5, 101, 2);
+  writer.append(2, 104, 5);
+  writer.append(4, 100, 0);
+  writer.append(1, 21, 4);
+  // The above writes result in a 51-byte initial write. This test is a bit
+  // fragile and will break if the compression changes.
+  EXPECT_TRUE(writer.flushBuffer());
+  EXPECT_THAT(writer.receivedWrites_, ElementsAre(51, 41, 33, 21, 8, 1));
+  EXPECT_THAT(writer.bufferOffsets_, ElementsAre(0, 10, 8, 12, 13, 7));
+}
 
 TEST(DataLogTest, writeAndRead) {
   FLAGS_gorilla_async_file_close = false;

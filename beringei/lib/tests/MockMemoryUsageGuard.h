@@ -22,7 +22,7 @@ class MockMemoryUsageGuard : public MemoryUsageGuardIf {
  public:
   MockMemoryUsageGuard() {}
 
-  bool weAreLowOnMemory() {
+  bool weAreLowOnMemory() override {
     return isMemoryLow_;
   }
 

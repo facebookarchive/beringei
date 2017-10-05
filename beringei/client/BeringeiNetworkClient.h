@@ -61,7 +61,8 @@ class BeringeiNetworkClient {
 
   virtual folly::Future<GetDataResult> performGet(
       const std::pair<std::string, int>& hostInfo,
-      const GetDataRequest& request);
+      const GetDataRequest& request,
+      folly::EventBase* eb = getEventBase());
 
   // Fetches the last update times from all the servers in parallel
   // and calls the callback multiple times with partial results. The
@@ -106,18 +107,15 @@ class BeringeiNetworkClient {
     return shardCache_.size();
   }
 
-  virtual void performShardDataBucketGet(
-      int64_t begin,
-      int64_t end,
-      int64_t shardId,
-      int32_t offset,
-      int32_t limit,
-      GetShardDataBucketResult& result);
+  virtual void performScanShard(
+      const ScanShardRequest& request,
+      ScanShardResult& result);
 
   static uint32_t getTimeoutMs();
 
   virtual std::shared_ptr<BeringeiServiceAsyncClient> getBeringeiThriftClient(
-      const std::pair<std::string, int>& hostInfo);
+      const std::pair<std::string, int>& hostInfo,
+      folly::EventBase* eb = getEventBase());
 
   // Gets keys stored in specified shard. Returns true if there are more keys
   // to be fetched.
@@ -184,10 +182,10 @@ class BeringeiNetworkClient {
   std::shared_ptr<BeringeiConfigurationAdapterIf> configurationAdapter_;
   std::string serviceName_;
   std::atomic<bool> stopRequests_;
-
- private:
   std::condition_variable stopping_;
   std::mutex stoppingMutex_;
+
+ private:
   std::vector<std::unique_ptr<ShardCacheEntry>> shardCache_;
   folly::RWSpinLock shardCacheLock_;
   bool isShadow_;

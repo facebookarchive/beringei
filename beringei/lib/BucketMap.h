@@ -135,7 +135,7 @@ class BucketMap {
   // transition is not allowed or already in that state.
   bool setState(State state);
 
-  State getState();
+  State getState() const;
 
   // Returns the time in milliseconds it took to add this shard from
   // PRE_OWNED state to OWNED state. If called before the shard is
@@ -264,9 +264,6 @@ class BucketMap {
 
   std::mutex unreadBlockFilesMutex_;
   std::set<uint32_t> unreadBlockFiles_;
-
-  // Rows from key_list files. Used during shard loading and cleared after.
-  std::vector<Item> rowsFromDisk_;
 
   // Circular vector for the deviations.
   std::vector<std::vector<uint32_t>> deviations_;

@@ -35,20 +35,20 @@ namespace gorilla {
 // on each resize.
 const int kRowsAtATime = 10000;
 
-static const std::string kMsPerKeyListRead = ".ms_per_key_list_read";
-static const std::string kMsPerLogFilesRead = ".ms_per_log_files_read";
-static const std::string kMsPerBlockFileRead = ".ms_per_block_file_read";
-static const std::string kMsPerQueueProcessing = ".ms_per_queue_processing";
-static const std::string kDataPointQueueDropped = ".data_point_queue_dropped";
-static const std::string kCorruptKeyFiles = ".corrupt_key_files";
-static const std::string kCorruptLogFiles = ".corrupt_log_files";
-static const std::string kUnknownKeysInLogFiles = ".unknown_keys_in_log_files";
+static const std::string kMsPerKeyListRead = "ms_per_key_list_read";
+static const std::string kMsPerLogFilesRead = "ms_per_log_files_read";
+static const std::string kMsPerBlockFileRead = "ms_per_block_file_read";
+static const std::string kMsPerQueueProcessing = "ms_per_queue_processing";
+static const std::string kDataPointQueueDropped = "data_point_queue_dropped";
+static const std::string kCorruptKeyFiles = "corrupt_key_files";
+static const std::string kCorruptLogFiles = "corrupt_log_files";
+static const std::string kUnknownKeysInLogFiles = "unknown_keys_in_log_files";
 static const std::string kUnknownKeysInBlockMetadataFiles =
-    ".unknown_keys_in_block_metadata_files";
-static const std::string kDataHoles = ".missing_blocks_and_logs";
-static const std::string kMissingLogs = ".missing_seconds_of_log_data";
-static const std::string kDeletionRaces = ".key_deletion_failures";
-static const std::string kDuplicateKeys = ".duplicate_keys_in_key_list";
+    "unknown_keys_in_block_metadata_files";
+static const std::string kDataHoles = "missing_blocks_and_logs";
+static const std::string kMissingLogs = "missing_seconds_of_log_data";
+static const std::string kDeletionRaces = "key_deletion_failures";
+static const std::string kDuplicateKeys = "duplicate_keys_in_key_list";
 
 static const size_t kMaxAllowedKeyLength = 400;
 
@@ -140,7 +140,7 @@ std::pair<int, int> BucketMap::put(
   // Prepare a row now to minimize critical section.
   auto newRow = std::make_shared<std::pair<std::string, BucketedTimeSeries>>();
   newRow->first = key;
-  newRow->second.reset(n_);
+  newRow->second.reset(n_, b, value.unixTime);
   newRow->second.put(b, value, &storage_, -1, &category);
 
   int index = 0;
@@ -175,7 +175,7 @@ std::pair<int, int> BucketMap::put(
   }
 
   // Write the new key out to disk.
-  keyWriter_->addKey(shardId_, index, newRow->first, category);
+  keyWriter_->addKey(shardId_, index, newRow->first, category, value.unixTime);
   logWriter_->logData(shardId_, index, value.unixTime, value.value);
 
   return {1, 1};
@@ -289,8 +289,6 @@ bool BucketMap::setState(BucketMap::State state) {
     keyWriter_->stopShard(shardId_);
     logWriter_->stopShard(shardId_);
   } else if (state == OWNED) {
-    tmpVec.swap(rowsFromDisk_);
-
     // Calling this won't hurt even if the timer isn't running.
     addTimer_.stop();
   }
@@ -313,7 +311,7 @@ bool BucketMap::setState(BucketMap::State state) {
   return true;
 }
 
-BucketMap::State BucketMap::getState() {
+BucketMap::State BucketMap::getState() const {
   folly::RWSpinLock::ReadHolder guard(lock_);
   return state_;
 }
@@ -382,7 +380,7 @@ int BucketMap::finalizeBuckets(uint32_t lastBucketToFinalize) {
 }
 
 bool BucketMap::isBehind(uint32_t bucketToFinalize) const {
-  return lastFinalizedBucket_ != 0 &&
+  return getState() == OWNED && lastFinalizedBucket_ != 0 &&
       bucketToFinalize > lastFinalizedBucket_ + 1;
 }
 
@@ -408,10 +406,14 @@ void BucketMap::compactKeyList() {
     for (i++; i < items.size(); i++) {
       if (items[i].get()) {
         return std::make_tuple(
-            i, items[i]->first.c_str(), items[i]->second.getCategory());
+            i,
+            items[i]->first.c_str(),
+            items[i]->second.getCategory(),
+            items[i]->second.getFirstUpdateTime(getStorage(), *this));
       }
     }
-    return std::make_tuple<uint32_t, const char*, uint16_t>(0, nullptr, 0);
+    return std::make_tuple<uint32_t, const char*, uint16_t, int32_t>(
+        0, nullptr, 0, 0);
   });
 }
 
@@ -540,10 +542,9 @@ bool BucketMap::readBlockFiles() {
     folly::RWSpinLock::ReadHolder guard(lock_);
 
     for (int i = 0; i < timeSeriesIds.size(); i++) {
-      if (timeSeriesIds[i] < rowsFromDisk_.size() &&
-          rowsFromDisk_[timeSeriesIds[i]].get()) {
+      if (timeSeriesIds[i] < rows_.size() && rows_[timeSeriesIds[i]].get()) {
         rows_[timeSeriesIds[i]]->second.setDataBlock(
-            position, n_, storageIds[i]);
+            position, &storage_, storageIds[i]);
       } else {
         GorillaStatsManager::addStatValue(kUnknownKeysInBlockMetadataFiles);
       }
@@ -577,7 +578,7 @@ void BucketMap::readKeyList() {
   PersistentKeyList::readKeys(
       shardId_,
       dataDirectory_,
-      [&](uint32_t id, const char* key, uint16_t category) {
+      [&](uint32_t id, const char* key, uint16_t category, int32_t timestamp) {
 
         if (strlen(key) >= kMaxAllowedKeyLength) {
           LOG(ERROR) << "Key too long. Key file is corrupt for shard "
@@ -601,9 +602,12 @@ void BucketMap::readKeyList() {
           rows_.resize(id + kRowsAtATime);
         }
 
+        // Initialize the row, configuring it to throw away any data
+        // that predates `timestamp`.
         rows_[id].reset(new std::pair<std::string, BucketedTimeSeries>());
         rows_[id]->first = key;
-        rows_[id]->second.reset(n_);
+        rows_[id]->second.reset(
+            n_, (timestamp > 0 ? bucket(timestamp) : 0), timestamp);
         rows_[id]->second.setCategory(category);
         return true;
       });
@@ -626,8 +630,6 @@ void BucketMap::readKeyList() {
       freeList_.push(i);
     }
   }
-
-  getEverything(rowsFromDisk_);
 
   LOG(INFO) << "Done reading keys for shard " << shardId_;
   GorillaStatsManager::addStatValue(
@@ -940,6 +942,12 @@ int BucketMap::indexDeviatingTimeSeries(
   }
 
   folly::RWSpinLock::WriteHolder guard(lock_);
+  if (state_ != OWNED) {
+    guard.reset();
+    LOG(WARNING) << "Shard " << shardId_
+                 << " ownership change while indexing deviations.";
+    return 0;
+  }
   int deviationsIndexed = 0;
   for (int i = indexingStartTime; i <= endTime; i += kGorillaSecondsPerMinute) {
     int pos = i / kGorillaSecondsPerMinute % totalMinutes;

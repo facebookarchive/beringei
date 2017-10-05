@@ -9,6 +9,8 @@
 
 #include "BeringeiConfigurationAdapter.h"
 
+#include "beringei/lib/CaseUtils.h"
+
 DEFINE_string(
     beringei_configuration_path,
     "",
@@ -109,14 +111,14 @@ bool BeringeiConfigurationAdapter::getHostForShardId(
     }
 
     auto& service = serviceIterator->second;
-    auto shardIterator = service.shardMap.find(shardId);
 
-    if (shardIterator == service.shardMap.end()) {
+    if (shardId >= service.shardMap.size() || shardId < 0) {
       return false;
     }
+    const auto& shardHostInfo = service.shardMap.at(shardId);
 
-    hostInfo.first = shardIterator->second.hostAddress;
-    hostInfo.second = shardIterator->second.port;
+    hostInfo.first = shardHostInfo.hostAddress;
+    hostInfo.second = shardHostInfo.port;
     return true;
   }
 
@@ -145,6 +147,13 @@ void BeringeiConfigurationAdapter::getShardsForHost(
     shardList = service.shardsPerHostMap[compactHostInfo];
   }
   return;
+}
+
+uint64_t BeringeiConfigurationAdapter::getShardForKey(
+    folly::StringPiece key,
+    uint64_t totalShards,
+    uint64_t seed) {
+  return CaseHash::hash(key, seed) % totalShards;
 }
 
 std::string BeringeiConfigurationAdapter::getNearestReadService() {

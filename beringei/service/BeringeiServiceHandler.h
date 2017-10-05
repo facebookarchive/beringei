@@ -41,16 +41,16 @@ class BeringeiServiceHandler : virtual public BeringeiServiceSvIf {
       int port,
       bool adjustTimestamps = true);
 
-  virtual ~BeringeiServiceHandler();
+  ~BeringeiServiceHandler() override;
 
-  virtual void getData(GetDataResult& ret, std::unique_ptr<GetDataRequest> req)
+  void getData(GetDataResult& ret, std::unique_ptr<GetDataRequest> req)
       override;
 
-  virtual void putDataPoints(
+  void putDataPoints(
       PutDataResult& response,
       std::unique_ptr<PutDataRequest> req) override;
 
-  virtual void getShardDataBucket(
+  void getShardDataBucket(
       GetShardDataBucketResult& ret,
       int64_t beginTs,
       int64_t endTs,
@@ -58,9 +58,13 @@ class BeringeiServiceHandler : virtual public BeringeiServiceSvIf {
       int32_t offset,
       int32_t limit) override;
 
+  virtual void scanShard(
+      ScanShardResult& ret,
+      std::unique_ptr<ScanShardRequest> req) override;
+
   virtual BucketMap* getShardMap(int64_t shardId);
 
-  virtual void getLastUpdateTimes(
+  void getLastUpdateTimes(
       GetLastUpdateTimesResult& ret,
       std::unique_ptr<GetLastUpdateTimesRequest> req) override;
 

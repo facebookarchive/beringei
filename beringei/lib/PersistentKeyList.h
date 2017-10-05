@@ -40,18 +40,23 @@ class PersistentKeyList {
   static int readKeys(
       int64_t shardId,
       const std::string& dataDirectory,
-      std::function<bool(uint32_t, const char*, uint16_t)> f);
+      std::function<bool(uint32_t, const char*, uint16_t, int32_t)> f);
 
   // Must not be called until after a call to readKeys().
   // Returns false on failure.
-  bool appendKey(uint32_t id, const char* key, uint16_t category);
+  bool appendKey(
+      uint32_t id,
+      const char* key,
+      uint16_t category,
+      int32_t firstTimestamp);
 
   // Rewrite and compress the file to contain only the generated
   // entries. Continues generating until receiving a nullptr key.
   // This function should only be called by a single thread at a time,
   // but concurrent calls to appendKey() are safe.
   void compact(
-      std::function<std::tuple<uint32_t, const char*, uint16_t>()> generator);
+      std::function<std::tuple<uint32_t, const char*, uint16_t, int32_t>()>
+          generator);
 
   // Writes the internal buffer to disk. If `hardFlush` is set to true
   // forces new keys out to disk instead of leaving them in the OS
@@ -73,17 +78,20 @@ class PersistentKeyList {
       folly::fbstring& buffer,
       uint32_t id,
       const char* key,
-      uint16_t category) const;
+      uint16_t category,
+      int32_t timestamp) const;
 
   // Writes new key to internal buffer. Flushes to disk when buffer is
   // big enough or enough time has passed since the last flush time.
-  void writeKey(uint32_t id, const char* key, uint16_t category);
+  void
+  writeKey(uint32_t id, const char* key, uint16_t category, int32_t timestamp);
 
   static int readKeysFromBuffer(
       const char* buffer,
       size_t len,
       bool categoryPresent,
-      std::function<bool(uint32_t, const char*, uint16_t)> f);
+      bool timestampPresent,
+      std::function<bool(uint32_t, const char*, uint16_t, int32_t)> f);
 
   FileUtils::File activeList_;
 

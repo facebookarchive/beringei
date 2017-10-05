@@ -74,7 +74,8 @@ const static int kMinBytesNeeded = 3;
 const static int kSameValueControlBit = 0;
 const static int kDifferentValueControlBit = 1;
 
-const static std::string kFailedCounter = ".failed_writes.log";
+const static std::string kFailedCounter = "failed_writes.log";
+const static std::string kPartialWriteCounter = "partial_writes.log";
 
 DataLogWriter::DataLogWriter(FileUtils::File&& out, int64_t baseTime)
     : out_(out),
@@ -82,6 +83,7 @@ DataLogWriter::DataLogWriter(FileUtils::File&& out, int64_t baseTime)
       buffer_(new char[FLAGS_data_log_buffer_size]),
       bufferSize_(0) {
   GorillaStatsManager::addStatExportType(kFailedCounter, SUM);
+  GorillaStatsManager::addStatExportType(kPartialWriteCounter, SUM);
 }
 
 DataLogWriter::~DataLogWriter() {
@@ -175,19 +177,48 @@ void DataLogWriter::append(uint32_t id, int64_t unixTime, double value) {
   bufferSize_ += bits.length();
 }
 
+size_t DataLogWriter::writeToFile(char* const buffer, const size_t bufferSize) {
+  return fwrite(buffer, sizeof(char), bufferSize, out_.file);
+}
+
 bool DataLogWriter::flushBuffer() {
+  char* buffer = buffer_.get();
   bool success = true;
-  if (bufferSize_ > 0) {
-    int written = fwrite(buffer_.get(), sizeof(char), bufferSize_, out_.file);
-    if (written != bufferSize_) {
-      PLOG(ERROR) << "Flushing buffer failed! Wrote " << written << " of "
-                  << bufferSize_ << " to " << out_.name;
-      GorillaStatsManager::addStatValue(kFailedCounter, 1);
+  while (bufferSize_ > 0) {
+    int written = writeToFile(buffer, bufferSize_);
+
+    if (written <= 0) {
+      if (feof(out_.file)) {
+        PLOG(ERROR) << "Reached EOF when writing to buffer: " << out_.name;
+      } else if (ferror(out_.file)) {
+        PLOG(ERROR) << "Flushing buffer failed: " << out_.name;
+      }
+
       success = false;
+      break;
     }
-    bufferSize_ = 0;
+
+    if (written > bufferSize_) {
+      // This should never happen.
+      LOG(ERROR) << "Unstable storage: Written " << written << " of "
+                 << bufferSize_ << " to " << out_.name;
+
+      success = false;
+      break;
+    }
+
+    if (written != bufferSize_) {
+      GorillaStatsManager::addStatValue(kPartialWriteCounter, 1);
+      LOG(INFO) << "Partial write: Written " << written << " of " << bufferSize_
+                << " to " << out_.name;
+    }
+
+    bufferSize_ -= written;
+    buffer += written;
   }
 
+  GorillaStatsManager::addStatValue(kFailedCounter, success ? 0 : 1);
+  bufferSize_ = 0;
   return success;
 }
 
@@ -213,20 +244,17 @@ int DataLogReader::readLog(
   int64_t prevTime = baseTime;
   std::vector<double> previousValues;
   uint64_t bitPos = 0;
-
+  folly::StringPiece data(buffer.get(), len);
   // Need at least three bytes for a complete value.
   while (bitPos <= len * 8 - kMinBytesNeeded * 8) {
     try {
       // Read the id of the time series.
-      int idControlBit =
-          BitUtil::readValueFromBitString(buffer.get(), len, bitPos, 1);
+      int idControlBit = BitUtil::readValueFromBitString(data, bitPos, 1);
       uint32_t id;
       if (idControlBit == kShortIdControlBit) {
-        id = BitUtil::readValueFromBitString(
-            buffer.get(), len, bitPos, kShortIdBits);
+        id = BitUtil::readValueFromBitString(data, bitPos, kShortIdBits);
       } else {
-        id = BitUtil::readValueFromBitString(
-            buffer.get(), len, bitPos, kLongIdBits);
+        id = BitUtil::readValueFromBitString(data, bitPos, kLongIdBits);
       }
 
       if (id > FLAGS_max_allowed_timeseries_id) {
@@ -237,24 +265,24 @@ int DataLogReader::readLog(
       // Read the time stamp delta based on the the number of bits in
       // the delta.
       uint32_t timeDeltaControlValue =
-          BitUtil::readValueThroughFirstZero(buffer.get(), len, bitPos, 3);
+          BitUtil::readValueThroughFirstZero(data, bitPos, 3);
       int64_t timeDelta = 0;
       switch (timeDeltaControlValue) {
         case kZeroDeltaControlValue:
           break;
         case kShortDeltaControlValue:
-          timeDelta = BitUtil::readValueFromBitString(
-                          buffer.get(), len, bitPos, kShortDeltaBits) +
+          timeDelta =
+              BitUtil::readValueFromBitString(data, bitPos, kShortDeltaBits) +
               kShortDeltaMin;
           break;
         case kMediumDeltaControlValue:
-          timeDelta = BitUtil::readValueFromBitString(
-                          buffer.get(), len, bitPos, kMediumDeltaBits) +
+          timeDelta =
+              BitUtil::readValueFromBitString(data, bitPos, kMediumDeltaBits) +
               kMediumDeltaMin;
           break;
         case kLargeDeltaControlValue:
-          timeDelta = BitUtil::readValueFromBitString(
-                          buffer.get(), len, bitPos, kLargeDeltaBits) +
+          timeDelta =
+              BitUtil::readValueFromBitString(data, bitPos, kLargeDeltaBits) +
               kLargeDeltaMin;
           break;
         default:
@@ -273,17 +301,16 @@ int DataLogReader::readLog(
       // Finally read the value.
       double value;
       uint32_t sameValueControlBit =
-          BitUtil::readValueFromBitString(buffer.get(), len, bitPos, 1);
+          BitUtil::readValueFromBitString(data, bitPos, 1);
       if (sameValueControlBit == kSameValueControlBit) {
         value = previousValues[id];
       } else {
-        uint32_t leadingZeros = BitUtil::readValueFromBitString(
-            buffer.get(), len, bitPos, kLeadingZerosBits);
-        uint32_t blockSize = BitUtil::readValueFromBitString(
-                                 buffer.get(), len, bitPos, kBlockSizeBits) +
-            1;
-        uint64_t blockValue = BitUtil::readValueFromBitString(
-            buffer.get(), len, bitPos, blockSize);
+        uint32_t leadingZeros =
+            BitUtil::readValueFromBitString(data, bitPos, kLeadingZerosBits);
+        uint32_t blockSize =
+            BitUtil::readValueFromBitString(data, bitPos, kBlockSizeBits) + 1;
+        uint64_t blockValue =
+            BitUtil::readValueFromBitString(data, bitPos, blockSize);
 
         // Shift to left by the number of trailing zeros
         blockValue <<= (64 - blockSize - leadingZeros);

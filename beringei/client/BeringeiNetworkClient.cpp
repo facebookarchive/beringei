@@ -125,7 +125,7 @@ vector<DataPoint> BeringeiNetworkClient::performPut(PutRequestMap& requests) {
                         std::make_move_iterator(request.second.data.end()));
                   }
                 } else {
-                  auto exn = state.exceptionWrapper();
+                  auto exn = state.exception();
                   auto error = exn.what().toStdString();
                   LOG(ERROR) << "putDataPoints Failed. Reason: " << error;
 
@@ -198,7 +198,7 @@ void BeringeiNetworkClient::performGet(GetRequestMap& requests) {
                   request.second.first, request.second.second);
             }
           } else {
-            auto exn = state.exceptionWrapper();
+            auto exn = state.exception();
             auto error = exn.what().toStdString();
             LOG(ERROR) << "getData failed. Reason: " << error;
 
@@ -222,23 +222,20 @@ void BeringeiNetworkClient::performGet(GetRequestMap& requests) {
 
 folly::Future<GetDataResult> BeringeiNetworkClient::performGet(
     const std::pair<std::string, int>& hostInfo,
-    const GetDataRequest& request) {
-  return getBeringeiThriftClient(hostInfo)->future_getData(request);
+    const GetDataRequest& request,
+    folly::EventBase* eb) {
+  return getBeringeiThriftClient(hostInfo, eb)->future_getData(request);
 }
 
-void BeringeiNetworkClient::performShardDataBucketGet(
-    int64_t begin,
-    int64_t end,
-    int64_t shardId,
-    int32_t offset,
-    int32_t limit,
-    GetShardDataBucketResult& result) {
+void BeringeiNetworkClient::performScanShard(
+    const ScanShardRequest& request,
+    ScanShardResult& result) {
   std::pair<std::string, int> hostInfo;
-  bool success = getHostForShard(shardId, hostInfo);
+  bool success = getHostForShard(request.shardId, hostInfo);
 
   if (!success) {
     result.status = StatusCode::RPC_FAIL;
-    LOG(ERROR) << "Could not get host for shard " << shardId;
+    LOG(ERROR) << "Could not get host for shard " << request.shardId;
     return;
   }
 
@@ -254,7 +251,7 @@ void BeringeiNetworkClient::performShardDataBucketGet(
   }
 
   try {
-    client->sync_getShardDataBucket(result, begin, end, shardId, offset, limit);
+    client->sync_scanShard(result, request);
   } catch (const std::exception& e) {
     result.status = StatusCode::RPC_FAIL;
     LOG(ERROR) << "Got exception talking to Gorilla: " << e.what();
@@ -287,7 +284,7 @@ bool BeringeiNetworkClient::getShardKeys(
 }
 
 void BeringeiNetworkClient::getLastUpdateTimesForHost(
-    uint32_t minLastUpdateTime,
+    uint32_t /*minLastUpdateTime*/,
     uint32_t maxKeysPerRequest,
     const std::string& host,
     int port,
@@ -433,10 +430,10 @@ uint32_t BeringeiNetworkClient::getTimeoutMs() {
 
 std::shared_ptr<BeringeiServiceAsyncClient>
 BeringeiNetworkClient::getBeringeiThriftClient(
-    const std::pair<std::string, int>& hostInfo) {
+    const std::pair<std::string, int>& hostInfo,
+    folly::EventBase* eb) {
   folly::SocketAddress address(hostInfo.first, hostInfo.second, true);
-  auto socket =
-      apache::thrift::async::TAsyncSocket::newSocket(getEventBase(), address);
+  auto socket = apache::thrift::async::TAsyncSocket::newSocket(eb, address);
   auto channel =
       apache::thrift::HeaderClientChannel::newChannel(std::move(socket));
   channel->setTimeout(getTimeoutMs());

@@ -32,7 +32,7 @@ DECLARE_bool(create_directories);
 DECLARE_int32(buckets);
 DECLARE_int32(bucket_size);
 DECLARE_int32(allowed_timestamp_behind);
-DECLARE_int32(shards);
+DECLARE_int32(gorilla_shards);
 DECLARE_int32(allowed_timestamp_ahead);
 DECLARE_bool(disable_shard_refresh);
 
@@ -87,12 +87,13 @@ static bool toKey(
 
 class BeringeiServiceHandlerTest : public testing::Test {
  public:
-  virtual void SetUp() override {
+  void SetUp() override {
     FLAGS_add_shard_threads = 1;
     FLAGS_create_directories = true;
     FLAGS_buckets = 6;
     FLAGS_bucket_size = 4 * kGorillaSecondsPerHour;
     FLAGS_disable_shard_refresh = true;
+    FLAGS_gorilla_shards = 100;
   }
 
   std::unique_ptr<GetDataRequest> generateGetRequest(

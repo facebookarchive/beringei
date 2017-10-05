@@ -19,8 +19,15 @@ const int TestKeyList::kExpectedKeyLengthSpread = 30;
 const int TestKeyList::kAllowedASCIILowerBound = 32;
 const int TestKeyList::kAllowedASCIIUpperBound = 126;
 
-TestKeyList::TestKeyList(int listSize) : size_(listSize) {
+TestKeyList::TestKeyList(int listSize, uint32_t seed)
+    : size_(listSize), rand_(seed) {
   assert(size_ > 0);
+
+  // Make the results actually random if requested to do so.
+  if (seed == 0) {
+    folly::Random::seed(rand_);
+  }
+
   generateKeys();
 }
 
@@ -29,12 +36,12 @@ void TestKeyList::generateKeys() {
   std::generate_n(std::back_inserter(keyList_), size_, [&] {
     std::string str;
     int length = kExpectedKeyLength +
-        folly::Random::rand32(
-                     -kExpectedKeyLengthSpread, kExpectedKeyLengthSpread);
+        folly::Random::rand32(0, 2 * kExpectedKeyLengthSpread, rand_) -
+        kExpectedKeyLengthSpread;
     str.reserve(length);
     std::generate_n(std::back_inserter(str), length, [&]() {
       return static_cast<char>(folly::Random::rand32(
-          kAllowedASCIILowerBound, kAllowedASCIIUpperBound + 1));
+          kAllowedASCIILowerBound, kAllowedASCIIUpperBound + 1, rand_));
     });
     assert(str.length() == length);
     return str;

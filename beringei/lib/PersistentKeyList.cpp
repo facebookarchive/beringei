@@ -29,7 +29,7 @@ const static int kTempFileId = 0;
 const int KRetryFileOpen = 3;
 
 const static std::string kFileType = "key_list";
-const static std::string kFailedCounter = ".failed_writes." + kFileType;
+const static std::string kFailedCounter = "failed_writes." + kFileType;
 
 // Marker bytes to determine if the file is compressed or not and if
 // there are categories or not.
@@ -37,6 +37,8 @@ const static char kCompressedFileMarker = 'C';
 const static char kUncompressedFileMarker = 'U';
 const static char kCompressedFileWithCategoriesMarker = '0';
 const static char kUncompressedFileWithCategoriesMarker = '1';
+const static char kCompressedFileWithTimestampsMarker = '2';
+const static char kUncompressedFileWithTimestampsMarker = '3';
 
 const static uint32_t kHardFlushIntervalSecs = 120;
 
@@ -59,7 +61,7 @@ PersistentKeyList::PersistentKeyList(
 int PersistentKeyList::readKeys(
     int64_t shardId,
     const std::string& dataDirectory,
-    std::function<bool(uint32_t, const char*, uint16_t)> f) {
+    std::function<bool(uint32_t, const char*, uint16_t, int32_t)> f) {
   LOG(INFO) << "Reading keys from shard " << shardId;
 
   FileUtils files(shardId, kFileType, dataDirectory);
@@ -98,7 +100,8 @@ int PersistentKeyList::readKeys(
 
     int keysFound = 0;
     if (buffer[0] == kCompressedFileMarker ||
-        buffer[0] == kCompressedFileWithCategoriesMarker) {
+        buffer[0] == kCompressedFileWithCategoriesMarker ||
+        buffer[0] == kCompressedFileWithTimestampsMarker) {
       try {
         auto codec = folly::io::getCodec(
             folly::io::CodecType::ZLIB, folly::io::COMPRESSION_LEVEL_BEST);
@@ -110,18 +113,21 @@ int PersistentKeyList::readKeys(
         keysFound = readKeysFromBuffer(
             (const char*)uncompressed->data(),
             uncompressed->length(),
-            buffer[0] == kCompressedFileWithCategoriesMarker,
+            buffer[0] != kCompressedFileMarker,
+            buffer[0] == kCompressedFileWithTimestampsMarker,
             f);
       } catch (std::exception& e) {
         LOG(ERROR) << "Uncompression failed: " << e.what();
       }
     } else if (
         buffer[0] == kUncompressedFileMarker ||
-        buffer[0] == kUncompressedFileWithCategoriesMarker) {
+        buffer[0] == kUncompressedFileWithCategoriesMarker ||
+        buffer[0] == kUncompressedFileWithTimestampsMarker) {
       keysFound = readKeysFromBuffer(
           buffer.get() + 1,
           len - 1,
-          buffer[0] == kUncompressedFileWithCategoriesMarker,
+          buffer[0] != kUncompressedFileMarker,
+          buffer[0] == kUncompressedFileWithTimestampsMarker,
           f);
     } else {
       LOG(ERROR) << "Unknown marker byte " << buffer[0];
@@ -143,18 +149,20 @@ int PersistentKeyList::readKeys(
 bool PersistentKeyList::appendKey(
     uint32_t id,
     const char* key,
-    uint16_t category) {
+    uint16_t category,
+    int32_t timestamp) {
   std::lock_guard<std::mutex> guard(lock_);
   if (activeList_.file == nullptr) {
     return false;
   }
 
-  writeKey(id, key, category);
+  writeKey(id, key, category, timestamp);
   return true;
 }
 
 void PersistentKeyList::compact(
-    std::function<std::tuple<uint32_t, const char*, uint16_t>()> generator) {
+    std::function<std::tuple<uint32_t, const char*, uint16_t, int32_t>()>
+        generator) {
   // Direct appends to a new file.
   int64_t prev = openNext();
 
@@ -169,7 +177,12 @@ void PersistentKeyList::compact(
 
   folly::fbstring buffer;
   for (auto key = generator(); std::get<1>(key) != nullptr; key = generator()) {
-    appendBuffer(buffer, std::get<0>(key), std::get<1>(key), std::get<2>(key));
+    appendBuffer(
+        buffer,
+        std::get<0>(key),
+        std::get<1>(key),
+        std::get<2>(key),
+        std::get<3>(key));
   }
 
   if (buffer.length() == 0) {
@@ -185,7 +198,7 @@ void PersistentKeyList::compact(
     compressed->coalesce();
 
     if (fwrite(
-            &kCompressedFileWithCategoriesMarker,
+            &kCompressedFileWithTimestampsMarker,
             sizeof(char),
             1,
             tempFile.file) != 1 ||
@@ -271,7 +284,7 @@ int64_t PersistentKeyList::openNext() {
   }
 
   if (fwrite(
-          &kUncompressedFileWithCategoriesMarker,
+          &kUncompressedFileWithTimestampsMarker,
           sizeof(char),
           1,
           activeList_.file) != 1) {
@@ -286,7 +299,8 @@ void PersistentKeyList::appendBuffer(
     folly::fbstring& buffer,
     uint32_t id,
     const char* key,
-    uint16_t category) const {
+    uint16_t category,
+    int32_t timestamp) const {
   const char* bytes = (const char*)&id;
   for (int i = 0; i < sizeof(id); i++) {
     buffer += bytes[i];
@@ -294,6 +308,10 @@ void PersistentKeyList::appendBuffer(
   const char* categoryBytes = (const char*)&category;
   for (int i = 0; i < sizeof(category); i++) {
     buffer += categoryBytes[i];
+  }
+  const char* timestampBytes = (const char*)&timestamp;
+  for (int i = 0; i < sizeof(timestamp); i++) {
+    buffer += timestampBytes[i];
   }
 
   buffer += key;
@@ -303,9 +321,10 @@ void PersistentKeyList::appendBuffer(
 void PersistentKeyList::writeKey(
     uint32_t id,
     const char* key,
-    uint16_t category) {
+    uint16_t category,
+    int32_t timestamp) {
   // Write to the internal buffer and only flush when needed.
-  appendBuffer(buffer_, id, key, category);
+  appendBuffer(buffer_, id, key, category, timestamp);
 
   bool flushHard = time(nullptr) > nextHardFlushTimeSecs_;
   if (flushHard) {
@@ -321,7 +340,8 @@ int PersistentKeyList::readKeysFromBuffer(
     const char* buffer,
     size_t len,
     bool categoryPresent,
-    std::function<bool(uint32_t, const char*, uint16_t)> f) {
+    bool timestampPresent,
+    std::function<bool(uint32_t, const char*, uint16_t, int32_t)> f) {
   // Back up until the buffer ends with a zero byte.
   // This should come from the last byte in a string, but it could be a byte
   // in an id.
@@ -338,16 +358,21 @@ int PersistentKeyList::readKeysFromBuffer(
   if (categoryPresent) {
     minRecordLength += sizeof(uint16_t);
   }
+  if (timestampPresent) {
+    minRecordLength += sizeof(uint32_t);
+  }
 
-  // Read the records one-by-one until fewer than 5 or 7 bytes remain.
-  // A minimum record is an uint32 (+uint16) and a zero-length string.
+  // Read the records one-by-one until too few bytes remain.
+  // A minimum record is an uint32 (+uint16) (+uint32) and a zero-length string.
   const char* pos = buffer;
   const char* endPos = pos + len - minRecordLength;
   uint16_t defaultCategory = 0;
+  int32_t defaultTimestamp = 0;
   while (pos <= endPos) {
     uint32_t* id;
     const char* key;
     uint16_t* category = &defaultCategory;
+    int32_t* timestamp = &defaultTimestamp;
 
     id = (uint32_t*)pos;
     pos += sizeof(uint32_t);
@@ -355,9 +380,13 @@ int PersistentKeyList::readKeysFromBuffer(
       category = (uint16_t*)pos;
       pos += sizeof(uint16_t);
     }
+    if (timestampPresent) {
+      timestamp = (int32_t*)pos;
+      pos += sizeof(int32_t);
+    }
     key = pos;
 
-    if (!f(*id, key, *category)) {
+    if (!f(*id, key, *category, *timestamp)) {
       // Callback doesn't accept more keys.
       break;
     }

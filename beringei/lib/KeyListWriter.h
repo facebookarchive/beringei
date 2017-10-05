@@ -33,12 +33,14 @@ class KeyListWriter {
       int64_t shardId,
       uint32_t id,
       const std::string& key,
-      uint16_t category);
+      uint16_t category,
+      int32_t timestamp);
 
   // Pass a compaction call down to the appropriate PersistentKeyList.
   void compact(
       int64_t shardId,
-      std::function<std::tuple<uint32_t, const char*, uint16_t>()> generator);
+      std::function<std::tuple<uint32_t, const char*, uint16_t, int32_t>()>
+          generator);
 
   void startShard(int64_t shardId);
   void stopShard(int64_t shardId);
@@ -64,6 +66,7 @@ class KeyListWriter {
     int32_t keyId;
     enum { STOP_THREAD, START_SHARD, STOP_SHARD, WRITE_KEY } type;
     uint16_t category;
+    int32_t timestamp;
   };
 
   folly::MPMCQueue<KeyInfo> keyInfoQueue_;

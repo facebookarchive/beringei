@@ -136,7 +136,7 @@ struct DeltaCompareInserter
 namespace facebook {
 namespace gorilla {
 
-static const std::string kMismatchesKey = ".gorilla_client.mismatches";
+static const std::string kMismatchesKey = "gorilla_client.mismatches";
 
 BeringeiGetResultCollector::BeringeiGetResultCollector(
     size_t size,
@@ -246,23 +246,32 @@ BeringeiGetResult BeringeiGetResultCollector::finalize(
     }
   }
 
-  int64_t maxMismatches = 0;
+  BeringeiGetStats& stats = result_.stats;
   for (size_t i = 0; i < numServices_; i++) {
-    GorillaStatsManager::addStatValue(
-        ".gorilla_client.missing_points." + serviceNames[i], drops[i], SUM);
-    GorillaStatsManager::addStatValue(
-        ".gorilla_client.failed_keys." + serviceNames[i], missings[i], SUM);
+    if (drops[i] > 0) {
+      GorillaStatsManager::addStatValue(
+          "gorilla_client.missing_points." + serviceNames[i], drops[i], SUM);
+      GorillaStatsManager::addStatValue(
+          "gorilla_client.missing_points." + serviceNames[i], 1, COUNT);
+    }
+
+    if (missings[i] > 0) {
+      GorillaStatsManager::addStatValue(
+          "gorilla_client.failed_keys." + serviceNames[i], missings[i], SUM);
+      GorillaStatsManager::addStatValue(
+          "gorilla_client.failed_keys." + serviceNames[i], 1, COUNT);
+    }
 
     if (FLAGS_gorilla_compare_reads) {
-      if (maxMismatches < mismatches_[1ull << i]) {
-        maxMismatches = mismatches_[1ull << i];
-      }
+      stats.mismatches = std::max(stats.mismatches, mismatches_[1ull << i]);
     }
+    stats.missingPoints = std::max<int64_t>(stats.missingPoints, drops[i]);
+    stats.failedKeys = std::max<int64_t>(stats.failedKeys, missings[i]);
   }
 
   if (FLAGS_gorilla_compare_reads) {
-    if (maxMismatches > 0) {
-      GorillaStatsManager::addStatValue(kMismatchesKey, maxMismatches, SUM);
+    if (stats.mismatches > 0) {
+      GorillaStatsManager::addStatValue(kMismatchesKey, stats.mismatches, SUM);
       GorillaStatsManager::addStatValue(kMismatchesKey, 1, COUNT);
     }
   }
@@ -272,9 +281,10 @@ BeringeiGetResult BeringeiGetResultCollector::finalize(
     numDatapoints += ts.size();
   }
   GorillaStatsManager::addStatValue(
-      ".gorilla_client.num_datapoints", numDatapoints, SUM);
+      "gorilla_client.num_datapoints", numDatapoints, SUM);
+  GorillaStatsManager::addStatValue("gorilla_client.num_queries", 1, SUM);
 
-  result_.memoryEstimate = sizeof(this) + vectorMemory(result_.results) +
+  result_.stats.memoryEstimate = sizeof(this) + vectorMemory(result_.results) +
       vectorMemory(complete_) + vectorMemory(drops_);
 
   std::vector<KeyStats>().swap(complete_);

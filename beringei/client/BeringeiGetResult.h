@@ -10,25 +10,36 @@
 #pragma once
 
 #include <folly/fibers/TimedMutex.h>
+#include <folly/futures/Future.h>
 #include <bitset>
 #include <vector>
 
+#include "beringei/client/BeringeiNetworkClient.h"
 #include "beringei/if/gen-cpp2/beringei_data_types.h"
 
 namespace facebook {
 namespace gorilla {
+// The stats for a completed BeringeiQuery.
+// memoryEstimate is an estimate of how much memory the query consumed in bytes.
+// missingPoints is the max number of missing points from a replica that are
+// present in another replica.
+// failedKeys is the max number of missing keys from a replica.
+// mismatches is the max number of mismatched datapoints from a replica.
+struct BeringeiGetStats {
+  size_t memoryEstimate = 0;
+  int64_t missingPoints = 0;
+  int64_t failedKeys = 0;
+  int64_t mismatches = 0;
+};
 
 // The results of a BeringeiQuery.
 // Values are returned in the same order as they were queried.
 // Keys that were not found have empty result vectors.
 //
 // allSuccess is set to true if we were able to get a full copy of the results.
-// memoryEstimate is an estimate of how much memory the query consumed, for the
-// purposes of comparing the relative expense of different queries.
 struct BeringeiGetResult {
-  BeringeiGetResult() : allSuccess(false), memoryEstimate(0) {}
-  explicit BeringeiGetResult(size_t size)
-      : results(size), allSuccess(false), memoryEstimate(0) {}
+  BeringeiGetResult() : allSuccess(false) {}
+  explicit BeringeiGetResult(size_t size) : results(size), allSuccess(false) {}
   BeringeiGetResult(const BeringeiGetResult&) = delete;
   BeringeiGetResult& operator=(const BeringeiGetResult&) = delete;
   BeringeiGetResult(BeringeiGetResult&&) = default;
@@ -36,7 +47,7 @@ struct BeringeiGetResult {
 
   std::vector<std::vector<TimeValuePair>> results;
   bool allSuccess;
-  size_t memoryEstimate;
+  BeringeiGetStats stats;
 };
 
 // This class records results for a Beringei query as they arrive from multiple

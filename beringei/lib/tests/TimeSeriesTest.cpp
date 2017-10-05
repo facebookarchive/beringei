@@ -17,7 +17,7 @@ using namespace std;
 
 class TimeSeriesTest : public testing::Test {
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     t1_.unixTime = 5;
     t1_.value = 7.0;
     t2_.unixTime = 6;

@@ -33,6 +33,10 @@ class MockConfigurationAdapter : public BeringeiConfigurationAdapterIf {
           const std::string&,
           std::set<int64_t>&));
 
+  MOCK_METHOD3(
+      getShardForKey,
+      uint64_t(folly::StringPiece, uint64_t, uint64_t));
+
   MOCK_METHOD0(getRegionString, std::string(void));
 
   MOCK_METHOD0(getServiceMap, std::map<std::string, std::string>(void));
@@ -47,7 +51,7 @@ class MockConfigurationAdapter : public BeringeiConfigurationAdapterIf {
 
   MOCK_METHOD1(isValidReadService, bool(const std::string&));
 
-  bool isLoggingNewKeysEnabled(const std::string& serviceName) override {
+  bool isLoggingNewKeysEnabled(const std::string& /*serviceName*/) override {
     return false;
   }
 };

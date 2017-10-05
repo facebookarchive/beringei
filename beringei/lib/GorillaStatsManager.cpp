@@ -22,7 +22,9 @@ GorillaStatsManager::~GorillaStatsManager() {}
 void GorillaStatsManager::initialize(
     const std::string& keyPrefix,
     std::unique_ptr<GorillaStatsManager> stats) {
-  keyPrefix_ = keyPrefix;
+  if (!keyPrefix.empty()) {
+    keyPrefix_ = keyPrefix + '.';
+  }
   stats_ = std::move(stats);
 }
 

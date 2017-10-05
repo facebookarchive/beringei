@@ -24,17 +24,23 @@ BucketedTimeSeries::BucketedTimeSeries() {}
 
 BucketedTimeSeries::~BucketedTimeSeries() {}
 
-void BucketedTimeSeries::reset(uint8_t n) {
+void BucketedTimeSeries::reset(
+    uint8_t n,
+    uint32_t minBucket,
+    int64_t minTimestamp) {
   queriedBucketsAgo_ = std::numeric_limits<uint8_t>::max();
   lock_.init();
-  current_ = 0;
+  current_ = minBucket;
   blocks_.reset(new BucketStorage::BucketStorageId[n]);
 
   for (int i = 0; i < n; i++) {
-    blocks_[i] = BucketStorage::kInvalidId;
+    // Blacklist older buckets if `minBucket` was set.
+    blocks_[i] = (minBucket == 0) ? BucketStorage::kInvalidId
+                                  : BucketStorage::kDisabledId;
   }
+  blocks_[current_ % n] = BucketStorage::kInvalidId;
   count_ = 0;
-  stream_.reset();
+  stream_.reset(minTimestamp, FLAGS_mintimestampdelta);
   stream_.extraData = kDefaultCategory;
 }
 
@@ -115,6 +121,7 @@ void BucketedTimeSeries::open(
   if (current_ == 0) {
     // Skip directly to the new value.
     current_ = next;
+    blocks_[current_ % storage->numBuckets()] = BucketStorage::kInvalidId;
     return;
   }
 
@@ -148,18 +155,27 @@ void BucketedTimeSeries::setQueried() {
 
 void BucketedTimeSeries::setDataBlock(
     uint32_t position,
-    uint8_t numBuckets,
+    BucketStorage* storage,
     BucketStorage::BucketStorageId id) {
   folly::MSLGuard guard(lock_);
 
-  // Needed for time series that receive data very rarely.
+  // We just loaded block data that is newer than the current bucket.
+  // This is likely because we just haven't received any data for it yet, but
+  // just in case, throw out any data we do have to replace it with what we just
+  // loaded.
   if (position >= current_) {
-    current_ = position + 1;
     count_ = 0;
     stream_.reset();
+    open(position + 1, storage, 0);
   }
 
-  blocks_[position % numBuckets] = id;
+  // Don't store any data older than the configured minimum bucket.
+  // This allows safe shard movement even when timeseries IDs get reused.
+  auto numBuckets = storage->numBuckets();
+  auto& block = blocks_[position % numBuckets];
+  if (block != BucketStorage::kDisabledId) {
+    blocks_[position % numBuckets] = id;
+  }
 }
 
 bool BucketedTimeSeries::hasDataPoints(uint8_t numBuckets) {
@@ -169,7 +185,8 @@ bool BucketedTimeSeries::hasDataPoints(uint8_t numBuckets) {
   }
 
   for (int i = 0; i < numBuckets; i++) {
-    if (blocks_[i] != BucketStorage::kInvalidId) {
+    if (blocks_[i] != BucketStorage::kInvalidId &&
+        blocks_[i] != BucketStorage::kDisabledId) {
       return true;
     }
   }
@@ -185,6 +202,30 @@ uint16_t BucketedTimeSeries::getCategory() const {
 void BucketedTimeSeries::setCategory(uint16_t category) {
   folly::MSLGuard guard(lock_);
   stream_.extraData = category;
+}
+
+int32_t BucketedTimeSeries::getFirstUpdateTime(
+    BucketStorage* storage,
+    const BucketMap& map) {
+  folly::MSLGuard guard(lock_);
+
+  auto n = storage->numBuckets();
+
+  // Find the first block that has data and return its starting timestamp.
+  for (int i = n; i > 0; i--) {
+    int position = (int)current_ - i;
+    if (position < 0) {
+      continue;
+    }
+
+    auto& block = blocks_[position % storage->numBuckets()];
+    if (block != BucketStorage::kInvalidId &&
+        block != BucketStorage::kDisabledId) {
+      return map.timestamp(position);
+    }
+  }
+
+  return stream_.getFirstTimeStamp();
 }
 
 uint32_t BucketedTimeSeries::getLastUpdateTime(
@@ -205,8 +246,9 @@ uint32_t BucketedTimeSeries::getLastUpdateTime(
       break;
     }
 
-    if (blocks_[position % storage->numBuckets()] !=
-        BucketStorage::kInvalidId) {
+    auto& block = blocks_[position % storage->numBuckets()];
+    if (block != BucketStorage::kInvalidId &&
+        block != BucketStorage::kDisabledId) {
       return map.timestamp(position + 1);
     }
   }

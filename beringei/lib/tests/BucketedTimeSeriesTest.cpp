@@ -53,19 +53,21 @@ void test(
   }
 }
 
+static TimeValuePair makeTV(double v, int64_t t) {
+  TimeValuePair tv;
+  tv.value = v;
+  tv.unixTime = t;
+  return tv;
+}
+
 class BucketedTimeSeriesTest : public testing::Test {
  protected:
-  void SetUp() {
-    tv[0].unixTime = 60;
-    tv[0].value = 0.0;
-    tv[1].unixTime = 120;
-    tv[1].value = 2.5;
-    tv[2].unixTime = 180;
-    tv[2].value = 5.0;
-    tv[3].unixTime = 240;
-    tv[3].value = 7.5;
-    tv[4].unixTime = 300;
-    tv[4].value = 10.0;
+  void SetUp() override {
+    tv[0] = makeTV(0.0, 60);
+    tv[1] = makeTV(2.5, 120);
+    tv[2] = makeTV(5.0, 180);
+    tv[3] = makeTV(7.5, 240);
+    tv[4] = makeTV(10.0, 300);
 
     blocks.emplace_back();
     TimeSeries::writeValues({tv[0], tv[1], tv[2]}, blocks.back());
@@ -93,22 +95,20 @@ class BucketedTimeSeriesTest : public testing::Test {
 
 TEST_F(BucketedTimeSeriesTest, TimeSeries) {
   BucketedTimeSeries bucket;
-  bucket.reset(5);
+  bucket.reset(5, 0, 0);
   BucketStorage storage(5, 0, "");
   test<BucketedTimeSeries>(bucket, &storage, source0(), ts0());
 }
 
 TEST(BucketedTimeSeriesTest2, QueriedBucketsAgo) {
   BucketedTimeSeries bucket;
-  bucket.reset(5);
+  bucket.reset(5, 0, 0);
   BucketStorage storage(5, 0, "");
 
   // No queries yet.
   ASSERT_EQ(255, bucket.getQueriedBucketsAgo());
 
-  TimeValuePair value;
-  value.unixTime = 10;
-  value.value = 10;
+  TimeValuePair value = makeTV(10, 10);
 
   bucket.put(1, value, &storage, 12, nullptr);
 
@@ -127,7 +127,7 @@ TEST(BucketedTimeSeriesTest2, QueriedBucketsAgo) {
 
 TEST(BucketedTimeSeriesTest2, MinTimestampDeltaCheck) {
   BucketedTimeSeries bucket;
-  bucket.reset(5);
+  bucket.reset(5, 0, 0);
   BucketStorage storage(5, 0, "");
 
   uint32_t timeSeriesId = 0;
@@ -189,4 +189,79 @@ TEST(BucketedTimeSeriesTest2, MinTimestampDeltaCheck) {
   ASSERT_EQ(
       true,
       bucket.put(bucketId, tvPair, &storage, timeSeriesId, timeSeriesCategory));
+}
+
+TEST(BucketedTimeSeriesTest2, MinimumBucketAndTimestamp) {
+  BucketedTimeSeries b;
+  BucketStorage s(5, 0, "");
+
+  auto block1 = s.store(8, "a", 1, 22, 7);
+  auto block2 = s.store(9, "b", 1, 23, 7);
+
+  ASSERT_NE(BucketStorage::kInvalidId, block1);
+  ASSERT_NE(BucketStorage::kInvalidId, block2);
+
+  auto tv1 = makeTV(0.0, 72060);
+  auto tv2 = makeTV(1.0, 72120);
+
+  auto test = [&]() {
+    b.put(10, tv1, &s, 7, nullptr);
+    b.setDataBlock(8, &s, block1);
+    b.setDataBlock(9, &s, block2);
+    b.put(10, tv2, &s, 7, nullptr);
+
+    vector<TimeSeriesBlock> data;
+    b.get(0, 100, data, &s);
+
+    uint32_t r = 0;
+    for (auto& d : data) {
+      switch (d.count) {
+        case 22:
+          r |= 0b1000;
+          break;
+        case 23:
+          r |= 0b0100;
+          break;
+        case 1:
+          r |= 0b0010;
+          break;
+        case 2:
+          r |= 0b0001;
+          break;
+      }
+    }
+    return r;
+  };
+
+  // All of these should return both blocks and both points.
+  b.reset(5, 0, 0);
+  EXPECT_EQ(0b1101, test());
+  b.reset(5, 7, 0);
+  EXPECT_EQ(0b1101, test());
+  b.reset(5, 8, 0);
+  EXPECT_EQ(0b1101, test());
+  b.reset(5, 8, 7200);
+  EXPECT_EQ(0b1101, test());
+  b.reset(5, 8, 7260);
+  EXPECT_EQ(0b1101, test());
+
+  // Block 8 should be ignored.
+  b.reset(5, 9, 0);
+  EXPECT_EQ(0b0101, test());
+
+  // No blocks at all.
+  b.reset(5, 10, 0);
+  EXPECT_EQ(0b0001, test());
+
+  // Accept both blocks but only one point.
+  b.reset(5, 0, 72061);
+  EXPECT_EQ(0b1110, test());
+
+  // Both blocks, no points.
+  b.reset(5, 0, 72121);
+  EXPECT_EQ(0b1100, test());
+
+  // No data at all.
+  b.reset(5, 10, 72121);
+  EXPECT_EQ(0b0000, test());
 }

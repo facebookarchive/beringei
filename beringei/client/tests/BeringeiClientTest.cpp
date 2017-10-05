@@ -45,7 +45,7 @@ class BeringeiClientMock : public BeringeiNetworkClient {
   bool addDataPointToRequest(
       DataPoint& dp,
       BeringeiNetworkClient::PutRequestMap& requests,
-      bool& dropped) override {
+      bool& /*dropped*/) override {
     auto& request = requests[make_pair("", dp.key.shardId)];
     request.data.push_back(dp);
     return true;
@@ -80,7 +80,8 @@ class BeringeiClientMock : public BeringeiNetworkClient {
 
   Future<GetDataResult> performGet(
       const std::pair<std::string, int>& hostInfo,
-      const GetDataRequest& request) override {
+      const GetDataRequest& request,
+      folly::EventBase*) override {
     std::vector<int64_t> shards;
     for (auto& k : request.keys) {
       shards.push_back(k.shardId);
@@ -129,8 +130,8 @@ class BeringeiClientTest : public testing::Test {
     resultVec[1].first = k2;
 
     BucketedTimeSeries b1, b2;
-    b1.reset(5);
-    b2.reset(5);
+    b1.reset(5, 0, 0);
+    b2.reset(5, 0, 0);
     BucketStorage storage(5, 0, "");
 
     for (int i = 19; i < 22; i++) {
@@ -559,7 +560,7 @@ TEST_F(BeringeiClientTest, MultiMasterGet) {
   // Client should not block forever and should claim to have succeeded.
   EXPECT_EQ(4, result.results.size());
   EXPECT_TRUE(result.allSuccess);
-  EXPECT_GT(result.memoryEstimate, 0);
+  EXPECT_GT(result.stats.memoryEstimate, 0);
 }
 
 TEST_F(BeringeiClientTest, NetworkClientHandleException) {

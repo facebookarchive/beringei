@@ -28,7 +28,7 @@ class DataLogWriter {
   // Initialize a DataLogWriter which will append data to the given file.
   DataLogWriter(FileUtils::File&& out, int64_t baseTime);
 
-  ~DataLogWriter();
+  virtual ~DataLogWriter();
 
   // Appends a data point to the internal buffer. This operation is
   // not thread safe. Caller is responsible for locking. Data will be
@@ -39,6 +39,8 @@ class DataLogWriter {
   // Flushes the buffer that has been created with `append` calls to
   // disk. Returns true if writing was successful, false otherwise.
   bool flushBuffer();
+
+  virtual size_t writeToFile(char* const buffer, const size_t bufferSize);
 
  private:
   FileUtils::File out_;

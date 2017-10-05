@@ -8,18 +8,26 @@
  */
 
 #include "BucketUtils.h"
+#include <glog/logging.h>
+
+DEFINE_int32(gorilla_shards, 100, "Number of maps for gorilla to use");
 
 namespace facebook {
 namespace gorilla {
 
 uint32_t
 BucketUtils::bucket(uint64_t unixTime, uint64_t windowSize, int shardId) {
-  return (uint32_t)(unixTime / windowSize);
+  if (unixTime < shardId * windowSize / FLAGS_gorilla_shards) {
+    LOG(ERROR) << "Timestamp " << unixTime << " falls into a negative bucket";
+    return 0;
+  }
+  return (uint32_t)(
+      (unixTime - (shardId * windowSize / FLAGS_gorilla_shards)) / windowSize);
 }
 
 uint64_t
 BucketUtils::timestamp(uint32_t bucket, uint64_t windowSize, int shardId) {
-  return bucket * windowSize;
+  return bucket * windowSize + (shardId * windowSize / FLAGS_gorilla_shards);
 }
 
 uint64_t BucketUtils::duration(uint32_t buckets, uint64_t windowSize) {
@@ -41,8 +49,10 @@ uint64_t BucketUtils::ceilTimestamp(
     uint64_t unixTime,
     uint64_t windowSize,
     int shardId) {
-  if (unixTime == 0) {
-    return 0;
+  // Check against first timestamp to avoid underflow, should never happen.
+  auto firstTimestamp = timestamp(0, windowSize, shardId);
+  if (unixTime <= firstTimestamp) {
+    return firstTimestamp;
   }
 
   auto b = bucket(unixTime - 1, windowSize, shardId);

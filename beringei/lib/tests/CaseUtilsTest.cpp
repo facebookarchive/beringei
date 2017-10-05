@@ -34,18 +34,12 @@ TEST(CaseUtilsTest, CaseHash) {
   EXPECT_NE(hash("foo"), hash("bar"));
 }
 
-TEST(CaseUtilsTest, ToLower) {
-  for (int i = 0; i < 256; i++) {
-    EXPECT_EQ(tolower(i), fastToLower(i));
-  }
-}
-
 const static int kNumHashes = 10000000;
 const static int kKeyListSize = 400000;
 
 TEST(CaseUtilsTest, Perf) {
   CaseHash hsh;
-  TestKeyList keyList(kKeyListSize);
+  TestKeyList keyList(kKeyListSize, 10);
   size_t x = 0;
   for (int i = 0; i < kNumHashes; i++) {
     x ^= hsh(keyList.testStr(i));
@@ -59,30 +53,6 @@ TEST(CaseUtilsTest, PerfComparison) {
   size_t x = 0;
   for (int i = 0; i < kNumHashes; i++) {
     x ^= hsh(keyList.testStr(i));
-  }
-  LOG(INFO) << x;
-}
-
-TEST(CaseUtilsTest, DISABLED_ToLowerPerf) {
-  int64_t x = 0;
-  for (uint64_t i = 0; i < kNumHashes * 100; i++) {
-    x += tolower(i & 0xFF);
-  }
-  LOG(INFO) << x;
-}
-
-TEST(CaseUtilsTest, DISABLED_DefaultToLowerPerf) {
-  int64_t x = 0;
-  for (uint64_t i = 0; i < kNumHashes * 100; i++) {
-    x += fastToLower(i & 0xFF);
-  }
-  LOG(INFO) << x;
-}
-
-TEST(CaseUtilsTest, DISABLED_ToLowerBaseline) {
-  int64_t x = 0;
-  for (uint64_t i = 0; i < kNumHashes * 100; i++) {
-    x += (i & 0xFF);
   }
   LOG(INFO) << x;
 }

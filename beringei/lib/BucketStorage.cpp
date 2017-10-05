@@ -39,16 +39,18 @@ const uint32_t BucketStorage::kPageSize = kDataBlockSize;
 // Zero can be used as the invalid ID because no valid ID will ever be zero
 const BucketStorage::BucketStorageId BucketStorage::kInvalidId = 0;
 
+// Also an invalid ID because offset + length will be > page size.
+const BucketStorage::BucketStorageId BucketStorage::kDisabledId = ~0;
+
 const std::string BucketStorage::kDataPrefix = "block_data";
 const std::string BucketStorage::kCompletePrefix = "complete_block";
 
 static const size_t kLargeFileBuffer = 1024 * 1024;
 
-static const std::string kBlockFileReadFailures = ".block_file_read_failures";
-static const std::string kDedupedTimeSeriesSize =
-    ".timeseries_block_dedup_size";
+static const std::string kBlockFileReadFailures = "block_file_read_failures";
+static const std::string kDedupedTimeSeriesSize = "timeseries_block_dedup_size";
 static const std::string kWrittenTimeSeriesSize =
-    ".timeseries_block_written_size";
+    "timeseries_block_written_size";
 
 BucketStorage::BucketStorage(
     uint8_t numBuckets,
@@ -175,7 +177,7 @@ BucketStorage::FetchStatus BucketStorage::fetch(
     BucketStorage::BucketStorageId id,
     std::string& data,
     uint16_t& itemCount) {
-  if (id == kInvalidId) {
+  if (id == kInvalidId || id == kDisabledId) {
     return FAILURE;
   }
 
