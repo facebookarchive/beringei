@@ -75,6 +75,7 @@ const static int kSameValueControlBit = 0;
 const static int kDifferentValueControlBit = 1;
 
 const static std::string kFailedCounter = "failed_writes.log";
+const static std::string kPartialWriteCounter = "partial_writes.log";
 
 DataLogWriter::DataLogWriter(FileUtils::File&& out, int64_t baseTime)
     : out_(out),
@@ -82,6 +83,7 @@ DataLogWriter::DataLogWriter(FileUtils::File&& out, int64_t baseTime)
       buffer_(new char[FLAGS_data_log_buffer_size]),
       bufferSize_(0) {
   GorillaStatsManager::addStatExportType(kFailedCounter, SUM);
+  GorillaStatsManager::addStatExportType(kPartialWriteCounter, SUM);
 }
 
 DataLogWriter::~DataLogWriter() {
@@ -175,19 +177,48 @@ void DataLogWriter::append(uint32_t id, int64_t unixTime, double value) {
   bufferSize_ += bits.length();
 }
 
+size_t DataLogWriter::writeToFile(char* const buffer, const size_t bufferSize) {
+  return fwrite(buffer, sizeof(char), bufferSize, out_.file);
+}
+
 bool DataLogWriter::flushBuffer() {
+  char* buffer = buffer_.get();
   bool success = true;
-  if (bufferSize_ > 0) {
-    int written = fwrite(buffer_.get(), sizeof(char), bufferSize_, out_.file);
-    if (written != bufferSize_) {
-      PLOG(ERROR) << "Flushing buffer failed! Wrote " << written << " of "
-                  << bufferSize_ << " to " << out_.name;
-      GorillaStatsManager::addStatValue(kFailedCounter, 1);
+  while (bufferSize_ > 0) {
+    int written = writeToFile(buffer, bufferSize_);
+
+    if (written <= 0) {
+      if (feof(out_.file)) {
+        PLOG(ERROR) << "Reached EOF when writing to buffer: " << out_.name;
+      } else if (ferror(out_.file)) {
+        PLOG(ERROR) << "Flushing buffer failed: " << out_.name;
+      }
+
       success = false;
+      break;
     }
-    bufferSize_ = 0;
+
+    if (written > bufferSize_) {
+      // This should never happen.
+      LOG(ERROR) << "Unstable storage: Written " << written << " of "
+                 << bufferSize_ << " to " << out_.name;
+
+      success = false;
+      break;
+    }
+
+    if (written != bufferSize_) {
+      GorillaStatsManager::addStatValue(kPartialWriteCounter, 1);
+      LOG(INFO) << "Partial write: Written " << written << " of " << bufferSize_
+                << " to " << out_.name;
+    }
+
+    bufferSize_ -= written;
+    buffer += written;
   }
 
+  GorillaStatsManager::addStatValue(kFailedCounter, success ? 0 : 1);
+  bufferSize_ = 0;
   return success;
 }
 
