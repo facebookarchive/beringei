@@ -88,10 +88,16 @@ void QueryHandler::onEOM() noexcept {
     }
     response.push_back(jsonQueryResp);
   }
+  std::string responseJson;
+  try {
+    responseJson = folly::toJson(response);
+  } catch (const std::runtime_error& ex) {
+    LOG(ERROR) << "Empty response for query: " << ex.what();
+  }
   ResponseBuilder(downstream_)
       .status(200, "OK")
       .header("Content-Type", "application/json")
-      .body(folly::toJson(response))
+      .body(responseJson)
     .sendWithEOM();
 }
 
@@ -170,13 +176,13 @@ folly::dynamic QueryHandler::eventHandler(int dataPointIncrementMs,
   // count is a special aggregation that will be missed due to default values
   int timeSeriesCounts[timeBucketCount]{};
   // pre-allocate the array size
-  double timeSeries[keyCount][timeBucketCount]{};
+  double *timeSeries = new double[keyCount * timeBucketCount];
   int keyIndex = 0;
   for (const auto& keyTimeSeries : beringeiTimeSeries_) {
     const std::string& keyName = keyTimeSeries.first.key;
     for (const auto& timePair : keyTimeSeries.second) {
       int timeBucketId = (timePair.unixTime - startTime_) / 30;
-      timeSeries[keyIndex][timeBucketId] = timePair.value;
+      timeSeries[keyIndex * timeBucketCount + timeBucketId] = timePair.value;
     }
     keyIndex++;
   }
@@ -190,7 +196,7 @@ folly::dynamic QueryHandler::eventHandler(int dataPointIncrementMs,
     int startOnlineIndex = -1;
     folly::dynamic onlineEvents = folly::dynamic::array;
     for (int timeIndex = 0; timeIndex < timeBucketCount; timeIndex++) {
-      double timeVal = timeSeries[keyIndex][timeIndex];
+      double timeVal = timeSeries[keyIndex * timeBucketCount + timeIndex];
       VLOG(3) << "VERBOSE: timeSeries[" << keyIndex << "][" << timeIndex
               << "] = " << timeVal;
       if (timeVal == 0) {
@@ -284,6 +290,7 @@ folly::dynamic QueryHandler::eventHandler(int dataPointIncrementMs,
     linkMap[name][metricName] = uptimePerc;
     linkMap[name]["events"] = onlineEvents;
   }
+  delete[] timeSeries;
   folly::dynamic response = folly::dynamic::object;
   response["metrics"] = linkMap;
   response["start"] = startTime_ * 1000;
@@ -322,13 +329,13 @@ folly::dynamic QueryHandler::transform() {
   // count is a special aggregation that will be missed due to default values
   int timeSeriesCounts[timeBucketCount]{};
   // pre-allocate the array size
-  double timeSeries[keyCount][timeBucketCount]{};
+  double *timeSeries = new double[keyCount * timeBucketCount];
   int keyIndex = 0;
   for (const auto& keyTimeSeries : beringeiTimeSeries_) {
     const std::string& keyName = keyTimeSeries.first.key;
     for (const auto& timePair : keyTimeSeries.second) {
       int timeBucketId = (timePair.unixTime - startTime_) / 30;
-      timeSeries[keyIndex][timeBucketId] = timePair.value;
+      timeSeries[keyIndex * timeBucketCount + timeBucketId] = timePair.value;
       timeSeriesCounts[timeBucketId]++;
     }
     keyIndex++;
@@ -353,12 +360,12 @@ folly::dynamic QueryHandler::transform() {
         endBucketId = timeBucketCount - 1;
       }
       // aggregations
-      double sum = std::accumulate(&timeSeries[i][startBucketId],
-                                   &timeSeries[i][endBucketId + 1],
+      double sum = std::accumulate(&timeSeries[i * timeBucketCount + startBucketId],
+                                   &timeSeries[i * timeBucketCount + endBucketId + 1],
                                    0.0);
       double avg = sum / (double)(endBucketId - startBucketId + 1);
-      auto minMax = std::minmax_element(&timeSeries[i][startBucketId],
-                                        &timeSeries[i][endBucketId + 1]);
+      auto minMax = std::minmax_element(&timeSeries[i * timeBucketCount + startBucketId],
+                                        &timeSeries[i * timeBucketCount + endBucketId + 1]);
       double min = *minMax.first;
       double max = *minMax.second;
       sumTimeBucket[timeBucketId] += avg;
@@ -470,6 +477,7 @@ folly::dynamic QueryHandler::transform() {
       }
     }
   }
+  delete[] timeSeries;
   folly::dynamic response = folly::dynamic::object;
   response["name"] = "id";
   response["columns"] = columns;
