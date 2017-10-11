@@ -51,9 +51,9 @@ void QueryHandler::onBody(std::unique_ptr<folly::IOBuf> body) noexcept {
 
 void QueryHandler::onEOM() noexcept {
   auto body = body_->moveToFbString();
-  QueryRequest request;
+  query::QueryRequest request;
   try {
-    request = SimpleJSONSerializer::deserialize<QueryRequest>(body);
+    request = SimpleJSONSerializer::deserialize<query::QueryRequest>(body);
   } catch (const std::exception&) {
     LOG(INFO) << "Error deserializing QueryRequest";
     ResponseBuilder(downstream_)
@@ -114,7 +114,7 @@ void QueryHandler::onError(ProxygenError /* unused */) noexcept {
   delete this;
 }
 
-void QueryHandler::logRequest(QueryRequest request) { }
+void QueryHandler::logRequest(query::QueryRequest request) { }
 
 void QueryHandler::columnNames() {
   // set column names
@@ -536,7 +536,7 @@ int QueryHandler::getShardId(const std::string& key, const int numShards) {
 }
 
 void QueryHandler::validateQuery(
-    const Query& request) {
+    const query::Query& request) {
   if (request.__isset.start_ts &&
       request.__isset.end_ts) {
     // TODO - sanity check time
@@ -559,7 +559,7 @@ void QueryHandler::validateQuery(
 }
 
 GetDataRequest QueryHandler::createBeringeiRequest(
-    const Query& request,
+    const query::Query& request,
     const int numShards) {
   GetDataRequest beringeiRequest;
 

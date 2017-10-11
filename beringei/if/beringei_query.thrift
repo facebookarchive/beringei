@@ -7,7 +7,7 @@
  * of patent rights can be found in the PATENTS file in the same directory.
  */
 
-namespace cpp2 facebook.gorilla
+namespace cpp2 facebook.gorilla.query
 namespace py facebook.gorilla.beringei_query
 
 struct KeyData {

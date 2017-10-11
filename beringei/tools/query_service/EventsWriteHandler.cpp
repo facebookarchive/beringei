@@ -56,11 +56,11 @@ int64_t EventsWriteHandler::getTimestamp(int64_t timeInUsec) {
   return std::time(nullptr);
 }
 
-void EventsWriteHandler::writeData(EventsWriteRequest request) {
-  std::unordered_map<std::string, MySqlNodeData> unknownNodes;
+void EventsWriteHandler::writeData(query::EventsWriteRequest request) {
+  std::unordered_map<std::string, query::MySqlNodeData> unknownNodes;
   std::unordered_map<int64_t, std::unordered_set<std::string>>
       missingEventCategories;
-  std::vector<MySqlEventData> eventsRows;
+  std::vector<query::MySqlEventData> eventsRows;
 
   auto startTime = (int64_t)duration_cast<milliseconds>(
                        system_clock::now().time_since_epoch())
@@ -69,7 +69,7 @@ void EventsWriteHandler::writeData(EventsWriteRequest request) {
   for (const auto& agent : request.agents) {
     auto nodeId = mySqlClient_->getNodeId(agent.mac);
     if (!nodeId) {
-      MySqlNodeData newNode;
+      query::MySqlNodeData newNode;
       newNode.mac = agent.mac;
       newNode.node = agent.name;
       newNode.site = agent.site;
@@ -85,7 +85,7 @@ void EventsWriteHandler::writeData(EventsWriteRequest request) {
       // verify node/category combo exists
       if (eventCategoryId) {
         // insert row for beringei
-        MySqlEventData eventsRow;
+        query::MySqlEventData eventsRow;
         eventsRow.sample = event.sample;
         eventsRow.timestamp = getTimestamp(event.ts);;
         eventsRow.category_id = *eventCategoryId;
@@ -119,9 +119,9 @@ void EventsWriteHandler::writeData(EventsWriteRequest request) {
 
 void EventsWriteHandler::onEOM() noexcept {
   auto body = body_->moveToFbString();
-  EventsWriteRequest request;
+  query::EventsWriteRequest request;
   try {
-    request = SimpleJSONSerializer::deserialize<EventsWriteRequest>(body);
+    request = SimpleJSONSerializer::deserialize<query::EventsWriteRequest>(body);
   } catch (const std::exception&) {
     LOG(INFO) << "Error deserializing events_writer request";
     ResponseBuilder(downstream_)
@@ -166,6 +166,6 @@ void EventsWriteHandler::onError(ProxygenError /* unused */) noexcept {
   delete this;
 }
 
-void EventsWriteHandler::logRequest(EventsWriteRequest request) {}
+void EventsWriteHandler::logRequest(query::EventsWriteRequest request) {}
 }
 } // facebook::gorilla

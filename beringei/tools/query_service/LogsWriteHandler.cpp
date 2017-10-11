@@ -49,7 +49,7 @@ void LogsWriteHandler::onBody(std::unique_ptr<folly::IOBuf> body) noexcept {
   }
 }
 
-void LogsWriteHandler::writeData(LogsWriteRequest request) {
+void LogsWriteHandler::writeData(query::LogsWriteRequest request) {
   auto startTime = (int64_t)duration_cast<milliseconds>(
                        system_clock::now().time_since_epoch())
                        .count();
@@ -90,9 +90,9 @@ void LogsWriteHandler::writeData(LogsWriteRequest request) {
 
 void LogsWriteHandler::onEOM() noexcept {
   auto body = body_->moveToFbString();
-  LogsWriteRequest request;
+  query::LogsWriteRequest request;
   try {
-    request = SimpleJSONSerializer::deserialize<LogsWriteRequest>(body);
+    request = SimpleJSONSerializer::deserialize<query::LogsWriteRequest>(body);
   } catch (const std::exception&) {
     LOG(INFO) << "Error deserializing logs_writer request";
     ResponseBuilder(downstream_)
@@ -137,6 +137,6 @@ void LogsWriteHandler::onError(ProxygenError /* unused */) noexcept {
   delete this;
 }
 
-void LogsWriteHandler::logRequest(LogsWriteRequest request) {}
+void LogsWriteHandler::logRequest(query::LogsWriteRequest request) {}
 }
 } // facebook::gorilla

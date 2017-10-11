@@ -44,9 +44,9 @@ class StatsWriteHandler : public proxygen::RequestHandler {
   void onError(proxygen::ProxygenError err) noexcept override;
 
  private:
-  void logRequest(StatsWriteRequest request);
+  void logRequest(query::StatsWriteRequest request);
 
-  void writeData(StatsWriteRequest request);
+  void writeData(query::StatsWriteRequest request);
 
   std::shared_ptr<BeringeiConfigurationAdapterIf> configurationAdapter_;
   std::shared_ptr<MySqlClient> mySqlClient_;

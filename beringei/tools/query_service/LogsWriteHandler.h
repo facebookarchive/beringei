@@ -37,9 +37,9 @@ class LogsWriteHandler : public proxygen::RequestHandler {
   void onError(proxygen::ProxygenError err) noexcept override;
 
  private:
-  void logRequest(LogsWriteRequest request);
+  void logRequest(query::LogsWriteRequest request);
 
-  void writeData(LogsWriteRequest request);
+  void writeData(query::LogsWriteRequest request);
 
   std::unique_ptr<folly::IOBuf> body_;
 };

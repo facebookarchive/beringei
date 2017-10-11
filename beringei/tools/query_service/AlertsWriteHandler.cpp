@@ -56,8 +56,8 @@ int64_t AlertsWriteHandler::getTimestamp(int64_t timeInUsec) {
   return std::time(nullptr);
 }
 
-void AlertsWriteHandler::writeData(AlertsWriteRequest request) {
-  std::unordered_map<std::string, MySqlNodeData> unknownNodes;
+void AlertsWriteHandler::writeData(query::AlertsWriteRequest request) {
+  std::unordered_map<std::string, query::MySqlNodeData> unknownNodes;
 
   auto startTime = (int64_t)duration_cast<milliseconds>(
                        system_clock::now().time_since_epoch())
@@ -65,7 +65,7 @@ void AlertsWriteHandler::writeData(AlertsWriteRequest request) {
 
   auto nodeId = mySqlClient_->getNodeId(request.node_mac);
   if (!nodeId) {
-    MySqlNodeData newNode;
+    query::MySqlNodeData newNode;
     newNode.mac = request.node_mac;
     newNode.node = request.node_name;
     newNode.site = request.node_site;
@@ -76,7 +76,7 @@ void AlertsWriteHandler::writeData(AlertsWriteRequest request) {
     return;
   }
 
-  MySqlAlertData row;
+  query::MySqlAlertData row;
   row.node_id = *nodeId;
   row.timestamp = getTimestamp(request.timestamp);
   row.alert_id = request.alert_id;
@@ -101,9 +101,9 @@ void AlertsWriteHandler::writeData(AlertsWriteRequest request) {
 
 void AlertsWriteHandler::onEOM() noexcept {
   auto body = body_->moveToFbString();
-  AlertsWriteRequest request;
+  query::AlertsWriteRequest request;
   try {
-    request = SimpleJSONSerializer::deserialize<AlertsWriteRequest>(body);
+    request = SimpleJSONSerializer::deserialize<query::AlertsWriteRequest>(body);
   } catch (const std::exception&) {
     LOG(INFO) << "Error deserializing alerts_writer request";
     ResponseBuilder(downstream_)
@@ -147,6 +147,6 @@ void AlertsWriteHandler::onError(ProxygenError /* unused */) noexcept {
   delete this;
 }
 
-void AlertsWriteHandler::logRequest(AlertsWriteRequest request) {}
+void AlertsWriteHandler::logRequest(query::AlertsWriteRequest request) {}
 }
 } // facebook::gorilla

@@ -47,7 +47,7 @@ void MySqlClient::refreshNodes() noexcept {
 
     LOG(INFO) << "refreshNodes: Number of nodes: " << res->rowsCount();
     while (res->next()) {
-      MySqlNodeData node{};
+      query::MySqlNodeData node{};
       node.id = res->getInt("id");
       node.node = res->getString("node");
       node.mac = res->getString("mac");
@@ -121,7 +121,7 @@ void MySqlClient::refreshEventCategories() noexcept {
 }
 
 void MySqlClient::addNodes(
-    std::unordered_map<std::string, MySqlNodeData> newNodes) noexcept {
+    std::unordered_map<std::string, query::MySqlNodeData> newNodes) noexcept {
   if (!newNodes.size()) {
     return;
   }
@@ -261,7 +261,7 @@ folly::Optional<int64_t> MySqlClient::getEventCategoryId(
   return folly::none;
 }
 
-void MySqlClient::addEvents(std::vector<MySqlEventData> events) noexcept {
+void MySqlClient::addEvents(std::vector<query::MySqlEventData> events) noexcept {
   if (!events.size()) {
     return;
   }
@@ -288,7 +288,7 @@ void MySqlClient::addEvents(std::vector<MySqlEventData> events) noexcept {
   }
 }
 
-void MySqlClient::addAlert(MySqlAlertData alert) noexcept {
+void MySqlClient::addAlert(query::MySqlAlertData alert) noexcept {
   try {
     std::string query =
         "INSERT INTO `alerts` (`node_id`, `timestamp`, `alert_id`, `alert_regex`, `alert_threshold`, `alert_comparator`, `alert_level`, `trigger_key`, `trigger_value`) VALUES (?, FROM_UNIXTIME(?), ?, ?, ?, ?, ?, ?, ?)";

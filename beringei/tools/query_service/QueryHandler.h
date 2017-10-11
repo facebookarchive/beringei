@@ -43,13 +43,13 @@ class QueryHandler : public proxygen::RequestHandler {
   void onError(proxygen::ProxygenError err) noexcept override;
 
  private:
-  void logRequest(QueryRequest request);
+  void logRequest(query::QueryRequest request);
 
   int getShardId(const std::string& key, const int numShards);
 
-  void validateQuery(const Query& request);
+  void validateQuery(const query::Query& request);
   GetDataRequest createBeringeiRequest(
-      const Query& request,
+      const query::Query& request,
       const int numShards);
 
   /**
@@ -72,7 +72,7 @@ class QueryHandler : public proxygen::RequestHandler {
   std::shared_ptr<BeringeiClient> beringeiClient_;
   std::unique_ptr<folly::IOBuf> body_;
   // request data
-  Query query_;
+  query::Query query_;
   time_t startTime_;
   time_t endTime_;
   std::vector<std::string> columnNames_;

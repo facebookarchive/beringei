@@ -39,9 +39,9 @@ class AlertsWriteHandler : public proxygen::RequestHandler {
   void onError(proxygen::ProxygenError err) noexcept override;
 
  private:
-  void logRequest(AlertsWriteRequest request);
+  void logRequest(query::AlertsWriteRequest request);
 
-  void writeData(AlertsWriteRequest request);
+  void writeData(query::AlertsWriteRequest request);
 
   int64_t getTimestamp(int64_t timeInUsec);
 

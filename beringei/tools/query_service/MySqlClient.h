@@ -26,7 +26,7 @@
 namespace facebook {
 namespace gorilla {
 
-typedef std::unordered_map<std::string, MySqlNodeData> MacToNodeMap;
+typedef std::unordered_map<std::string, query::MySqlNodeData> MacToNodeMap;
 typedef std::unordered_map<int64_t, std::unordered_map<std::string, int64_t>>
     NodeKeyMap;
 typedef std::unordered_map<int64_t, std::unordered_map<std::string, int64_t>>
@@ -43,7 +43,7 @@ class MySqlClient {
   void refreshEventCategories() noexcept;
 
   void addNodes(
-      std::unordered_map<std::string, MySqlNodeData> newNodes) noexcept;
+      std::unordered_map<std::string, query::MySqlNodeData> newNodes) noexcept;
 
   void addStatKeys(std::unordered_map<int64_t, std::unordered_set<std::string>>
                        nodeKeys) noexcept;
@@ -62,8 +62,8 @@ class MySqlClient {
       const int64_t nodeId,
       const std::string& category) const;
 
-  void addEvents(std::vector<MySqlEventData> events) noexcept;
-  void addAlert(MySqlAlertData alert) noexcept;
+  void addEvents(std::vector<query::MySqlEventData> events) noexcept;
+  void addAlert(query::MySqlAlertData alert) noexcept;
 
  private:
   sql::Driver* driver_;

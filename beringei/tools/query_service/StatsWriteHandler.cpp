@@ -97,8 +97,8 @@ int64_t timeCalc(int64_t timeIn) {
       FLAGS_agg_bucket_seconds;
 }
 
-void StatsWriteHandler::writeData(StatsWriteRequest request) {
-  std::unordered_map<std::string, MySqlNodeData> unknownNodes;
+void StatsWriteHandler::writeData(query::StatsWriteRequest request) {
+  std::unordered_map<std::string, query::MySqlNodeData> unknownNodes;
   std::unordered_map<int64_t, std::unordered_set<std::string>> missingNodeKey;
   std::vector<DataPoint> bRows;
 
@@ -109,7 +109,7 @@ void StatsWriteHandler::writeData(StatsWriteRequest request) {
   for (const auto& agent : request.agents) {
     auto nodeId = mySqlClient_->getNodeId(agent.mac);
     if (!nodeId) {
-      MySqlNodeData newNode;
+      query::MySqlNodeData newNode;
       newNode.mac = agent.mac;
       newNode.node = agent.name;
       newNode.site = agent.site;
@@ -170,9 +170,9 @@ void StatsWriteHandler::writeData(StatsWriteRequest request) {
 
 void StatsWriteHandler::onEOM() noexcept {
   auto body = body_->moveToFbString();
-  StatsWriteRequest request;
+  query::StatsWriteRequest request;
   try {
-    request = SimpleJSONSerializer::deserialize<StatsWriteRequest>(body);
+    request = SimpleJSONSerializer::deserialize<query::StatsWriteRequest>(body);
   } catch (const std::exception&) {
     LOG(INFO) << "Error deserializing stats_writer request";
     ResponseBuilder(downstream_)
@@ -217,6 +217,6 @@ void StatsWriteHandler::onError(ProxygenError /* unused */) noexcept {
   delete this;
 }
 
-void StatsWriteHandler::logRequest(StatsWriteRequest request) {}
+void StatsWriteHandler::logRequest(query::StatsWriteRequest request) {}
 }
 } // facebook::gorilla

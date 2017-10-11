@@ -39,9 +39,9 @@ class EventsWriteHandler : public proxygen::RequestHandler {
   void onError(proxygen::ProxygenError err) noexcept override;
 
  private:
-  void logRequest(EventsWriteRequest request);
+  void logRequest(query::EventsWriteRequest request);
 
-  void writeData(EventsWriteRequest request);
+  void writeData(query::EventsWriteRequest request);
 
   int64_t getTimestamp(int64_t timeInUsec);
 
