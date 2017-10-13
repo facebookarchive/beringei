@@ -36,6 +36,8 @@ class MySqlClient {
  public:
   MySqlClient();
 
+  void refreshAll() noexcept;
+
   void refreshNodes() noexcept;
 
   void refreshStatKeys() noexcept;

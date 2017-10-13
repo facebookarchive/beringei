@@ -49,6 +49,9 @@ class StatsWriteHandler : public proxygen::RequestHandler {
   void writeData(query::StatsWriteRequest request);
 
   std::shared_ptr<BeringeiConfigurationAdapterIf> configurationAdapter_;
+  // keep shared client holding key ids
+  std::shared_ptr<MySqlClient> mySqlCacheClient_;
+  // client per-thread for writing
   std::shared_ptr<MySqlClient> mySqlClient_;
   std::shared_ptr<BeringeiClient> beringeiClient_;
   std::unique_ptr<folly::IOBuf> body_;

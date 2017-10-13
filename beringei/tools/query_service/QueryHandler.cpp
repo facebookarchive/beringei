@@ -170,13 +170,13 @@ void QueryHandler::columnNames() {
  * Iterate over all data points
  */
 folly::dynamic QueryHandler::eventHandler(int dataPointIncrementMs,
-                                           const std::string& metricName) {
+                                          const std::string& metricName) {
   int64_t timeBucketCount = (endTime_ - startTime_) / 30;
   int keyCount = beringeiTimeSeries_.size();
   // count is a special aggregation that will be missed due to default values
   int timeSeriesCounts[timeBucketCount]{};
   // pre-allocate the array size
-  double *timeSeries = new double[keyCount * timeBucketCount];
+  double *timeSeries = new double[keyCount * timeBucketCount]();
   int keyIndex = 0;
   for (const auto& keyTimeSeries : beringeiTimeSeries_) {
     const std::string& keyName = keyTimeSeries.first.key;
@@ -508,7 +508,9 @@ folly::dynamic QueryHandler::handleQuery() {
         system_clock::now().time_since_epoch()).count();
   folly::dynamic results{};
   if (query_.type == "event") {
-    results = eventHandler(26 /* ms for heartbeats */, "alive");
+//    results = eventHandler(26 /* ms for heartbeats */, "alive");
+    // uplink bw request
+    results = eventHandler(25 /* ms for heartbeats */, "alive");
   } else if (query_.type == "uptime_sec") {
     results = eventHandler(1000, "minion_uptime");
   } else {
@@ -519,7 +521,7 @@ folly::dynamic QueryHandler::handleQuery() {
   LOG(INFO) << "Query completed. "
             << "Fetch: " << (fetchTime - startTime) << "ms, "
             << "Column names: " << (columnNamesTime - fetchTime) << "ms, "
-            << "Transform: " << (endTime - columnNamesTime) << "ms, "
+            << "Event/Transform: " << (endTime - columnNamesTime) << "ms, "
             << "Total: " << (endTime - startTime) << "ms.";
   return results;
 }

@@ -42,8 +42,11 @@ StatsWriteHandler::StatsWriteHandler(
     std::shared_ptr<BeringeiClient> beringeiClient)
     : RequestHandler(),
       configurationAdapter_(configurationAdapter),
-      mySqlClient_(mySqlClient),
-      beringeiClient_(beringeiClient) {}
+      mySqlCacheClient_(mySqlClient),
+      beringeiClient_(beringeiClient) {
+  
+  mySqlClient_ = std::make_shared<MySqlClient>();
+}
 
 void StatsWriteHandler::onRequest(
     std::unique_ptr<HTTPMessage> /* unused */) noexcept {
@@ -107,7 +110,7 @@ void StatsWriteHandler::writeData(query::StatsWriteRequest request) {
                        .count();
 
   for (const auto& agent : request.agents) {
-    auto nodeId = mySqlClient_->getNodeId(agent.mac);
+    auto nodeId = mySqlCacheClient_->getNodeId(agent.mac);
     if (!nodeId) {
       query::MySqlNodeData newNode;
       newNode.mac = agent.mac;
@@ -122,7 +125,7 @@ void StatsWriteHandler::writeData(query::StatsWriteRequest request) {
     for (const auto& stat : agent.stats) {
       // check timestamp
       int64_t tsParsed = timeCalc(stat.ts);
-      auto keyId = mySqlClient_->getKeyId(*nodeId, stat.key);
+      auto keyId = mySqlCacheClient_->getKeyId(*nodeId, stat.key);
       // verify node/key combo exists
       if (keyId) {
         // insert row for beringei
@@ -143,8 +146,12 @@ void StatsWriteHandler::writeData(query::StatsWriteRequest request) {
     }
   }
   // write newly found macs and node/key combos
-  mySqlClient_->addNodes(unknownNodes);
-  mySqlClient_->addStatKeys(missingNodeKey);
+  if (!unknownNodes.empty() || !missingNodeKey.empty()) {
+    mySqlClient_->addNodes(unknownNodes);
+    mySqlClient_->addStatKeys(missingNodeKey);
+    LOG(INFO) << "Ran addNodes/addStatKeys, refreshing";
+    mySqlCacheClient_->refreshAll();
+  }
 
   // insert rows
   if (!bRows.empty()) {

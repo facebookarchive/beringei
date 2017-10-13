@@ -27,13 +27,21 @@ namespace gorilla {
 MySqlClient::MySqlClient() {
   try {
     driver_ = sql::mysql::get_driver_instance();
+    sql::ConnectOptionsMap connProps;
+    connProps["hostName"] = FLAGS_mysql_url;
+    connProps["userName"] = FLAGS_mysql_user;
+    connProps["password"] = FLAGS_mysql_pass;
+    connProps["OPT_RECONNECT"] = true;
     connection_ = std::unique_ptr<sql::Connection>(
-        driver_->connect(FLAGS_mysql_url, FLAGS_mysql_user, FLAGS_mysql_pass));
+        driver_->connect(connProps));
     connection_->setSchema(FLAGS_mysql_database);
   } catch (sql::SQLException& e) {
     LOG(ERROR) << "ERR: " << e.what();
     LOG(ERROR) << " (MySQL error code: " << e.getErrorCode();
   }
+}
+
+void MySqlClient::refreshAll() noexcept {
   refreshNodes();
   refreshStatKeys();
   refreshEventCategories();
@@ -145,7 +153,7 @@ void MySqlClient::addNodes(
     LOG(ERROR) << " (MySQL error code: " << e.getErrorCode();
   }
 
-  refreshNodes();
+//  refreshNodes();
 }
 
 void MySqlClient::addStatKeys(
@@ -203,7 +211,7 @@ void MySqlClient::addEventCategories(
     LOG(ERROR) << " (MySQL error code: " << e.getErrorCode();
   }
 
-  refreshEventCategories();
+//  refreshEventCategories();
 }
 
 folly::Optional<int64_t> MySqlClient::getNodeId(

@@ -30,6 +30,7 @@ namespace gorilla {
 QueryServiceFactory::QueryServiceFactory() : RequestHandlerFactory() {
   configurationAdapter_ = std::make_shared<BeringeiConfigurationAdapter>();
   mySqlClient_ = std::make_shared<MySqlClient>();
+  mySqlClient_->refreshAll();
   beringeiReadClient_ = std::make_shared<BeringeiClient>(
       configurationAdapter_, 1, BeringeiClient::kNoWriterThreads);
   beringeiWriteClient_ = std::make_shared<BeringeiClient>(
