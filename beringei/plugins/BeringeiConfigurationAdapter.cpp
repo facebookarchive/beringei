@@ -9,6 +9,8 @@
 
 #include "BeringeiConfigurationAdapter.h"
 
+#include <folly/String.h>
+
 #include "beringei/lib/CaseUtils.h"
 
 DEFINE_string(
