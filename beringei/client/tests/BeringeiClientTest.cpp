@@ -7,6 +7,7 @@
  * of patent rights can be found in the PATENTS file in the same directory.
  */
 
+#include <folly/Random.h>
 #include <folly/futures/Future.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
