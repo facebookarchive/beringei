@@ -9,7 +9,7 @@
 
 #include "PersistentKeyList.h"
 
-#include <folly/io/Compression.h>
+#include <folly/compression/Compression.h>
 #include <folly/io/IOBuf.h>
 #include <gflags/gflags.h>
 #include <glog/logging.h>

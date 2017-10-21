@@ -11,7 +11,7 @@
 
 #include "BucketStorage.h"
 
-#include <folly/io/Compression.h>
+#include <folly/compression/Compression.h>
 #include <folly/io/IOBuf.h>
 
 namespace facebook {

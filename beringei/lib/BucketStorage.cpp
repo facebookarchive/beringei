@@ -12,7 +12,7 @@
 #include "GorillaStatsManager.h"
 #include "TimeSeriesStream.h"
 
-#include <folly/io/Compression.h>
+#include <folly/compression/Compression.h>
 #include <folly/io/IOBuf.h>
 
 DEFINE_int32(
