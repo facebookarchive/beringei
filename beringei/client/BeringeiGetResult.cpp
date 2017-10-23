@@ -12,7 +12,7 @@
 #include <algorithm>
 #include <vector>
 
-#include <folly/Enumerate.h>
+#include <folly/container/Enumerate.h>
 
 #include "beringei/lib/GorillaStatsManager.h"
 #include "beringei/lib/TimeSeries.h"

@@ -9,9 +9,9 @@
 
 #include "BeringeiClientImpl.h"
 
-#include <folly/Enumerate.h>
 #include <folly/LifoSem.h>
 #include <folly/String.h>
+#include <folly/container/Enumerate.h>
 #include <folly/gen/Base.h>
 #include <thrift/lib/cpp2/async/RequestChannel.h>
 

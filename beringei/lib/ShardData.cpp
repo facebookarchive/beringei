@@ -9,7 +9,7 @@
 
 #include "ShardData.h"
 
-#include <folly/Enumerate.h>
+#include <folly/container/Enumerate.h>
 #include "beringei/lib/GorillaStatsManager.h"
 #include "beringei/lib/GorillaTimeConstants.h"
 
