@@ -35,6 +35,8 @@ class BucketUtils {
   // Conversions for buckets aligned at 0 modulo windowSize
   static uint32_t alignedBucket(uint64_t unixTime, uint64_t windowSize);
   static uint64_t alignedTimestamp(uint32_t bucket, uint64_t windowSize);
+  static uint64_t floorAlignedTimestamp(uint64_t unixTime, uint64_t windowSize);
+  static bool isAlignedBucketTimestamp(uint64_t unixTime, uint64_t windowSize);
 };
 }
 }

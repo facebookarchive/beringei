@@ -66,5 +66,17 @@ uint32_t BucketUtils::alignedBucket(uint64_t unixTime, uint64_t windowSize) {
 uint64_t BucketUtils::alignedTimestamp(uint32_t bucket, uint64_t windowSize) {
   return bucket * windowSize;
 }
+
+uint64_t BucketUtils::floorAlignedTimestamp(
+    uint64_t unixTime,
+    uint64_t windowSize) {
+  return alignedTimestamp(alignedBucket(unixTime, windowSize), windowSize);
+}
+
+bool BucketUtils::isAlignedBucketTimestamp(
+    uint64_t unixTime,
+    uint64_t windowSize) {
+  return unixTime % windowSize == 0;
+}
 }
 } // facebook::gorilla
