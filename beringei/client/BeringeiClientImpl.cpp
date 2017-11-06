@@ -9,10 +9,10 @@
 
 #include "BeringeiClientImpl.h"
 
-#include <folly/LifoSem.h>
 #include <folly/String.h>
 #include <folly/container/Enumerate.h>
 #include <folly/gen/Base.h>
+#include <folly/synchronization/LifoSem.h>
 #include <thrift/lib/cpp2/async/RequestChannel.h>
 
 #include "beringei/lib/GorillaStatsManager.h"
