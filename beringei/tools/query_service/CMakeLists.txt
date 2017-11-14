@@ -19,6 +19,8 @@ set(BERINGEI_QUERY_SRCS
     QueryHandler.h
     StatsWriteHandler.cpp
     StatsWriteHandler.h
+    StatsTypeAheadHandler.cpp
+    StatsTypeAheadHandler.h
     MySqlClient.cpp
     MySqlClient.h
     EventsWriteHandler.cpp

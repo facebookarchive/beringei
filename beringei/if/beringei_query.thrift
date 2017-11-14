@@ -7,6 +7,8 @@
  * of patent rights can be found in the PATENTS file in the same directory.
  */
 
+include "beringei/if/Topology.thrift"
+
 namespace cpp2 facebook.gorilla.query
 namespace py facebook.gorilla.beringei_query
 
@@ -80,22 +82,18 @@ struct NodeEvents {
   4: list<Event> events,
 }
 
-struct Topology {
-  1: string name,
-}
-
 struct StatsWriteRequest {
-  1: Topology topology,
+  1: Topology.Topology topology,
   2: list<NodeStates> agents,
 }
 
 struct LogsWriteRequest {
-  1: Topology topology,
+  1: Topology.Topology topology,
   2: list<NodeLogs> agents,
 }
 
 struct EventsWriteRequest {
-  1: Topology topology,
+  1: Topology.Topology topology,
   2: list<NodeEvents> agents,
 }
 
@@ -105,6 +103,7 @@ struct MySqlNodeData {
   3: string mac,
   4: string network,
   5: string site,
+  6: string key,
 }
 
 struct MySqlEventData {

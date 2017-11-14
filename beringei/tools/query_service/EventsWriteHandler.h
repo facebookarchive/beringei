@@ -17,6 +17,7 @@
 #include <proxygen/httpserver/RequestHandler.h>
 
 #include "beringei/if/gen-cpp2/beringei_query_types_custom_protocol.h"
+#include "beringei/if/gen-cpp2/Topology_types_custom_protocol.h"
 
 namespace facebook {
 namespace gorilla {
