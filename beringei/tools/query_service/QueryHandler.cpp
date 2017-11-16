@@ -176,15 +176,21 @@ folly::dynamic QueryHandler::eventHandler(int dataPointIncrementMs,
   // count is a special aggregation that will be missed due to default values
   int timeSeriesCounts[timeBucketCount]{};
   // pre-allocate the array size
-  double *timeSeries = new double[keyCount * timeBucketCount]();
+  double *timeSeries = new double[query_.key_ids.size() * timeBucketCount]();
   int keyIndex = 0;
+  // map returned key -> index
+  std::unordered_map<std::string, int64_t> keyMapIndex;
+  for (const auto& keyId : query_.key_ids) {
+    keyMapIndex[std::to_string(keyId)] = keyIndex;
+    keyIndex++;
+  }
   for (const auto& keyTimeSeries : beringeiTimeSeries_) {
     const std::string& keyName = keyTimeSeries.first.key;
+    keyIndex = keyMapIndex[keyName];
     for (const auto& timePair : keyTimeSeries.second) {
       int timeBucketId = (timePair.unixTime - startTime_) / 30;
       timeSeries[keyIndex * timeBucketCount + timeBucketId] = timePair.value;
     }
-    keyIndex++;
   }
   int expectedDataPoints = 30 * (1000 / (double)dataPointIncrementMs);
   // iterate over all expected data points
@@ -197,8 +203,15 @@ folly::dynamic QueryHandler::eventHandler(int dataPointIncrementMs,
     folly::dynamic onlineEvents = folly::dynamic::array;
     for (int timeIndex = 0; timeIndex < timeBucketCount; timeIndex++) {
       double timeVal = timeSeries[keyIndex * timeBucketCount + timeIndex];
-      VLOG(3) << "VERBOSE: timeSeries[" << keyIndex << "][" << timeIndex
-              << "] = " << timeVal;
+      double prevVal = timeIndex > 0 ? timeSeries[keyIndex * timeBucketCount + timeIndex - 1] : 0;
+      if (timeIndex > 0 && prevVal >= 0 && timeVal >= 0) {
+        VLOG(3) << "VERBOSE: timeSeries[" << keyIndex << "][" << timeIndex
+                << "] = " << timeVal << " | Diff: " << (timeVal - prevVal)
+                << " / " << ((timeVal - prevVal) / 30.0);;
+      } else {
+        VLOG(3) << "VERBOSE: timeSeries[" << keyIndex << "][" << timeIndex
+                << "] = " << timeVal;
+      }
       if (timeVal == 0) {
         missingCounter++;
         // missing data
@@ -266,6 +279,10 @@ folly::dynamic QueryHandler::eventHandler(int dataPointIncrementMs,
       }
       // finalize events
       if ((timeIndex + 1) == timeBucketCount && startOnlineIndex >= 0) {
+        // allow one missing interval to account for delays in incoming data
+        if (missingCounter == 1) {
+          missingCounter = 0;
+        }
         VLOG(2) << "[END] Start online index set, push event from start: "
                 << startOnlineIndex << " to: "
                 << (timeIndex - missingCounter)
