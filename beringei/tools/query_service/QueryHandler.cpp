@@ -282,6 +282,7 @@ folly::dynamic QueryHandler::eventHandler(int dataPointIncrementMs,
         // allow one missing interval to account for delays in incoming data
         if (missingCounter == 1) {
           missingCounter = 0;
+          upPoints++;
         }
         VLOG(2) << "[END] Start online index set, push event from start: "
                 << startOnlineIndex << " to: "
