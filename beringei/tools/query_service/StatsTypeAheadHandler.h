@@ -9,25 +9,38 @@
 
 #pragma once
 
+#include "MySqlClient.h"
+
 #include <folly/Memory.h>
 #include <folly/dynamic.h>
 #include <folly/futures/Future.h>
 #include <proxygen/httpserver/RequestHandler.h>
 
+#include "beringei/client/BeringeiClient.h"
+#include "beringei/client/BeringeiConfigurationAdapterIf.h"
 #include "beringei/if/gen-cpp2/beringei_query_types_custom_protocol.h"
 #include "beringei/if/gen-cpp2/Topology_types_custom_protocol.h"
 
 namespace facebook {
 namespace gorilla {
 
-class LogsWriteHandler : public proxygen::RequestHandler {
+class StatsTypeAheadHandler : public proxygen::RequestHandler {
  public:
-  explicit LogsWriteHandler();
+  explicit StatsTypeAheadHandler(
+      std::shared_ptr<MySqlClient> mySqlClient);
 
   void onRequest(
       std::unique_ptr<proxygen::HTTPMessage> headers) noexcept override;
 
   void onBody(std::unique_ptr<folly::IOBuf> body) noexcept override;
+
+  void fetchMetricNames(query::Topology& request);
+
+  folly::dynamic createLinkMetric(query::Node& aNode, query::Node& zNode,
+			     	std::string title, std::string description,
+				std::string keyName, std::string keyPrefix = "tgf");
+
+  folly::dynamic getLinkMetrics(std::string& metricName, query::Node& aNode, query::Node& zNode);
 
   void onEOM() noexcept override;
 
@@ -38,10 +51,12 @@ class LogsWriteHandler : public proxygen::RequestHandler {
   void onError(proxygen::ProxygenError err) noexcept override;
 
  private:
-  void logRequest(query::LogsWriteRequest request);
-
-  void writeData(query::LogsWriteRequest request);
-
+  std::vector<std::string> metricKeyNames_;
+  std::unordered_set<std::string> macNodes_{};
+  std::map<std::string, query::Node> nodesByName_{};
+  folly::dynamic nodeMetrics_;
+  folly::dynamic siteMetrics_;
+  std::shared_ptr<MySqlClient> mySqlClient_;
   std::unique_ptr<folly::IOBuf> body_;
 };
 }

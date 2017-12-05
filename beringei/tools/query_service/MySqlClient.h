@@ -14,6 +14,7 @@
 #include <folly/futures/Future.h>
 
 #include "beringei/if/gen-cpp2/beringei_query_types_custom_protocol.h"
+#include "beringei/if/gen-cpp2/Topology_types_custom_protocol.h"
 #include "mysql_connection.h"
 #include "mysql_driver.h"
 
@@ -27,6 +28,7 @@ namespace facebook {
 namespace gorilla {
 
 typedef std::unordered_map<std::string, query::MySqlNodeData> MacToNodeMap;
+typedef std::unordered_map<std::string, query::MySqlNodeData> NameToNodeMap;
 typedef std::unordered_map<int64_t, std::unordered_map<std::string, int64_t>>
     NodeKeyMap;
 typedef std::unordered_map<int64_t, std::unordered_map<std::string, int64_t>>
@@ -37,6 +39,14 @@ class MySqlClient {
   MySqlClient();
 
   void refreshAll() noexcept;
+
+  std::vector<query::MySqlNodeData> getNodes();
+
+  std::vector<query::MySqlNodeData> getNodesWithKeys();
+
+  std::vector<query::MySqlNodeData> getNodes(const std::unordered_set<std::string>& nodeMacs);
+
+  std::vector<query::MySqlNodeData> getNodesWithKeys(const std::unordered_set<std::string>& nodeMacs);
 
   void refreshNodes() noexcept;
 
@@ -70,6 +80,7 @@ class MySqlClient {
  private:
   sql::Driver* driver_;
   std::unique_ptr<sql::Connection> connection_;
+  std::vector<query::MySqlNodeData> nodes_{};
   MacToNodeMap macAddrToNode_{};
   NodeKeyMap nodeKeyIds_{};
   NodeCategoryMap nodeCategoryIds_{};

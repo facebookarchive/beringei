@@ -47,13 +47,46 @@ void MySqlClient::refreshAll() noexcept {
   refreshEventCategories();
 }
 
+std::vector<query::MySqlNodeData> MySqlClient::getNodes() {
+  std::vector<query::MySqlNodeData> nodes{};
+  for (auto& it : macAddrToNode_) {
+    nodes.push_back(it.second);
+  }
+  return nodes;
+}
+
+std::vector<query::MySqlNodeData> MySqlClient::getNodesWithKeys() {
+  return nodes_;
+}
+
+std::vector<query::MySqlNodeData> MySqlClient::getNodes(const std::unordered_set<std::string>& nodeMacs) {
+  std::vector<query::MySqlNodeData> nodes{};
+  for (const auto& mac : nodeMacs) {
+    auto it = macAddrToNode_.find(mac);
+    if (it != macAddrToNode_.end()) {
+      nodes.push_back(it->second);
+    }
+  }
+  return nodes; 
+}
+      
+std::vector<query::MySqlNodeData> MySqlClient::getNodesWithKeys(const std::unordered_set<std::string>& nodeMacs) {
+  std::vector<query::MySqlNodeData> nodes{};
+  for (auto node : nodes_) {
+    auto it = nodeMacs.find(node.mac);
+    if (it != nodeMacs.end()) {
+      nodes.push_back(node);
+    }
+  }
+  return nodes; 
+}
+
 void MySqlClient::refreshNodes() noexcept {
   try {
     std::unique_ptr<sql::Statement> stmt(connection_->createStatement());
     std::unique_ptr<sql::ResultSet> res(
-        stmt->executeQuery("SELECT * FROM `nodes`"));
-
-    LOG(INFO) << "refreshNodes: Number of nodes: " << res->rowsCount();
+	stmt->executeQuery("SELECT * FROM `nodes`"
+               		   "JOIN (`ts_key`) ON (`nodes`.`id`=`ts_key`.`node_id`)"));
     while (res->next()) {
       query::MySqlNodeData node{};
       node.id = res->getInt("id");
@@ -61,11 +94,14 @@ void MySqlClient::refreshNodes() noexcept {
       node.mac = res->getString("mac");
       node.network = res->getString("network");
       node.site = res->getString("site");
-
-      std::transform(
-          node.mac.begin(), node.mac.end(), node.mac.begin(), ::tolower);
+      node.key = res->getString("key");
+      std::transform(node.mac.begin(), node.mac.end(), node.mac.begin(), ::tolower);
+      std::transform(node.key.begin(), node.key.end(), node.key.begin(), ::tolower);
       macAddrToNode_[node.mac] = node;
+      nodes_.push_back(node);
     }
+    LOG(INFO) << "refreshNodes: Number of nodes: " << macAddrToNode_.size();
+
   } catch (sql::SQLException& e) {
     LOG(ERROR) << "ERR: " << e.what();
     LOG(ERROR) << " (MySQL error code: " << e.getErrorCode();

@@ -15,6 +15,7 @@
 #include "NotFoundHandler.h"
 #include "QueryHandler.h"
 #include "StatsWriteHandler.h"
+#include "StatsTypeAheadHandler.h"
 
 #include "beringei/plugins/BeringeiConfigurationAdapter.h"
 
@@ -58,6 +59,8 @@ proxygen::RequestHandler* QueryServiceFactory::onRequest(
     return new AlertsWriteHandler(mySqlClient_);
   } else if (path == "/logs_writer") {
     return new LogsWriteHandler();
+  } else if (path == "/topology") {
+    return new StatsTypeAheadHandler(mySqlClient_);
   }
 
   // return not found for all other uris
