@@ -264,6 +264,9 @@ void BucketStorage::clearAndDisable() {
     std::vector<std::shared_ptr<DataBlock>>().swap(data_[i].pages);
     data_[i].activePages = 0;
     data_[i].lastPageBytesUsed = 0;
+    std::unordered_multimap<uint64_t, uint64_t>().swap(
+        data_[i].storageIdsLookupMap);
+    data_[i].finalized = false;
   }
 }
 

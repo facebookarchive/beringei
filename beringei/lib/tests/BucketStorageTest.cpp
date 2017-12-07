@@ -229,6 +229,35 @@ TEST(BucketStorageTest, BigDataFromDisk) {
   }
 }
 
+TEST(BucketStorageTest, BigDataStoreAfterCleanupWithoutFinalize) {
+  TemporaryDirectory dir("gorilla_data_block");
+  boost::filesystem::create_directories(
+      FileUtils::joinPaths(dir.dirname(), "12"));
+  int64_t shardId = 12;
+
+  vector<BucketStorage::BucketStorageId> ids(5);
+  vector<uint32_t> timeSeriesIds = {100, 200, 300, 400, 500};
+
+  {
+    BucketStorage storage(10, shardId, dir.dirname());
+    for (int i = 0; i < 5; i++) {
+      string data(30000, '0' + i);
+      ids[i] = storage.store(
+          100, data.c_str(), data.length(), 100 + i, timeSeriesIds[i]);
+      ASSERT_NE(BucketStorage::kInvalidId, ids[i]);
+    }
+    storage.clearAndDisable();
+    storage.enable();
+
+    for (int i = 0; i < 5; i++) {
+      string data(30000, '0' + i);
+      ids[i] = storage.store(
+          100, data.c_str(), data.length(), 100 + i, timeSeriesIds[i]);
+      ASSERT_NE(BucketStorage::kInvalidId, ids[i]);
+    }
+  }
+}
+
 TEST(BucketStorageTest, DedupedDataFromDisk) {
   TemporaryDirectory dir("gorilla_data_block");
   boost::filesystem::create_directories(
