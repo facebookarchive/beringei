@@ -85,8 +85,7 @@ void MySqlClient::refreshNodes() noexcept {
   try {
     std::unique_ptr<sql::Statement> stmt(connection_->createStatement());
     std::unique_ptr<sql::ResultSet> res(
-	stmt->executeQuery("SELECT * FROM `nodes`"
-               		   "JOIN (`ts_key`) ON (`nodes`.`id`=`ts_key`.`node_id`)"));
+	stmt->executeQuery("SELECT * FROM `nodes`"));
     while (res->next()) {
       query::MySqlNodeData node{};
       node.id = res->getInt("id");
@@ -94,9 +93,7 @@ void MySqlClient::refreshNodes() noexcept {
       node.mac = res->getString("mac");
       node.network = res->getString("network");
       node.site = res->getString("site");
-      node.key = res->getString("key");
       std::transform(node.mac.begin(), node.mac.end(), node.mac.begin(), ::tolower);
-      std::transform(node.key.begin(), node.key.end(), node.key.begin(), ::tolower);
       macAddrToNode_[node.mac] = node;
       nodes_.push_back(node);
     }
