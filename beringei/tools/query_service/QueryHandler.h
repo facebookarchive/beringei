@@ -66,8 +66,11 @@ class QueryHandler : public proxygen::RequestHandler {
   folly::dynamic handleQuery();
   folly::dynamic eventHandler(int dataPointIncrementMs,
                               const std::string& metricName);
+  folly::dynamic analyzerTable(int beringeiTimeWindowS);
   folly::dynamic makeEvent(int64_t startIndex, int64_t endIndex);
   std::string getTimeStr(time_t timeSec);
+  double calculateAverage(double *timeSeries, int keyIndex,
+      int timeBucketCount, int numValidSamples);
 
   std::shared_ptr<BeringeiConfigurationAdapterIf> configurationAdapter_;
   std::shared_ptr<BeringeiClient> beringeiClient_;

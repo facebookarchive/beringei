@@ -28,6 +28,7 @@ namespace gorilla {
 
 const int MAX_COLUMNS = 7;
 const int MAX_DATA_POINTS = 60;
+const int NUM_HBS_PER_SEC = 39; // approximately
 
 QueryHandler::QueryHandler(
     std::shared_ptr<BeringeiConfigurationAdapterIf> configurationAdapter,
@@ -184,6 +185,7 @@ folly::dynamic QueryHandler::eventHandler(int dataPointIncrementMs,
     keyMapIndex[std::to_string(keyId)] = keyIndex;
     keyIndex++;
   }
+  auto& keyId = query_.key_ids;
   for (const auto& keyTimeSeries : beringeiTimeSeries_) {
     const std::string& keyName = keyTimeSeries.first.key;
     keyIndex = keyMapIndex[keyName];
@@ -224,7 +226,7 @@ folly::dynamic QueryHandler::eventHandler(int dataPointIncrementMs,
           if (completeIntervals >= missingCounter) {
             // we covered up all missing data points
             upPoints += missingCounter;
-            VLOG(2) << "[" << timeIndex << "] Filled all " << missingCounter
+            VLOG(3) << "[" << timeIndex << "] Filled all " << missingCounter
                     << " missed data buckets, complete intervals covered: "
                     << completeIntervals << ", partial seconds (total): "
                     << partialIntervalSec;
@@ -232,7 +234,7 @@ folly::dynamic QueryHandler::eventHandler(int dataPointIncrementMs,
             if (startOnlineIndex == -1) {
               startOnlineIndex = timeIndex - missingCounter;
             }
-            VLOG(2) << "[" << timeIndex << "] Marked starting index of uptime: " << startOnlineIndex;
+            VLOG(3) << "[" << timeIndex << "] Marked starting index of uptime: " << startOnlineIndex;
           } else {
             // fill partial interval
             int wholeIntervals = (int)completeIntervals;
@@ -397,6 +399,12 @@ folly::dynamic QueryHandler::transform() {
             std::min(aggSeries_["min"][timeBucketId], min);
           aggSeries_["max"][timeBucketId] =
             std::max(aggSeries_["max"][timeBucketId], max);
+
+          if (aggSeries_["max"][timeBucketId] > 200) {
+               VLOG(2) << "CSM ERROR!!: aggSeries_[max][" << timeBucketId << "]:" << aggSeries_["max"][timeBucketId]
+                       << "sum " << sum << " timeSeries[i * timeBucketCount + startBucketId]:" << timeSeries[i * timeBucketCount + startBucketId]
+                       << " timeSeries[i * timeBucketCount + endBucketId + 1]:" << timeSeries[i * timeBucketCount + endBucketId + 1];
+          }
         }
       } else if (query_.agg_type == "count") {
         double countSum = std::accumulate(&timeSeriesCounts[startBucketId],
@@ -479,6 +487,9 @@ folly::dynamic QueryHandler::transform() {
       columns.push_back(aggSerie.first);
       for (int i = 0; i < condensedBucketCount; i++) {
         datapoints[i].push_back(aggSerie.second[i]);
+        if (aggSerie.second[i] > 200) {
+             VLOG(2) << "CSM ERROR!!! > 200";
+        }
       }
     }
     columns.push_back("avg");
@@ -500,6 +511,261 @@ folly::dynamic QueryHandler::transform() {
   response["name"] = "id";
   response["columns"] = columns;
   response["points"] = datapoints;
+  return response;
+}
+
+#define MIN_TIME_VALID_PER_SEC 60
+#define INVALID_VALUE 0xff
+#define MIN_MDPUS_FOR_PER_PER_SEC 100
+#define LINK_A 0
+#define LINK_Z 1
+
+double QueryHandler::calculateAverage(double *timeSeries, int keyIndex, int timeBucketCount, int numValidSamples) {
+  double sum = std::accumulate(&timeSeries[keyIndex * timeBucketCount],
+                               &timeSeries[keyIndex * timeBucketCount + timeBucketCount],
+                               0.0);
+  double avg = INVALID_VALUE;
+  if (numValidSamples > 0) {
+     avg = sum / (double)(numValidSamples);
+  }
+  return avg;
+}
+
+/* analyzerTable takes the results of a Beringei time series query with multiple
+ * keys and creates a json result:
+ * {"end":time, "start":time,"metrics":{<linknameA>:{"avgper":value, "avgsnr":value, ...}}}
+ * function assumes it will be given ssnrEst, txOk, txFail, mcs for multiple nodes
+ * input: beringeiTimeWindowS, the minimum time spacing (30s default)
+ */
+folly::dynamic QueryHandler::analyzerTable(int beringeiTimeWindowS) {
+  VLOG(2) << "CSM_AT in analyzerTable";
+  // endTime_ and startTime_ are from the request, not necessarily the
+  // Beringei response
+  int64_t timeBucketCount = (endTime_ - startTime_) / beringeiTimeWindowS;
+  const int numKeysReturned = beringeiTimeSeries_.size();
+  int keyIndex = 0;
+  // map returned key -> index
+  std::unordered_map<std::string, int64_t> keyMapIndex;
+  // there is one keyIndex for every parameter and every link
+  // for example, MCS from A->Z is one keyIndex
+  for (const auto& keyId : query_.key_ids) {
+    keyMapIndex[std::to_string(keyId)] = keyIndex;
+    keyIndex++;
+  }
+  // it is possible that not all of the keys queried are returned by the query
+  const int numKeysQueried = keyIndex;
+
+  // find the number of unique links
+  // linkindex is a doubly subscripted array
+  // linkindex[displayName][a_or_z] = link number;
+  // e.g. linkindex["link-15-30.s2-15-49.s1"]["(Z)"] = 4;
+  folly::dynamic linkindex = folly::dynamic::object;
+  // linkname[link number] = displayName (e.g. link-15-30.s2-15-49.s1)
+  folly::dynamic linkname = folly::dynamic::object;
+  // // linkdir[link number] = "(A)" or "(Z)"
+  // folly::dynamic linkdir = folly::dynamic::object;
+  // keylink maps the keyIndex to the link number
+  int keylink[numKeysReturned];
+  // numlinks is the total number of unique links (A->Z and Z->A are
+  // the same link)
+  int numlinks = 0;
+  for (int keyIndex = 0; keyIndex < numKeysReturned; keyIndex++) {
+    auto& key = query_.data[keyIndex].key;
+    auto& displayName = query_.data[keyIndex].displayName;
+    auto& a_or_z = query_.data[keyIndex].linkTitleAppend;
+    // if this link hasn't been seen yet
+    if (linkindex.find(displayName) == linkindex.items().end()) {
+      linkindex[displayName] = numlinks;
+      linkname[numlinks] = displayName; // example: link-terra111.f5.tb.a404-if-terra212.f5.tb.a404-if
+      numlinks++;
+    }
+    keylink[keyIndex] = folly::convertTo<int>(linkindex[displayName]);
+  }
+
+
+
+  // all values are initialized to zero
+  double *timeSeries = new double[query_.key_ids.size() * timeBucketCount]();
+  // valid is a boolean array of true/false to indicate if value is valid
+  bool *valid = new bool[query_.key_ids.size() * timeBucketCount]();
+  // minValidTimeBucketId and maxValidTimeBucketId are the smallest and largest
+  // valid time bucket index
+  int minValidTimeBucketId[numKeysQueried] = {};
+  int maxValidTimeBucketId[numKeysQueried] = {};
+  int numValidSamples[numKeysQueried] = {};
+  // numFlaps and upTime should be the same in both directions except
+  // for missing data
+  int numFlaps[numlinks][2] = {};
+  int upTimeSec[numlinks][2] = {};
+  bool found[numlinks][2] = {};
+
+  // this loop fills timeSeries[] and valid[]
+  // loop is over all keys (a key is, e.g.
+  // tgf.38:3a:21:b0:11:e2.phystatus.ssnrEst)
+  // the loop also finds the number of link flaps and the beginning and end
+  // of the most recent time the link was up
+  for (const auto& keyTimeSeries : beringeiTimeSeries_) {
+    const std::string& keyName = keyTimeSeries.first.key;
+    keyIndex = keyMapIndex[keyName];
+    auto& displayName = query_.data[keyIndex].displayName;
+    int linknum = folly::convertTo<int>(linkindex[displayName]);
+    auto& a_or_z = query_.data[keyIndex].linkTitleAppend;
+    int link =  (a_or_z.find("A") != std::string::npos) ? LINK_A : LINK_Z;
+    auto& key = query_.data[keyIndex].key;
+    // convert the key names to lower case
+    // e.g. tgf.38:3a:21:b0:11:e2.phystatus.ssnrEst
+    std::transform(key.begin(), key.end(), key.begin(), ::tolower);
+    bool first = true;
+    int firstValue = 0;
+    unsigned int prevValue = 0;
+    for (const auto& timePair : keyTimeSeries.second) {
+      int timeBucketId = (timePair.unixTime - startTime_) / beringeiTimeWindowS;
+      timeSeries[keyIndex * timeBucketCount + timeBucketId] = timePair.value;
+      valid[keyIndex * timeBucketCount + timeBucketId] = true;
+      if (first) {
+          minValidTimeBucketId[keyIndex] = timeBucketId;
+          firstValue = timePair.value;
+          first = false;
+      }
+      // beringeiTimeSeries_ has "value" and "unixTime"
+      // see .../beringei/lib/TimeSeriesStream-inl.h -- addValueToOutput()
+      // and TimeSeriesStream::readValues
+      // in readValues() it only adds a value to the output if it is valid
+
+
+      // find the number of link transitions (flaps) and find the beginning of
+      // the last time link was up
+      if ((key.find("uplinkbwreq") != std::string::npos) ||
+          (key.find("keepalive") != std::string::npos) ||
+          (key.find("heartbeat") != std::string::npos)) {
+          int expectedHBcount = firstValue + (timeBucketId - minValidTimeBucketId[keyIndex]) * NUM_HBS_PER_SEC * beringeiTimeWindowS;
+          found[linknum][link] = true;
+          // if the current HB counter is less than the last one or if it is
+          // much less than the expectedHBcount, assume the link went down and
+          // start over
+          if (timePair.value < prevValue || (timePair.value < expectedHBcount * 0.9)) {
+              firstValue = timePair.value;
+              numFlaps[linknum][link]++;
+              minValidTimeBucketId[keyIndex] = timeBucketId;
+          }
+          upTimeSec[linknum][link] = (timeBucketId - minValidTimeBucketId[keyIndex]) * beringeiTimeWindowS;
+      }
+      maxValidTimeBucketId[keyIndex] = timeBucketId;
+      numValidSamples[keyIndex]++;
+    }
+  }
+
+
+
+  VLOG(2) << "CSM_AT (2) maxValidTimeBucketId[1]:" << maxValidTimeBucketId[1] << " minValidTimeBucketId[1]" << minValidTimeBucketId[1];
+
+  // calculate statistics for each link, we need a separate loop because
+  // for example, PER = txFail/(txOk+txFail) - we need to calculate txOK and
+  // txFail before we can calculate PER -logic is simpler
+  double diffTxOk[numlinks][2];
+  double diffTxFail[numlinks][2];
+  double avgSnr[numlinks][2];
+  double avgMcs[numlinks][2];
+  double avgTxPower[numlinks][2];
+
+  // initialize the variables
+  for (int keyIndex = 0; keyIndex < numKeysReturned; keyIndex++) {
+    auto& displayName = query_.data[keyIndex].displayName;
+    int linknum = folly::convertTo<int>(linkindex[displayName]);
+    auto& a_or_z = query_.data[keyIndex].linkTitleAppend;
+    int link =  (a_or_z.find("A") != std::string::npos) ? LINK_A : LINK_Z;
+
+    diffTxOk[linknum][link] = INVALID_VALUE;
+    diffTxFail[linknum][link] = INVALID_VALUE;
+    avgSnr[linknum][link] = INVALID_VALUE;
+    avgMcs[linknum][link] = INVALID_VALUE;
+    avgTxPower[linknum][link] = INVALID_VALUE;
+  }
+
+  for (int keyIndex = 0; keyIndex < numKeysReturned; keyIndex++) {
+    auto& key = query_.data[keyIndex].key;
+    // convert the key names to lower case
+    // e.g. tgf.38:3a:21:b0:11:e2.phystatus.ssnrEst
+    std::transform(key.begin(), key.end(), key.begin(), ::tolower);
+    auto& displayName = query_.data[keyIndex].displayName;
+    auto& a_or_z = query_.data[keyIndex].linkTitleAppend;
+    int link =  (a_or_z.find("A") != std::string::npos) ? LINK_A : LINK_Z;
+    int linknum = folly::convertTo<int>(linkindex[displayName]);
+    if (!found[linknum][link]) {
+        VLOG(2) << "CSM_AT: link has no HB:" << displayName << a_or_z;
+        continue;
+    }
+
+    if (key.find("txok") != std::string::npos) {
+      if ((maxValidTimeBucketId[keyIndex] - minValidTimeBucketId[keyIndex]) > (MIN_TIME_VALID_PER_SEC/beringeiTimeWindowS)) {
+        diffTxOk[linknum][link] = timeSeries[keyIndex * timeBucketCount + maxValidTimeBucketId[keyIndex]] - timeSeries[keyIndex * timeBucketCount + minValidTimeBucketId[keyIndex]];
+      }
+      if (diffTxOk[linknum][link] < 0) {
+           VLOG(2) << "CSM_AT: diffTxOk:" << diffTxOk[linknum][link] << " displayName:" << displayName << " timeSeriesEnd:" << timeSeries[keyIndex * timeBucketCount + maxValidTimeBucketId[keyIndex]] << " timeSeriesBegin:" << timeSeries[keyIndex * timeBucketCount + minValidTimeBucketId[keyIndex]];
+           VLOG(2) << "      maxValidTimeBucketId:" << maxValidTimeBucketId[keyIndex] << " minValidTimeBucketId:" << minValidTimeBucketId[keyIndex] << " keyIndex:" << keyIndex;
+      }
+    }
+    if (key.find("txfail") != std::string::npos) {
+      if ((maxValidTimeBucketId[keyIndex] - minValidTimeBucketId[keyIndex]) > (MIN_TIME_VALID_PER_SEC/beringeiTimeWindowS)) {
+        diffTxFail[linknum][link] = timeSeries[keyIndex * timeBucketCount + maxValidTimeBucketId[keyIndex]] - timeSeries[keyIndex * timeBucketCount + minValidTimeBucketId[keyIndex]];
+      }
+      if (diffTxFail[linknum][link] < 0) {
+           VLOG(2) << "CSM_AT: diffTxFail:" << diffTxFail[linknum][link] << " displayName:" << displayName << " timeSeriesEnd:" << timeSeries[keyIndex * timeBucketCount + maxValidTimeBucketId[keyIndex]] << " timeSeriesBegin:" <<timeSeries[keyIndex * timeBucketCount + minValidTimeBucketId[keyIndex]];
+           VLOG(2) << "      maxValidTimeBucketId:" << maxValidTimeBucketId[keyIndex] << " minValidTimeBucketId:" << minValidTimeBucketId[keyIndex] << " keyIndex:" << keyIndex;
+      }
+    }
+    if (key.find("ssnrest") != std::string::npos) {
+      avgSnr[linknum][link] = calculateAverage(timeSeries, keyIndex, timeBucketCount, numValidSamples[keyIndex]);
+    }
+    if (key.find("mcs") != std::string::npos) {
+      avgMcs[linknum][link] = calculateAverage(timeSeries, keyIndex, timeBucketCount, numValidSamples[keyIndex]);
+    }
+    if (key.find("txpowerindex") != std::string::npos) {
+      avgTxPower[linknum][link] = calculateAverage(timeSeries, keyIndex, timeBucketCount, numValidSamples[keyIndex]);
+    }
+  }
+
+  folly::dynamic linkparams = folly::dynamic::object;
+  folly::dynamic metrics = folly::dynamic::object;
+  std::vector<std::string> linkdir = {"A","Z"};
+  // return processed statistics
+  for (int linknum = 0; linknum < numlinks; linknum++) {
+    for (int link = LINK_A; link <= LINK_Z; link++) {
+      double avgPer = INVALID_VALUE;
+      double dok = diffTxOk[linknum][link];
+      double dfail = diffTxFail[linknum][link];
+      if (dfail != INVALID_VALUE && dok != INVALID_VALUE && (dfail + dok > 0)) {
+        avgPer = dfail / (dfail + dok);
+      }
+
+      // calculate average throughput in packets per second
+      double tputPPS = 0.0;
+      if (upTimeSec[linknum][link] > 0) {
+        tputPPS = (dfail + dok) / (double)(upTimeSec[linknum][link]);
+      }
+
+      linkparams["avgper"] = avgPer;
+      linkparams["avgsnr"] = avgSnr[linknum][link];
+      linkparams["avgtxpower"] = avgTxPower[linknum][link];
+      linkparams["avgmcs"] = avgMcs[linknum][link];
+      linkparams["tput"] = tputPPS;
+      linkparams["flaps"] = numFlaps[linknum][link];
+      linkparams["uptime"] = upTimeSec[linknum][link];
+      if (!metrics[linkname[linknum]].isObject()) {
+        metrics[linkname[linknum]] = folly::dynamic::object;
+      }
+      else {
+      }
+      metrics[linkname[linknum]][linkdir[link]]= linkparams;
+    }
+  }
+  delete[] timeSeries;
+  delete[] valid;
+  folly::dynamic response = folly::dynamic::object;
+  response["name"] = "analyzerTable";
+  response["start"] = startTime_ * 1000;
+  response["end"] = endTime_ * 1000;
+  response["metrics"] = metrics;
   return response;
 }
 
@@ -531,13 +797,16 @@ folly::dynamic QueryHandler::handleQuery() {
     results = eventHandler(25 /* ms for heartbeats */, "alive");
   } else if (query_.type == "uptime_sec") {
     results = eventHandler(1000, "minion_uptime");
+  } else if (query_.type == "analyzer_table") {
+    results = analyzerTable(30);
   } else {
     results = transform();
   }
   auto endTime = (int64_t)duration_cast<milliseconds>(
         system_clock::now().time_since_epoch()).count();
   LOG(INFO) << "Query completed. "
-            << "Fetch: " << (fetchTime - startTime) << "ms, "
+            << "Query type :" << query_.type
+            << " Fetch: " << (fetchTime - startTime) << "ms, "
             << "Column names: " << (columnNamesTime - fetchTime) << "ms, "
             << "Event/Transform: " << (endTime - columnNamesTime) << "ms, "
             << "Total: " << (endTime - startTime) << "ms.";
