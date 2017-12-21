@@ -15,7 +15,9 @@ set(
     THRIFT_FILES
     beringei_data.thrift
     beringei_grafana.thrift
+    beringei_query.thrift
     beringei.thrift
+    Topology.thrift
 )
 
 set(
@@ -47,10 +49,26 @@ set(
     ${CMAKE_CURRENT_SOURCE_DIR}/gen-cpp2/beringei_grafana_types.h
     ${CMAKE_CURRENT_SOURCE_DIR}/gen-cpp2/beringei_grafana_types.tcc
     ${CMAKE_CURRENT_SOURCE_DIR}/gen-cpp2/beringei_grafana_types_custom_protocol.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/gen-cpp2/beringei_query_constants.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/gen-cpp2/beringei_query_constants.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/gen-cpp2/beringei_query_data.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/gen-cpp2/beringei_query_data.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/gen-cpp2/beringei_query_types.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/gen-cpp2/beringei_query_types.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/gen-cpp2/beringei_query_types.tcc
+    ${CMAKE_CURRENT_SOURCE_DIR}/gen-cpp2/beringei_query_types_custom_protocol.h
     ${CMAKE_CURRENT_SOURCE_DIR}/gen-cpp2/beringei_types.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/gen-cpp2/beringei_types.h
     ${CMAKE_CURRENT_SOURCE_DIR}/gen-cpp2/beringei_types.tcc
     ${CMAKE_CURRENT_SOURCE_DIR}/gen-cpp2/beringei_types_custom_protocol.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/gen-cpp2/Topology_constants.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/gen-cpp2/Topology_constants.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/gen-cpp2/Topology_data.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/gen-cpp2/Topology_data.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/gen-cpp2/Topology_types.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/gen-cpp2/Topology_types.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/gen-cpp2/Topology_types.tcc
+    ${CMAKE_CURRENT_SOURCE_DIR}/gen-cpp2/Topology_types_custom_protocol.h
 )
 
 add_custom_command(
