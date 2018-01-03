@@ -70,7 +70,7 @@ class QueryHandler : public proxygen::RequestHandler {
   folly::dynamic makeEvent(int64_t startIndex, int64_t endIndex);
   std::string getTimeStr(time_t timeSec);
   double calculateAverage(double *timeSeries, int keyIndex,
-      int timeBucketCount, int numValidSamples);
+      int timeBucketCount, int minIdx, int maxIdx);
 
   std::shared_ptr<BeringeiConfigurationAdapterIf> configurationAdapter_;
   std::shared_ptr<BeringeiClient> beringeiClient_;
