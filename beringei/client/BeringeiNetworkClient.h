@@ -14,8 +14,8 @@
 #include <unordered_set>
 #include <vector>
 
-#include <folly/RWSpinLock.h>
 #include <folly/io/async/EventBaseManager.h>
+#include <folly/synchronization/RWSpinLock.h>
 #include "beringei/client/BeringeiConfigurationAdapterIf.h"
 #include "beringei/if/gen-cpp2/BeringeiService.h"
 

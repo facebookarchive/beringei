@@ -22,7 +22,7 @@
 #include "PersistentKeyList.h"
 #include "Timer.h"
 
-#include <folly/RWSpinLock.h>
+#include <folly/synchronization/RWSpinLock.h>
 
 namespace facebook {
 namespace gorilla {

@@ -20,7 +20,7 @@
 #include "DataBlock.h"
 #include "DataBlockReader.h"
 
-#include <folly/RWSpinLock.h>
+#include <folly/synchronization/RWSpinLock.h>
 
 namespace facebook {
 namespace gorilla {
