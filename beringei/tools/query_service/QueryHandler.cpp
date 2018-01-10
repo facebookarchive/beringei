@@ -185,7 +185,6 @@ folly::dynamic QueryHandler::eventHandler(int dataPointIncrementMs,
     keyMapIndex[std::to_string(keyId)] = keyIndex;
     keyIndex++;
   }
-  auto& keyId = query_.key_ids;
   for (const auto& keyTimeSeries : beringeiTimeSeries_) {
     const std::string& keyName = keyTimeSeries.first.key;
     keyIndex = keyMapIndex[keyName];
@@ -207,11 +206,11 @@ folly::dynamic QueryHandler::eventHandler(int dataPointIncrementMs,
       double timeVal = timeSeries[keyIndex * timeBucketCount + timeIndex];
       double prevVal = timeIndex > 0 ? timeSeries[keyIndex * timeBucketCount + timeIndex - 1] : 0;
       if (timeIndex > 0 && prevVal >= 0 && timeVal >= 0) {
-        VLOG(3) << "VERBOSE: timeSeries[" << keyIndex << "][" << timeIndex
+        VLOG(2) << "VERBOSE: timeSeries[" << keyIndex << "][" << timeIndex
                 << "] = " << timeVal << " | Diff: " << (timeVal - prevVal)
                 << " / " << ((timeVal - prevVal) / 30.0);;
       } else {
-        VLOG(3) << "VERBOSE: timeSeries[" << keyIndex << "][" << timeIndex
+        VLOG(2) << "VERBOSE: timeSeries[" << keyIndex << "][" << timeIndex
                 << "] = " << timeVal;
       }
       if (timeVal == 0) {
@@ -399,12 +398,6 @@ folly::dynamic QueryHandler::transform() {
             std::min(aggSeries_["min"][timeBucketId], min);
           aggSeries_["max"][timeBucketId] =
             std::max(aggSeries_["max"][timeBucketId], max);
-
-          if (aggSeries_["max"][timeBucketId] > 200) {
-               VLOG(2) << "CSM ERROR!!: aggSeries_[max][" << timeBucketId << "]:" << aggSeries_["max"][timeBucketId]
-                       << "sum " << sum << " timeSeries[i * timeBucketCount + startBucketId]:" << timeSeries[i * timeBucketCount + startBucketId]
-                       << " timeSeries[i * timeBucketCount + endBucketId + 1]:" << timeSeries[i * timeBucketCount + endBucketId + 1];
-          }
         }
       } else if (query_.agg_type == "count") {
         double countSum = std::accumulate(&timeSeriesCounts[startBucketId],
@@ -487,9 +480,6 @@ folly::dynamic QueryHandler::transform() {
       columns.push_back(aggSerie.first);
       for (int i = 0; i < condensedBucketCount; i++) {
         datapoints[i].push_back(aggSerie.second[i]);
-        if (aggSerie.second[i] > 200) {
-             VLOG(2) << "CSM ERROR!!! > 200";
-        }
       }
     }
     columns.push_back("avg");
