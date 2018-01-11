@@ -511,14 +511,23 @@ folly::dynamic QueryHandler::transform() {
 #define LINK_A 0
 #define LINK_Z 1
 
-double QueryHandler::calculateAverage(double *timeSeries, int keyIndex, int timeBucketCount, int minIdx, int maxIdx) {
-  double sum = std::accumulate(&timeSeries[keyIndex * timeBucketCount + minIdx],
-                               &timeSeries[keyIndex * timeBucketCount + maxIdx + 1],
-                               0.0);
+double QueryHandler::calculateAverage(double *timeSeries, bool *valid, int timeSeriesStartIndex, int minIdx, int maxIdx, bool mcsflag) {
+  double numValidSamples = 0;
+  double accsum = 0;
   double avg = INVALID_VALUE;
-  double numValidSamples = maxIdx - minIdx + 1;
+  for (int timeindex = minIdx; timeindex <= maxIdx; timeindex++) {
+    if (valid[timeSeriesStartIndex + timeindex]) {
+      // don't count MCS = 0
+      if (mcsflag && timeSeries[timeSeriesStartIndex + timeindex] == 0) {
+        continue;
+      }
+      accsum += timeSeries[timeSeriesStartIndex + timeindex];
+      numValidSamples = numValidSamples + 1;
+    }
+  }
+
   if (numValidSamples > 0) {
-     avg = sum / numValidSamples;
+     avg = accsum / numValidSamples;
   }
   return avg;
 }
@@ -585,7 +594,6 @@ folly::dynamic QueryHandler::analyzerTable(int beringeiTimeWindowS) {
   // valid time bucket index
   int minValidTimeBucketId[numlinks][2] = {};
   int maxValidTimeBucketId[numlinks][2] = {};
-  int numValidSamples[numKeysQueried] = {}; //TODO(csm) not used?
   // numFlaps and upTime should be the same in both directions except
   // for missing data
   int numFlaps[numlinks][2] = {};
@@ -646,7 +654,6 @@ folly::dynamic QueryHandler::analyzerTable(int beringeiTimeWindowS) {
           upTimeSec[linknum][link] = (timeBucketId - minValidTimeBucketId[linknum][link]) * beringeiTimeWindowS;
           maxValidTimeBucketId[linknum][link] = timeBucketId;
       }
-      numValidSamples[keyIndex]++;
       prevValue = timePair.value;
     }
   }
@@ -692,36 +699,42 @@ folly::dynamic QueryHandler::analyzerTable(int beringeiTimeWindowS) {
     }
 
     if (upTimeSec[linknum][link] > MIN_UPTIME_FOR_CALC) {
-      if (!valid[keyIndex * timeBucketCount + minValidTimeBucketId[linknum][link]] || !valid[keyIndex * timeBucketCount + maxValidTimeBucketId[linknum][link]]) {
-        // we assume that the start/stop times for heartbeat matches the
-        // start/stop times for other parameters
-        // this should never happen
-        VLOG(1) << "AT: ERROR: min/max times are not valid:" << displayName << a_or_z;
-        avgSnr[linknum][link] = BUG_FOUND;
-        continue;
-      }
+      bool minMaxTimesValid = valid[keyIndex * timeBucketCount + minValidTimeBucketId[linknum][link]] && valid[keyIndex * timeBucketCount + maxValidTimeBucketId[linknum][link]];
+
       if (key.find("txok") != std::string::npos) {
-        diffTxOk[linknum][link] = timeSeries[keyIndex * timeBucketCount + maxValidTimeBucketId[linknum][link]] - timeSeries[keyIndex * timeBucketCount + minValidTimeBucketId[linknum][link]];
+        if (minMaxTimesValid) {
+          diffTxOk[linknum][link] = timeSeries[keyIndex * timeBucketCount + maxValidTimeBucketId[linknum][link]] - timeSeries[keyIndex * timeBucketCount + minValidTimeBucketId[linknum][link]];
+        }
+        else {
+          VLOG(1) << "AT ERROR: min/max times not valid for diffTxOk";
+          diffTxOk[linknum][link] = BUG_FOUND;
+        }
         if (diffTxOk[linknum][link] < 0) {
-             VLOG(1) << "AT: ERROR: diffTxOk:" << diffTxOk[linknum][link] << " displayName:" << displayName << " timeSeriesEnd:" << timeSeries[keyIndex * timeBucketCount + maxValidTimeBucketId[linknum][link]] << " timeSeriesBegin:" << timeSeries[keyIndex * timeBucketCount + minValidTimeBucketId[linknum][link]];
-             VLOG(1) << "      maxValidTimeBucketId:" << maxValidTimeBucketId[linknum][link] << " minValidTimeBucketId:" << minValidTimeBucketId[linknum][link] << " keyIndex:" << keyIndex;
+             VLOG(1) << "AT ERROR: diffTxOk < 0";
+             diffTxOk[linknum][link] = BUG_FOUND;
         }
       }
       if (key.find("txfail") != std::string::npos) {
-        diffTxFail[linknum][link] = timeSeries[keyIndex * timeBucketCount + maxValidTimeBucketId[linknum][link]] - timeSeries[keyIndex * timeBucketCount + minValidTimeBucketId[linknum][link]];
+        if (minMaxTimesValid) {
+          diffTxFail[linknum][link] = timeSeries[keyIndex * timeBucketCount + maxValidTimeBucketId[linknum][link]] - timeSeries[keyIndex * timeBucketCount + minValidTimeBucketId[linknum][link]];
+        }
+        else {
+          VLOG(1) << "AT ERROR: min/max times not valid for diffTxFail";
+          diffTxFail[linknum][link] = BUG_FOUND;
+        }
         if (diffTxFail[linknum][link] < 0) {
-             VLOG(1) << "AT: ERROR: diffTxFail:" << diffTxFail[linknum][link] << " displayName:" << displayName << " timeSeriesEnd:" << timeSeries[keyIndex * timeBucketCount + maxValidTimeBucketId[linknum][link]] << " timeSeriesBegin:" <<timeSeries[keyIndex * timeBucketCount + minValidTimeBucketId[linknum][link]];
-             VLOG(1) << "      maxValidTimeBucketId:" << maxValidTimeBucketId[linknum][link] << " minValidTimeBucketId:" << minValidTimeBucketId[linknum][link] << " keyIndex:" << keyIndex;
+             VLOG(1) << "AT ERROR: diffTxFail < 0" ;
+             diffTxFail[linknum][link] = BUG_FOUND;
         }
       }
       if (key.find("ssnrest") != std::string::npos) {
-        avgSnr[linknum][link] = calculateAverage(timeSeries, keyIndex, timeBucketCount, minValidTimeBucketId[linknum][link], maxValidTimeBucketId[linknum][link]);
+        avgSnr[linknum][link] = calculateAverage(timeSeries, valid, keyIndex*timeBucketCount, minValidTimeBucketId[linknum][link], maxValidTimeBucketId[linknum][link], false);
       }
       if (key.find("mcs") != std::string::npos) {
-        avgMcs[linknum][link] = calculateAverage(timeSeries, keyIndex, timeBucketCount, minValidTimeBucketId[linknum][link], maxValidTimeBucketId[linknum][link]);
+        avgMcs[linknum][link] = calculateAverage(timeSeries, valid, keyIndex*timeBucketCount, minValidTimeBucketId[linknum][link], maxValidTimeBucketId[linknum][link], true);
       }
       if (key.find("txpowerindex") != std::string::npos) {
-        avgTxPower[linknum][link] = calculateAverage(timeSeries, keyIndex, timeBucketCount, minValidTimeBucketId[linknum][link], maxValidTimeBucketId[linknum][link]);
+        avgTxPower[linknum][link] = calculateAverage(timeSeries, valid, keyIndex*timeBucketCount, minValidTimeBucketId[linknum][link], maxValidTimeBucketId[linknum][link], false);
       }
     }
   }
@@ -735,7 +748,10 @@ folly::dynamic QueryHandler::analyzerTable(int beringeiTimeWindowS) {
       double avgPer = INVALID_VALUE;
       double dok = diffTxOk[linknum][link];
       double dfail = diffTxFail[linknum][link];
-      if (dfail != INVALID_VALUE && dok != INVALID_VALUE && (dfail + dok > 0)) {
+      if (dfail == BUG_FOUND || dok == BUG_FOUND) {
+        avgPer = BUG_FOUND;
+      }
+      else if (dfail != INVALID_VALUE && dok != INVALID_VALUE && (dfail + dok > 0)) {
         avgPer = dfail / (dfail + dok);
       }
 
