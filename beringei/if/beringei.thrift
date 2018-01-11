@@ -33,7 +33,7 @@ service BeringeiService {
    * blacklisted items were filtered out or that's the last batch.
    */
   beringei_data.GetShardDataBucketResult getShardDataBucket(
-      1: i64 begin, 2: i64 end, 3: i64 shardId, 4: i32 offset, 5: i32 limit),
+      1: i64 begin1, 2: i64 end1, 3: i64 shardId, 4: i32 offset, 5: i32 limit),
 
   /**
    * Get all data for a shard between two timestamps.
