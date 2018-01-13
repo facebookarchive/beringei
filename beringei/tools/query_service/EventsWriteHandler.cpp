@@ -58,15 +58,14 @@ int64_t EventsWriteHandler::getTimestamp(int64_t timeInUsec) {
 
 void EventsWriteHandler::writeData(query::EventsWriteRequest request) {
   std::unordered_map<std::string, query::MySqlNodeData> unknownNodes;
-  std::unordered_map<int64_t, std::unordered_set<std::string>>
-      missingEventCategories;
+  std::unordered_map<int64_t, std::unordered_set<std::string> >
+  missingEventCategories;
   std::vector<query::MySqlEventData> eventsRows;
 
   auto startTime = (int64_t)duration_cast<milliseconds>(
-                       system_clock::now().time_since_epoch())
-                       .count();
+      system_clock::now().time_since_epoch()).count();
 
-  for (const auto& agent : request.agents) {
+  for (const auto &agent : request.agents) {
     auto nodeId = mySqlClient_->getNodeId(agent.mac);
     if (!nodeId) {
       query::MySqlNodeData newNode;
@@ -79,7 +78,7 @@ void EventsWriteHandler::writeData(query::EventsWriteRequest request) {
       continue;
     }
 
-    for (const auto& event : agent.events) {
+    for (const auto &event : agent.events) {
       auto eventCategoryId =
           mySqlClient_->getEventCategoryId(*nodeId, event.category);
       // verify node/category combo exists
@@ -87,7 +86,8 @@ void EventsWriteHandler::writeData(query::EventsWriteRequest request) {
         // insert row for beringei
         query::MySqlEventData eventsRow;
         eventsRow.sample = event.sample;
-        eventsRow.timestamp = getTimestamp(event.ts);;
+        eventsRow.timestamp = getTimestamp(event.ts);
+        ;
         eventsRow.category_id = *eventCategoryId;
         eventsRows.push_back(eventsRow);
       } else {
@@ -102,14 +102,14 @@ void EventsWriteHandler::writeData(query::EventsWriteRequest request) {
 
   if (eventsRows.size()) {
     folly::EventBase eb;
-    eb.runInLoop(
-        [this, &eventsRows]() mutable { mySqlClient_->addEvents(eventsRows); });
+    eb.runInLoop([this, &eventsRows]() mutable {
+      mySqlClient_->addEvents(eventsRows);
+    });
     std::thread tEb([&eb]() { eb.loop(); });
     tEb.join();
 
     auto endTime = (int64_t)duration_cast<milliseconds>(
-                       system_clock::now().time_since_epoch())
-                       .count();
+        system_clock::now().time_since_epoch()).count();
     LOG(INFO) << "Writing events complete. "
               << "Total: " << (endTime - startTime) << "ms.";
   } else {
@@ -121,8 +121,10 @@ void EventsWriteHandler::onEOM() noexcept {
   auto body = body_->moveToFbString();
   query::EventsWriteRequest request;
   try {
-    request = SimpleJSONSerializer::deserialize<query::EventsWriteRequest>(body);
-  } catch (const std::exception&) {
+    request =
+        SimpleJSONSerializer::deserialize<query::EventsWriteRequest>(body);
+  }
+  catch (const std::exception &) {
     LOG(INFO) << "Error deserializing events_writer request";
     ResponseBuilder(downstream_)
         .status(500, "OK")
@@ -137,7 +139,8 @@ void EventsWriteHandler::onEOM() noexcept {
 
   try {
     writeData(request);
-  } catch (const std::exception& ex) {
+  }
+  catch (const std::exception &ex) {
     LOG(ERROR) << "Unable to handle events_writer request: " << ex.what();
     ResponseBuilder(downstream_)
         .status(500, "OK")
@@ -155,9 +158,7 @@ void EventsWriteHandler::onEOM() noexcept {
 
 void EventsWriteHandler::onUpgrade(UpgradeProtocol /* unused */) noexcept {}
 
-void EventsWriteHandler::requestComplete() noexcept {
-  delete this;
-}
+void EventsWriteHandler::requestComplete() noexcept { delete this; }
 
 void EventsWriteHandler::onError(ProxygenError /* unused */) noexcept {
   LOG(ERROR) << "Proxygen reported error";

@@ -60,8 +60,7 @@ void AlertsWriteHandler::writeData(query::AlertsWriteRequest request) {
   std::unordered_map<std::string, query::MySqlNodeData> unknownNodes;
 
   auto startTime = (int64_t)duration_cast<milliseconds>(
-                       system_clock::now().time_since_epoch())
-                       .count();
+      system_clock::now().time_since_epoch()).count();
 
   auto nodeId = mySqlClient_->getNodeId(request.node_mac);
   if (!nodeId) {
@@ -93,8 +92,7 @@ void AlertsWriteHandler::writeData(query::AlertsWriteRequest request) {
   tEb.join();
 
   auto endTime = (int64_t)duration_cast<milliseconds>(
-                     system_clock::now().time_since_epoch())
-                     .count();
+      system_clock::now().time_since_epoch()).count();
   LOG(INFO) << "Writing alerts complete. "
             << "Total: " << (endTime - startTime) << "ms.";
 }
@@ -103,8 +101,10 @@ void AlertsWriteHandler::onEOM() noexcept {
   auto body = body_->moveToFbString();
   query::AlertsWriteRequest request;
   try {
-    request = SimpleJSONSerializer::deserialize<query::AlertsWriteRequest>(body);
-  } catch (const std::exception&) {
+    request =
+        SimpleJSONSerializer::deserialize<query::AlertsWriteRequest>(body);
+  }
+  catch (const std::exception &) {
     LOG(INFO) << "Error deserializing alerts_writer request";
     ResponseBuilder(downstream_)
         .status(500, "OK")
@@ -118,7 +118,8 @@ void AlertsWriteHandler::onEOM() noexcept {
 
   try {
     writeData(request);
-  } catch (const std::exception& ex) {
+  }
+  catch (const std::exception &ex) {
     LOG(ERROR) << "Unable to handle alerts_writer request: " << ex.what();
     ResponseBuilder(downstream_)
         .status(500, "OK")
@@ -136,9 +137,7 @@ void AlertsWriteHandler::onEOM() noexcept {
 
 void AlertsWriteHandler::onUpgrade(UpgradeProtocol /* unused */) noexcept {}
 
-void AlertsWriteHandler::requestComplete() noexcept {
-  delete this;
-}
+void AlertsWriteHandler::requestComplete() noexcept { delete this; }
 
 void AlertsWriteHandler::onError(ProxygenError /* unused */) noexcept {
   LOG(ERROR) << "Proxygen reported error";

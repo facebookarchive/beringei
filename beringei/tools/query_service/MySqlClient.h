@@ -27,12 +27,14 @@
 namespace facebook {
 namespace gorilla {
 
-typedef std::unordered_map<std::string, query::MySqlNodeData> MacToNodeMap;
-typedef std::unordered_map<std::string, query::MySqlNodeData> NameToNodeMap;
-typedef std::unordered_map<int64_t, std::unordered_map<std::string, int64_t>>
-    NodeKeyMap;
-typedef std::unordered_map<int64_t, std::unordered_map<std::string, int64_t>>
-    NodeCategoryMap;
+typedef std::unordered_map<std::string, std::shared_ptr<query::MySqlNodeData> >
+MacToNodeMap;
+typedef std::unordered_map<std::string, std::shared_ptr<query::MySqlNodeData> >
+NameToNodeMap;
+typedef std::unordered_map<int64_t, std::unordered_map<std::string, int64_t> >
+NodeKeyMap;
+typedef std::unordered_map<int64_t, std::unordered_map<std::string, int64_t> >
+NodeCategoryMap;
 
 class MySqlClient {
  public:
@@ -40,13 +42,15 @@ class MySqlClient {
 
   void refreshAll() noexcept;
 
-  std::vector<query::MySqlNodeData> getNodes();
+  std::vector<std::shared_ptr<query::MySqlNodeData> > getNodes();
 
-  std::vector<query::MySqlNodeData> getNodesWithKeys();
+  std::vector<std::shared_ptr<query::MySqlNodeData> > getNodesWithKeys();
 
-  std::vector<query::MySqlNodeData> getNodes(const std::unordered_set<std::string>& nodeMacs);
+  std::vector<std::shared_ptr<query::MySqlNodeData> >
+  getNodes(const std::unordered_set<std::string> &nodeMacs);
 
-  std::vector<query::MySqlNodeData> getNodesWithKeys(const std::unordered_set<std::string>& nodeMacs);
+  std::vector<std::shared_ptr<query::MySqlNodeData> >
+  getNodesWithKeys(const std::unordered_set<std::string> &nodeMacs);
 
   void refreshNodes() noexcept;
 
@@ -57,31 +61,30 @@ class MySqlClient {
   void addNodes(
       std::unordered_map<std::string, query::MySqlNodeData> newNodes) noexcept;
 
-  void addStatKeys(std::unordered_map<int64_t, std::unordered_set<std::string>>
+  void addStatKeys(std::unordered_map<int64_t, std::unordered_set<std::string> >
                        nodeKeys) noexcept;
 
-  void addEventCategories(
-      std::unordered_map<int64_t, std::unordered_set<std::string>>
-          eventCategories) noexcept;
+  void addEventCategories(std::unordered_map<
+      int64_t, std::unordered_set<std::string> > eventCategories) noexcept;
 
-  folly::Optional<int64_t> getNodeId(const std::string& macAddr) const;
+  folly::Optional<int64_t> getNodeId(const std::string &macAddr) const;
 
-  folly::Optional<int64_t> getKeyId(
-      const int64_t nodeId,
-      const std::string& keyName) const;
+  folly::Optional<int64_t> getKeyId(const int64_t nodeId,
+                                    const std::string &keyName) const;
 
-  folly::Optional<int64_t> getEventCategoryId(
-      const int64_t nodeId,
-      const std::string& category) const;
+  folly::Optional<int64_t>
+  getEventCategoryId(const int64_t nodeId, const std::string &category) const;
 
   void addEvents(std::vector<query::MySqlEventData> events) noexcept;
   void addAlert(query::MySqlAlertData alert) noexcept;
 
  private:
-  sql::Driver* driver_;
+  sql::Driver *driver_;
   std::unique_ptr<sql::Connection> connection_;
-  std::vector<query::MySqlNodeData> nodes_{};
+  std::vector<std::shared_ptr<query::MySqlNodeData> > nodes_{};
   MacToNodeMap macAddrToNode_{};
+  std::unordered_map<int64_t, std::shared_ptr<query::MySqlNodeData> >
+  nodeIdToNode_{};
   NodeKeyMap nodeKeyIds_{};
   NodeCategoryMap nodeCategoryIds_{};
 };

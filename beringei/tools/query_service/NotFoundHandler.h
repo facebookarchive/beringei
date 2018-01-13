@@ -18,8 +18,8 @@ namespace gorilla {
 // Handler that returns 404 for apis that are not implemented
 class NotFoundHandler : public proxygen::RequestHandler {
  public:
-  void onRequest(
-      std::unique_ptr<proxygen::HTTPMessage> headers) noexcept override;
+  void
+  onRequest(std::unique_ptr<proxygen::HTTPMessage> headers) noexcept override;
 
   void onBody(std::unique_ptr<folly::IOBuf> body) noexcept override;
 

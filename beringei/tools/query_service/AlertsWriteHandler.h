@@ -26,8 +26,8 @@ class AlertsWriteHandler : public proxygen::RequestHandler {
  public:
   explicit AlertsWriteHandler(std::shared_ptr<MySqlClient> mySqlClient);
 
-  void onRequest(
-      std::unique_ptr<proxygen::HTTPMessage> headers) noexcept override;
+  void
+  onRequest(std::unique_ptr<proxygen::HTTPMessage> headers) noexcept override;
 
   void onBody(std::unique_ptr<folly::IOBuf> body) noexcept override;
 

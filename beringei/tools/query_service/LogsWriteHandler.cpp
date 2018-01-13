@@ -51,10 +51,9 @@ void LogsWriteHandler::onBody(std::unique_ptr<folly::IOBuf> body) noexcept {
 
 void LogsWriteHandler::writeData(query::LogsWriteRequest request) {
   auto startTime = (int64_t)duration_cast<milliseconds>(
-                       system_clock::now().time_since_epoch())
-                       .count();
+      system_clock::now().time_since_epoch()).count();
   time_t curr_time;
-  tm* curr_tm;
+  tm *curr_tm;
   char date_string[100];
   time(&curr_time);
   curr_tm = localtime(&curr_time);
@@ -63,7 +62,7 @@ void LogsWriteHandler::writeData(query::LogsWriteRequest request) {
   strftime(date_string, 50, "%Y-%m-%d-%H", curr_tm);
   std::string day(date_string);
 
-  for (const auto& agent : request.agents) {
+  for (const auto &agent : request.agents) {
     std::string folder = FLAGS_data_folder_path + agent.mac + '/';
     errno = 0;
     const int dir_err =
@@ -72,7 +71,7 @@ void LogsWriteHandler::writeData(query::LogsWriteRequest request) {
       LOG(ERROR) << "Error creating directory " << folder;
       continue;
     }
-    for (const auto& logMsg : agent.logs) {
+    for (const auto &logMsg : agent.logs) {
       std::string fileName = folder + day + '_' + logMsg.file + ".log";
       std::ofstream outfile;
       outfile.open(fileName, std::ios_base::app);
@@ -84,8 +83,7 @@ void LogsWriteHandler::writeData(query::LogsWriteRequest request) {
     }
   }
   auto endTime = (int64_t)duration_cast<milliseconds>(
-                     system_clock::now().time_since_epoch())
-                     .count();
+      system_clock::now().time_since_epoch()).count();
   LOG(INFO) << "Writing logs complete. "
             << "Total: " << (endTime - startTime) << "ms.";
 }
@@ -95,7 +93,8 @@ void LogsWriteHandler::onEOM() noexcept {
   query::LogsWriteRequest request;
   try {
     request = SimpleJSONSerializer::deserialize<query::LogsWriteRequest>(body);
-  } catch (const std::exception&) {
+  }
+  catch (const std::exception &) {
     LOG(INFO) << "Error deserializing logs_writer request";
     ResponseBuilder(downstream_)
         .status(500, "OK")
@@ -110,7 +109,8 @@ void LogsWriteHandler::onEOM() noexcept {
 
   try {
     writeData(request);
-  } catch (const std::exception& ex) {
+  }
+  catch (const std::exception &ex) {
     LOG(ERROR) << "Unable to handle logs_writer request: " << ex.what();
     ResponseBuilder(downstream_)
         .status(500, "OK")
@@ -128,9 +128,7 @@ void LogsWriteHandler::onEOM() noexcept {
 
 void LogsWriteHandler::onUpgrade(UpgradeProtocol /* unused */) noexcept {}
 
-void LogsWriteHandler::requestComplete() noexcept {
-  delete this;
-}
+void LogsWriteHandler::requestComplete() noexcept { delete this; }
 
 void LogsWriteHandler::onError(ProxygenError /* unused */) noexcept {
   LOG(ERROR) << "Proxygen reported error";

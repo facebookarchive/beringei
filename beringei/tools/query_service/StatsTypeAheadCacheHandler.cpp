@@ -9,7 +9,7 @@
 
 #include "mysql_connection.h"
 #include "mysql_driver.h"
-#include "StatsTypeAheadHandler.h"
+#include "StatsTypeAheadCacheHandler.h"
 
 #include <algorithm>
 #include <cppconn/driver.h>
@@ -35,19 +35,19 @@ using namespace proxygen;
 namespace facebook {
 namespace gorilla {
 
-StatsTypeAheadHandler::StatsTypeAheadHandler(
+StatsTypeAheadCacheHandler::StatsTypeAheadCacheHandler(
     std::shared_ptr<MySqlClient> mySqlClient,
     std::shared_ptr<TACacheMap> typeaheadCache)
     : RequestHandler(), mySqlClient_(mySqlClient),
       typeaheadCache_(typeaheadCache) {}
 
-void StatsTypeAheadHandler::onRequest(
+void StatsTypeAheadCacheHandler::onRequest(
     std::unique_ptr<HTTPMessage> /* unused */) noexcept {
   // nothing to do
 }
 
-void
-StatsTypeAheadHandler::onBody(std::unique_ptr<folly::IOBuf> body) noexcept {
+void StatsTypeAheadCacheHandler::onBody(
+    std::unique_ptr<folly::IOBuf> body) noexcept {
   if (body_) {
     body_->prependChain(move(body));
   } else {
@@ -55,14 +55,15 @@ StatsTypeAheadHandler::onBody(std::unique_ptr<folly::IOBuf> body) noexcept {
   }
 }
 
-void StatsTypeAheadHandler::onEOM() noexcept {
+void StatsTypeAheadCacheHandler::onEOM() noexcept {
   auto body = body_->moveToFbString();
-  query::TypeAheadRequest request;
+  query::Topology request;
   try {
-    request = SimpleJSONSerializer::deserialize<query::TypeAheadRequest>(body);
+    request = SimpleJSONSerializer::deserialize<query::Topology>(body);
   }
   catch (const std::exception &ex) {
     LOG(INFO) << "Error deserializing stats type ahead request";
+    LOG(INFO) << "JSON: " << body;
     ResponseBuilder(downstream_)
         .status(500, "OK")
         .header("Content-Type", "application/json")
@@ -70,52 +71,41 @@ void StatsTypeAheadHandler::onEOM() noexcept {
         .sendWithEOM();
     return;
   }
-  LOG(INFO) << "Stats type ahead request for \"" << request.input
-            << "\" on \"" << request.topologyName << "\"";
-  // check for cache client
-  auto taIt = typeaheadCache_->find(request.topologyName);
-  if (taIt == typeaheadCache_->end()) {
-    LOG(ERROR) << "No type-ahead cache for \"" << request.topologyName << "\"";
+  LOG(INFO) << "Stats type-ahead cache request from \"" << request.name << "\"";
+
+  try {
+    // insert cache handler
+    LOG(INFO) << "Got topology: " << request.name;
+    StatsTypeAheadCache taCache(mySqlClient_);
+    taCache.fetchMetricNames(request);
+    LOG(INFO) << "Inserting cache obj";
+    typeaheadCache_->insert(std::make_pair(request.name, taCache));
+    taCache.searchMetrics("snr");
+  }
+  catch (const std::exception &ex) {
+    LOG(ERROR) << "Unable to handle stats type-ahead cache request: "
+               << ex.what();
     ResponseBuilder(downstream_)
         .status(500, "OK")
         .header("Content-Type", "application/json")
-        .body("No type-ahead cache found")
+        .body("Failed handling stats_type_ahead request")
         .sendWithEOM();
     return;
   }
-  auto taCache = taIt->second;
-  auto retMetrics = taCache.searchMetrics(request.input);
-  folly::dynamic orderedMetricList = folly::dynamic::array;
-  for (const auto& metricList : retMetrics) {
-    folly::dynamic keyList = folly::dynamic::array;
-    for (const auto& key : metricList) {
-      LOG(INFO) << "\t\tName: " << key.displayName << ", key: " << key.key
-                << ", node: " << key.nodeName;
-      keyList.push_back(folly::dynamic::object
-        ("name", key.displayName)
-        ("key", key.key)
-        ("id", key.keyId)
-        ("node", key.nodeName)
-        ("site", key.siteName)
-        ("mac", key.node)
-      );
-    }
-    // add to json
-    orderedMetricList.push_back(keyList);
-  }
-  // build type-ahead list
+  folly::dynamic dummyResponse = folly::dynamic::object;
   ResponseBuilder(downstream_)
       .status(200, "OK")
       .header("Content-Type", "application/json")
-      .body(folly::toJson(orderedMetricList))
+      .body(folly::toJson(dummyResponse))
       .sendWithEOM();
 }
 
-void StatsTypeAheadHandler::onUpgrade(UpgradeProtocol /* unused */) noexcept {}
+void
+StatsTypeAheadCacheHandler::onUpgrade(UpgradeProtocol /* unused */) noexcept {}
 
-void StatsTypeAheadHandler::requestComplete() noexcept { delete this; }
+void StatsTypeAheadCacheHandler::requestComplete() noexcept { delete this; }
 
-void StatsTypeAheadHandler::onError(ProxygenError /* unused */) noexcept {
+void StatsTypeAheadCacheHandler::onError(ProxygenError /* unused */) noexcept {
   LOG(ERROR) << "Proxygen reported error";
   // In QueryServiceFactory, we created this handler using new.
   // Proxygen does not delete the handler.

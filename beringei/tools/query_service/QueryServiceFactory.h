@@ -9,6 +9,7 @@
 #pragma once
 
 #include "MySqlClient.h"
+#include "StatsTypeAheadCache.h"
 #include "beringei/client/BeringeiClient.h"
 #include "beringei/client/BeringeiConfigurationAdapterIf.h"
 
@@ -27,20 +28,22 @@ class QueryServiceFactory : public proxygen::RequestHandlerFactory {
  public:
   QueryServiceFactory();
 
-  void onServerStart(folly::EventBase* evb) noexcept override;
+  void onServerStart(folly::EventBase *evb) noexcept override;
 
   void onServerStop() noexcept override;
 
-  proxygen::RequestHandler* onRequest(
-      proxygen::RequestHandler*,
-      proxygen::HTTPMessage*) noexcept override;
+  proxygen::RequestHandler *
+  onRequest(proxygen::RequestHandler *,
+            proxygen::HTTPMessage *) noexcept override;
 
  private:
   std::shared_ptr<BeringeiConfigurationAdapterIf> configurationAdapter_;
-  folly::EventBase* eb_;
+  folly::EventBase *eb_;
   std::shared_ptr<MySqlClient> mySqlClient_;
   std::shared_ptr<BeringeiClient> beringeiReadClient_;
   std::shared_ptr<BeringeiClient> beringeiWriteClient_;
+  // topology name -> type-ahead cache
+  std::shared_ptr<TACacheMap> typeaheadCache_;
 };
 }
 } // facebook::gorilla

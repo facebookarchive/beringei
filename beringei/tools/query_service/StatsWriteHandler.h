@@ -31,8 +31,8 @@ class StatsWriteHandler : public proxygen::RequestHandler {
       std::shared_ptr<MySqlClient> mySqlClient,
       std::shared_ptr<BeringeiClient> beringeiClient);
 
-  void onRequest(
-      std::unique_ptr<proxygen::HTTPMessage> headers) noexcept override;
+  void
+  onRequest(std::unique_ptr<proxygen::HTTPMessage> headers) noexcept override;
 
   void onBody(std::unique_ptr<folly::IOBuf> body) noexcept override;
 

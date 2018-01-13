@@ -9,21 +9,29 @@
 
 #pragma once
 
+#include "StatsTypeAheadCache.h"
+
+#include <folly/futures/Future.h>
 #include <folly/Memory.h>
 #include <folly/dynamic.h>
-#include <folly/futures/Future.h>
 #include <proxygen/httpserver/RequestHandler.h>
 
+#include "beringei/client/BeringeiClient.h"
+#include "beringei/client/BeringeiConfigurationAdapterIf.h"
 #include "beringei/if/gen-cpp2/beringei_query_types_custom_protocol.h"
 #include "beringei/if/gen-cpp2/Topology_types_custom_protocol.h"
 
 namespace facebook {
 namespace gorilla {
 
-class LogsWriteHandler : public proxygen::RequestHandler {
- public:
-  explicit LogsWriteHandler();
+typedef std::vector<std::pair<Key, std::vector<TimeValuePair> > > TimeSeries;
 
+class TableQueryHandler : public proxygen::RequestHandler {
+ public:
+  explicit TableQueryHandler(
+      std::shared_ptr<BeringeiConfigurationAdapterIf> configurationAdapter,
+      std::shared_ptr<BeringeiClient> beringeiClient,
+      std::shared_ptr<TACacheMap> typeaheadCache);
   void
   onRequest(std::unique_ptr<proxygen::HTTPMessage> headers) noexcept override;
 
@@ -38,11 +46,10 @@ class LogsWriteHandler : public proxygen::RequestHandler {
   void onError(proxygen::ProxygenError err) noexcept override;
 
  private:
-  void logRequest(query::LogsWriteRequest request);
-
-  void writeData(query::LogsWriteRequest request);
-
+  std::shared_ptr<BeringeiConfigurationAdapterIf> configurationAdapter_;
+  std::shared_ptr<BeringeiClient> beringeiClient_;
   std::unique_ptr<folly::IOBuf> body_;
+  std::shared_ptr<TACacheMap> typeaheadCache_;
 };
 }
 } // facebook::gorilla

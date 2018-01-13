@@ -14,8 +14,11 @@
 #include "LogsWriteHandler.h"
 #include "NotFoundHandler.h"
 #include "QueryHandler.h"
+#include "TableQueryHandler.h"
 #include "StatsWriteHandler.h"
+#include "StatsTypeAheadCache.h"
 #include "StatsTypeAheadHandler.h"
+#include "StatsTypeAheadCacheHandler.h"
 
 #include "beringei/plugins/BeringeiConfigurationAdapter.h"
 
@@ -32,35 +35,43 @@ QueryServiceFactory::QueryServiceFactory() : RequestHandlerFactory() {
   configurationAdapter_ = std::make_shared<BeringeiConfigurationAdapter>();
   mySqlClient_ = std::make_shared<MySqlClient>();
   mySqlClient_->refreshAll();
+  typeaheadCache_ =
+      std::make_shared<std::unordered_map<std::string, StatsTypeAheadCache> >();
   beringeiReadClient_ = std::make_shared<BeringeiClient>(
       configurationAdapter_, 1, BeringeiClient::kNoWriterThreads);
   beringeiWriteClient_ = std::make_shared<BeringeiClient>(
       configurationAdapter_, FLAGS_writer_queue_size, 5);
 }
 
-void QueryServiceFactory::onServerStart(folly::EventBase* evb) noexcept {}
+void QueryServiceFactory::onServerStart(folly::EventBase *evb) noexcept {}
 
 void QueryServiceFactory::onServerStop() noexcept {}
 
-proxygen::RequestHandler* QueryServiceFactory::onRequest(
-    proxygen::RequestHandler* /* unused */,
-    proxygen::HTTPMessage* httpMessage) noexcept {
+proxygen::RequestHandler *
+QueryServiceFactory::onRequest(proxygen::RequestHandler * /* unused */,
+                               proxygen::HTTPMessage *httpMessage) noexcept {
   auto path = httpMessage->getPath();
   LOG(INFO) << "Received a request for path " << path;
 
   if (path == "/stats_writer") {
-    return new StatsWriteHandler(
-        configurationAdapter_, mySqlClient_, beringeiWriteClient_);
+    return new StatsWriteHandler(configurationAdapter_, mySqlClient_,
+                                 beringeiWriteClient_);
   } else if (path == "/query") {
     return new QueryHandler(configurationAdapter_, beringeiReadClient_);
+  } else if (path == "/table_query") {
+    return new TableQueryHandler(configurationAdapter_, beringeiReadClient_, typeaheadCache_);
   } else if (path == "/events_writer") {
     return new EventsWriteHandler(mySqlClient_);
   } else if (path == "/alerts_writer") {
     return new AlertsWriteHandler(mySqlClient_);
   } else if (path == "/logs_writer") {
     return new LogsWriteHandler();
-  } else if (path == "/topology") {
-    return new StatsTypeAheadHandler(mySqlClient_);
+  } else if (path == "/stats_typeahead") {
+    // pass a cache client that stores metric names
+    return new StatsTypeAheadHandler(mySqlClient_, typeaheadCache_);
+  } else if (path == "/stats_typeahead_cache") {
+    // accepts a topology object to refresh the cache
+    return new StatsTypeAheadCacheHandler(mySqlClient_, typeaheadCache_);
   }
 
   // return not found for all other uris

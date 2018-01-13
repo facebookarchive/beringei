@@ -12,9 +12,15 @@ include "beringei/if/Topology.thrift"
 namespace cpp2 facebook.gorilla.query
 namespace py facebook.gorilla.beringei_query
 
+enum KeyUnit {
+  NONE = 0,
+  BPS = 1,
+}
+
 struct KeyData {
   1: i64 keyId,
   2: string key,
+  3: KeyUnit unit,
 
   10: string displayName,
   11: optional string linkName,
@@ -37,6 +43,32 @@ struct Query {
   // period to search (unixtime)
   10: i64 start_ts,
   11: i64 end_ts,
+}
+
+struct TypeAheadRequest {
+  1: string topologyName,
+  2: string input,
+  // TODO - site/node restrictions
+}
+
+struct TableQuery {
+  1: string name,
+  // event, event_sec..?
+  2: string type,
+  // e.g. fw_uptime
+  3: string metric,
+
+  10: i64 start_ts,
+  11: i64 end_ts,
+  // use over start/end if set
+  12: optional i32 min_ago,
+}
+
+struct TableQueryRequest {
+  1: string topologyName,
+  // no distinction between node/link queries yet
+  10: list<TableQuery> nodeQueries,
+  11: list<TableQuery> linkQueries,
 }
 
 struct QueryRequest {
@@ -103,7 +135,7 @@ struct MySqlNodeData {
   3: string mac,
   4: string network,
   5: string site,
-  6: string key,
+  6: map<i64, string> keyList,
 }
 
 struct MySqlEventData {
@@ -138,3 +170,4 @@ struct MySqlAlertData {
   8: string trigger_key,
   9: double trigger_value,
 }
+

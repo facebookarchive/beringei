@@ -10,6 +10,7 @@
 #pragma once
 
 #include "MySqlClient.h"
+#include "StatsTypeAheadCache.h"
 
 #include <folly/Memory.h>
 #include <folly/dynamic.h>
@@ -25,22 +26,15 @@ namespace facebook {
 namespace gorilla {
 
 class StatsTypeAheadHandler : public proxygen::RequestHandler {
- public:
+public:
   explicit StatsTypeAheadHandler(
-      std::shared_ptr<MySqlClient> mySqlClient);
+      std::shared_ptr<MySqlClient> mySqlClient,
+      std::shared_ptr<TACacheMap> typeaheadCache);
 
-  void onRequest(
-      std::unique_ptr<proxygen::HTTPMessage> headers) noexcept override;
+  void
+  onRequest(std::unique_ptr<proxygen::HTTPMessage> headers) noexcept override;
 
   void onBody(std::unique_ptr<folly::IOBuf> body) noexcept override;
-
-  void fetchMetricNames(query::Topology& request);
-
-  folly::dynamic createLinkMetric(query::Node& aNode, query::Node& zNode,
-			     	std::string title, std::string description,
-				std::string keyName, std::string keyPrefix = "tgf");
-
-  folly::dynamic getLinkMetrics(std::string& metricName, query::Node& aNode, query::Node& zNode);
 
   void onEOM() noexcept override;
 
@@ -50,14 +44,10 @@ class StatsTypeAheadHandler : public proxygen::RequestHandler {
 
   void onError(proxygen::ProxygenError err) noexcept override;
 
- private:
-  std::vector<std::string> metricKeyNames_;
-  std::unordered_set<std::string> macNodes_{};
-  std::map<std::string, query::Node> nodesByName_{};
-  folly::dynamic nodeMetrics_;
-  folly::dynamic siteMetrics_;
+private:
   std::shared_ptr<MySqlClient> mySqlClient_;
   std::unique_ptr<folly::IOBuf> body_;
+  std::shared_ptr<TACacheMap> typeaheadCache_;
 };
 }
 } // facebook::gorilla

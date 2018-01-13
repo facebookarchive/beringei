@@ -28,20 +28,18 @@ using folly::SocketAddress;
 using Protocol = HTTPServer::Protocol;
 DEFINE_int32(http_port, 443, "Port to listen on with HTTP protocol");
 DEFINE_string(ip, "::", "IP/Hostname to bind to");
-DEFINE_int32(
-    threads,
-    0,
-    "Number of threads to listen on. Numbers <= 0 "
-    "will use the number of cores on this machine.");
+DEFINE_int32(threads, 0,
+             "Number of threads to listen on. Numbers <= 0 "
+             "will use the number of cores on this machine.");
 
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[]) {
   folly::init(&argc, &argv, true);
   google::InstallFailureSignalHandler();
 
   LOG(INFO) << "Attemping to bind to port " << FLAGS_http_port;
 
   std::vector<HTTPServer::IPConfig> IPs = {
-      {SocketAddress(FLAGS_ip, FLAGS_http_port, true), Protocol::HTTP},
+    { SocketAddress(FLAGS_ip, FLAGS_http_port, true), Protocol::HTTP },
   };
 
   if (FLAGS_threads <= 0) {
@@ -52,7 +50,7 @@ int main(int argc, char* argv[]) {
   HTTPServerOptions options;
   options.threads = static_cast<size_t>(FLAGS_threads);
   options.idleTimeout = std::chrono::milliseconds(60000);
-  options.shutdownOn = {SIGINT, SIGTERM};
+  options.shutdownOn = { SIGINT, SIGTERM };
   options.enableContentCompression = false;
   options.handlerFactories =
       RequestHandlerChain().addThen<QueryServiceFactory>().build();

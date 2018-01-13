@@ -15,10 +15,18 @@ set(BERINGEI_QUERY_SRCS
     QueryServiceFactory.h
     NotFoundHandler.cpp
     NotFoundHandler.h
+    TableQueryHandler.cpp
+    TableQueryHandler.h
     QueryHandler.cpp
     QueryHandler.h
+    BeringeiData.cpp
+    BeringeiData.h
     StatsWriteHandler.cpp
     StatsWriteHandler.h
+    StatsTypeAheadCache.cpp
+    StatsTypeAheadCache.h
+    StatsTypeAheadCacheHandler.cpp
+    StatsTypeAheadCacheHandler.h
     StatsTypeAheadHandler.cpp
     StatsTypeAheadHandler.h
     MySqlClient.cpp
