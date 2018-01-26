@@ -58,7 +58,9 @@ void LogsWriteHandler::writeData(query::LogsWriteRequest request) {
   char date_string[100];
   time(&curr_time);
   curr_tm = localtime(&curr_time);
-  strftime(date_string, 50, "%m-%d-%Y", curr_tm);
+  // Create a log file for each hour so it's easier to rotate logs
+  // Year-Month-Day-Hour
+  strftime(date_string, 50, "%Y-%m-%d-%H", curr_tm);
   std::string day(date_string);
 
   for (const auto& agent : request.agents) {
