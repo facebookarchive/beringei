@@ -1,5 +1,5 @@
 # Pull base image.
-FROM ubuntu:16.10
+FROM ubuntu:17.10
 
 ENV WORKDIR /usr/local/beringei
 ENV RUN_CMD ./beringei/service/beringei_main \
