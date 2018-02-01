@@ -89,8 +89,8 @@ void StatsTypeAheadHandler::onEOM() noexcept {
   for (const auto& metricList : retMetrics) {
     folly::dynamic keyList = folly::dynamic::array;
     for (const auto& key : metricList) {
-      LOG(INFO) << "\t\tName: " << key.displayName << ", key: " << key.key
-                << ", node: " << key.nodeName;
+      VLOG(1) << "\t\tName: " << key.displayName << ", key: " << key.key
+              << ", node: " << key.nodeName;
       keyList.push_back(folly::dynamic::object
         ("name", key.displayName)
         ("key", key.key)

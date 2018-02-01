@@ -45,6 +45,9 @@ BeringeiData::process() {
   folly::dynamic response = folly::dynamic::array();
   for (const auto &query : request_.queries) {
     query_ = query;
+    if (query_.key_ids.empty()) {
+      continue;
+    }
     LOG(INFO) << "Request for " << query_.key_ids.size() << " key ids of "
               << query_.agg_type << " aggregation, for " << query_.min_ago
               << " minutes ago.";

@@ -78,7 +78,7 @@ void TableQueryHandler::onEOM() noexcept {
     ResponseBuilder(downstream_)
         .status(500, "OK")
         .header("Content-Type", "application/json")
-        .body("Topology cache not found")
+        .body("Topology cache not found: " + request.topologyName)
         .sendWithEOM();
     return;
   }
@@ -90,13 +90,13 @@ void TableQueryHandler::onEOM() noexcept {
   std::string lastType;
   int minAgo;
   for (const auto& nodeQuery : request.nodeQueries) {
-    LOG(INFO) << "\tFetching node query metric: " << nodeQuery.metric;
+    VLOG(1) << "\tFetching node query metric: " << nodeQuery.metric;
     // fetch KeyData
     auto keyDataList = taCache.getKeyData(nodeQuery.metric);
     for (auto& keyData : keyDataList) {
-      LOG(INFO) << "\t\tNode: " << keyData.nodeName
-                << ", displayName: " << keyData.displayName
-                << ", keyId: " << keyData.keyId;
+      VLOG(1) << "\t\tNode: " << keyData.nodeName
+              << ", displayName: " << keyData.displayName
+              << ", keyId: " << keyData.keyId;
       keyIdList.push_back(keyData.keyId);
       keyData.displayName = keyData.nodeName;
       keyDataListRenamed.push_back(keyData);

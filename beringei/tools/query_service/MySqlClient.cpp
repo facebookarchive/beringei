@@ -26,11 +26,6 @@ namespace gorilla {
 
 MySqlClient::MySqlClient() {
   try {
-    LOG(INFO) << "--------------------------";
-    LOG(INFO) << "--------------------------";
-    LOG(INFO) << "MYSQLCLIENT: NEW INSTANCE";
-    LOG(INFO) << "--------------------------";
-    LOG(INFO) << "--------------------------";
     driver_ = sql::mysql::get_driver_instance();
     sql::ConnectOptionsMap connProps;
     connProps["hostName"] = FLAGS_mysql_url;
