@@ -36,7 +36,7 @@ MySqlClient::MySqlClient() {
     connection_->setSchema(FLAGS_mysql_database);
   }
   catch (sql::SQLException &e) {
-    LOG(ERROR) << "ERR: " << e.what();
+    LOG(ERROR) << "connect ERR: " << e.what();
     LOG(ERROR) << " (MySQL error code: " << e.getErrorCode();
   }
 }
@@ -105,7 +105,7 @@ void MySqlClient::refreshNodes() noexcept {
     LOG(INFO) << "refreshNodes: Number of nodes: " << nodeIdToNode_.size();
   }
   catch (sql::SQLException &e) {
-    LOG(ERROR) << "ERR: " << e.what();
+    LOG(ERROR) << "refreshNodes ERR: " << e.what();
     LOG(ERROR) << " (MySQL error code: " << e.getErrorCode();
   }
 }
@@ -133,13 +133,14 @@ void MySqlClient::refreshStatKeys() noexcept {
       auto itNode = nodeIdToNode_.find(nodeId);
       if (itNode != nodeIdToNode_.end()) {
         itNode->second->keyList[keyId] = keyName;
-        //        LOG(INFO) << "\tID: " << keyId << ", nodeId: " << nodeId << ",
-        // name: " << keyName << ", size: " << itNode->second->keyList.size();
+        VLOG(3) << "\tID: " << keyId << ", nodeId: " << nodeId
+                << ", keyName: " << keyName
+                << ", size: " << itNode->second->keyList.size();
       }
     }
   }
   catch (sql::SQLException &e) {
-    LOG(ERROR) << "ERR: " << e.what();
+    LOG(ERROR) << "refreshStatKeys ERR: " << e.what();
     LOG(ERROR) << " (MySQL error code: " << e.getErrorCode();
   }
 }
@@ -167,7 +168,7 @@ void MySqlClient::refreshEventCategories() noexcept {
     }
   }
   catch (sql::SQLException &e) {
-    LOG(ERROR) << "ERR: " << e.what();
+    LOG(ERROR) << "refreshEventCategories ERR: " << e.what();
     LOG(ERROR) << " (MySQL error code: " << e.getErrorCode();
   }
 }
@@ -194,7 +195,7 @@ void MySqlClient::addNodes(
     }
   }
   catch (sql::SQLException &e) {
-    LOG(ERROR) << "ERR: " << e.what();
+    LOG(ERROR) << "addNode ERR: " << e.what();
     LOG(ERROR) << " (MySQL error code: " << e.getErrorCode();
   }
 
@@ -223,7 +224,7 @@ void MySqlClient::addStatKeys(std::unordered_map<
     }
   }
   catch (sql::SQLException &e) {
-    LOG(ERROR) << "ERR: " << e.what();
+    LOG(ERROR) << "addStatKey ERR: " << e.what();
     LOG(ERROR) << " (MySQL error code: " << e.getErrorCode();
   }
 
@@ -253,7 +254,7 @@ void MySqlClient::addEventCategories(std::unordered_map<
     }
   }
   catch (sql::SQLException &e) {
-    LOG(ERROR) << "ERR: " << e.what();
+    LOG(ERROR) << "addEventCategories ERR: " << e.what();
     LOG(ERROR) << " (MySQL error code: " << e.getErrorCode();
   }
 
@@ -329,7 +330,7 @@ MySqlClient::addEvents(std::vector<query::MySqlEventData> events) noexcept {
     prep_stmt->execute();
   }
   catch (sql::SQLException &e) {
-    LOG(ERROR) << "ERR: " << e.what();
+    LOG(ERROR) << "addEvents ERR: " << e.what();
     LOG(ERROR) << " (MySQL error code: " << e.getErrorCode();
   }
 }
@@ -357,7 +358,7 @@ void MySqlClient::addAlert(query::MySqlAlertData alert) noexcept {
     prep_stmt->execute();
   }
   catch (sql::SQLException &e) {
-    LOG(ERROR) << "ERR: " << e.what();
+    LOG(ERROR) << "addAlert ERR: " << e.what();
     LOG(ERROR) << " (MySQL error code: " << e.getErrorCode();
   }
 }
