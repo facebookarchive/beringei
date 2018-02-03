@@ -636,7 +636,7 @@ BeringeiGetResult BeringeiClientImpl::get(
     GetDataRequest& request,
     const std::string& serviceOverride) {
   auto eb = BeringeiNetworkClient::getEventBase();
-  return futureGet(request, eb, folly::getCPUExecutor().get(), serviceOverride)
+  return futureGet(request, eb, wangle::getCPUExecutor().get(), serviceOverride)
       .getVia(eb);
 }
 

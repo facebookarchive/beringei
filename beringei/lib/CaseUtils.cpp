@@ -10,7 +10,7 @@
 #include "CaseUtils.h"
 
 #include <folly/String.h>
-#include <folly/hash/SpookyHashV2.h>
+#include <folly/SpookyHashV2.h>
 
 namespace facebook {
 namespace gorilla {
