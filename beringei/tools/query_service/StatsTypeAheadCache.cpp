@@ -127,6 +127,9 @@ void StatsTypeAheadCache::fetchMetricNames(query::Topology &request) {
                        ::tolower);
         if (!nodeMacToKeyList_.count(mac) ||
             !nodeMacToKeyList_[mac].count(keyName)) {
+          LOG(INFO) << "Unable to find metricName for " << aNode.name
+                    << "-" << zNode.name << ", mac: " << mac
+                    << ", key: " << keyName;
           continue;
         }
         auto keyData = nodeMacToKeyList_[mac][keyName];

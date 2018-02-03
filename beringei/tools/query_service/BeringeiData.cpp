@@ -255,6 +255,13 @@ folly::dynamic BeringeiData::eventHandler(int dataPointIncrementMs,
             << ", up count: " << upPoints
             << ", partial seconds: " << partialSeconds
             << ", uptime: " << uptimePerc << "%";
+    auto linkMapIt = linkMap.find(name);
+    if (linkMapIt != linkMap.items().end()) {
+      // replace data if metric is higher on current
+      if (uptimePerc < linkMap[name][metricName].asDouble()) {
+        continue;
+      }
+    }
     linkMap[name] = folly::dynamic::object;
     linkMap[name][metricName] = uptimePerc;
     linkMap[name]["events"] = onlineEvents;
