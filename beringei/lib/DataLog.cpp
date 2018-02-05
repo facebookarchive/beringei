@@ -184,40 +184,31 @@ size_t DataLogWriter::writeToFile(char* const buffer, const size_t bufferSize) {
 bool DataLogWriter::flushBuffer() {
   char* buffer = buffer_.get();
   bool success = true;
-  while (bufferSize_ > 0) {
-    int written = writeToFile(buffer, bufferSize_);
+  clearerr(out_.file);
+  int written = writeToFile(buffer, bufferSize_);
 
-    if (written <= 0) {
-      if (feof(out_.file)) {
-        PLOG(ERROR) << "Reached EOF when writing to buffer: " << out_.name;
-      } else if (ferror(out_.file)) {
-        PLOG(ERROR) << "Flushing buffer failed: " << out_.name;
-      }
+  // Check all the possible cases when fwrite() returns something other
+  // than bufferSize_ (feof, ferror, partial writes).
+  if (written != bufferSize_) {
+    success = false;
 
-      success = false;
-      break;
-    }
-
-    if (written > bufferSize_) {
+    if (feof(out_.file)) {
+      PLOG(ERROR) << "Reached EOF when writing to buffer: " << out_.name;
+    } else if (ferror(out_.file)) {
+      PLOG(ERROR) << "Flushing buffer failed: " << out_.name;
+    } else if (written > bufferSize_) {
       // This should never happen.
       LOG(ERROR) << "Unstable storage: Written " << written << " of "
                  << bufferSize_ << " to " << out_.name;
-
-      success = false;
-      break;
-    }
-
-    if (written != bufferSize_) {
+    } else {
       GorillaStatsManager::addStatValue(kPartialWriteCounter, 1);
       LOG(INFO) << "Partial write: Written " << written << " of " << bufferSize_
                 << " to " << out_.name;
     }
 
-    bufferSize_ -= written;
-    buffer += written;
+    GorillaStatsManager::addStatValue(kFailedCounter, 1);
   }
 
-  GorillaStatsManager::addStatValue(kFailedCounter, success ? 0 : 1);
   bufferSize_ = 0;
   return success;
 }
