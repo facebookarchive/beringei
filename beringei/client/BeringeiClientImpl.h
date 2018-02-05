@@ -58,7 +58,7 @@ class BeringeiClientImpl {
   // DataPoints will no longer be valid. Returns true if all the data
   // points were pushed to any of the writers. False means that data
   // was definitely dropped.
-  bool putDataPoints(std::vector<DataPoint>& values);
+  virtual bool putDataPoints(std::vector<DataPoint>& values);
 
   // @see BeringeiNetworkClient
   void getLastUpdateTimes(

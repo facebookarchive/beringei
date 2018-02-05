@@ -50,15 +50,13 @@ struct BeringeiFutureGetContext {
 }
 
 DEFINE_int32(
-    gorilla_writer_threads,
+    gorilla_client_writer_threads,
     0,
-    "number of threads concurrently writing to gorilla for each "
-    "service");
+    "number of threads concurrently writing to Beringei for each service");
 DEFINE_int32(
     gorilla_queue_capacity,
     1,
-    "number of points to buffer in the gorilla write queue for each "
-    "service");
+    "number of points to buffer in the Beringei write queue for each service");
 
 // Sleep for 100ms between puts if the queue contains <100 elements.
 DEFINE_int32(
@@ -906,7 +904,7 @@ void BeringeiClientImpl::setNumWriterThreads(int& writerThreads) {
   // Figure out the real number of writer threads.
   if (writerThreads != kNoWriterThreads) {
     writerThreads =
-        writerThreads ? writerThreads : FLAGS_gorilla_writer_threads;
+        writerThreads ? writerThreads : FLAGS_gorilla_client_writer_threads;
   } else {
     writerThreads = 0;
   }
