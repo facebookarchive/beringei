@@ -39,5 +39,3 @@ RUN cmake ..
 RUN make install
 
 RUN ./beringei/tools/beringei_configuration_generator --host_names localhost --file_path $WORKDIR/beringei.json
-
-ENTRYPOINT $RUN_CMD
