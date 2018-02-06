@@ -72,25 +72,28 @@ tar xzvf proxygen-${FB_VERSION}.tar.gz
 tar xzvf mstch-master.tar.gz
 tar xzvf zstd-${ZSTD_VERSION}.tar.gz
 
+PROC=`cat /proc/cpuinfo | grep processor | wc -l`
+echo ${PROC}
+
 pushd mstch-master
 cmake -DCMAKE_INSTALL_PREFIX:PATH=/usr/local/facebook-${FB_VERSION} .
-make install
+make -j ${PROC} install
 popd
 
 pushd zstd-${ZSTD_VERSION}
-make install PREFIX=/usr/local/facebook-${FB_VERSION}
+make -j ${PROC} install PREFIX=/usr/local/facebook-${FB_VERSION}
 popd
 
 
 pushd folly-${FB_VERSION}/folly
 autoreconf -ivf
 ./configure --prefix=/usr/local/facebook-${FB_VERSION}
-make install
+make -j ${PROC} install
 popd
 
 pushd wangle-${FB_VERSION}/wangle
 cmake -DCMAKE_INSTALL_PREFIX:PATH=/usr/local/facebook-${FB_VERSION} -DBUILD_SHARED_LIBS:BOOL=ON .
-make
+make -j ${PROC}
 # Wangle tests are broken. Disabling ctest.
 # ctest
 make install
@@ -99,11 +102,11 @@ popd
 pushd fbthrift-${FB_VERSION}/thrift
 autoreconf -ivf
 ./configure --prefix=/usr/local/facebook-${FB_VERSION}
-make install
+make -j ${PROC} install
 popd
 
 pushd proxygen-${FB_VERSION}/proxygen
 autoreconf -ivf
 ./configure --prefix=/usr/local/facebook-${FB_VERSION}
-make install
+make -j ${PROC} install
 popd
