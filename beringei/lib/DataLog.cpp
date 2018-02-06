@@ -177,15 +177,11 @@ void DataLogWriter::append(uint32_t id, int64_t unixTime, double value) {
   bufferSize_ += bits.length();
 }
 
-size_t DataLogWriter::writeToFile(char* const buffer, const size_t bufferSize) {
-  return fwrite(buffer, sizeof(char), bufferSize, out_.file);
-}
-
 bool DataLogWriter::flushBuffer() {
   char* buffer = buffer_.get();
   bool success = true;
   clearerr(out_.file);
-  int written = writeToFile(buffer, bufferSize_);
+  int written = fwrite(buffer, sizeof(char), bufferSize_, out_.file);
 
   // Check all the possible cases when fwrite() returns something other
   // than bufferSize_ (feof, ferror, partial writes).

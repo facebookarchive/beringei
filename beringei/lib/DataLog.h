@@ -40,8 +40,6 @@ class DataLogWriter {
   // disk. Returns true if writing was successful, false otherwise.
   bool flushBuffer();
 
-  virtual size_t writeToFile(char* const buffer, const size_t bufferSize);
-
  private:
   FileUtils::File out_;
   int64_t lastTimestamp_;
