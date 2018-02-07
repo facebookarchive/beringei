@@ -26,7 +26,12 @@ namespace gorilla {
 // Request handler factory that figures out the right handler based on the uri
 class QueryServiceFactory : public proxygen::RequestHandlerFactory {
  public:
-  QueryServiceFactory();
+  explicit QueryServiceFactory(
+    std::shared_ptr<BeringeiConfigurationAdapterIf> configurationAdapter,
+    std::shared_ptr<MySqlClient> mySqlClient,
+    std::shared_ptr<TACacheMap> typeaheadCache,
+    std::shared_ptr<BeringeiClient> beringeiReadClient,
+    std::shared_ptr<BeringeiClient> beringeiWriteClient);
 
   void onServerStart(folly::EventBase *evb) noexcept override;
 
@@ -37,13 +42,14 @@ class QueryServiceFactory : public proxygen::RequestHandlerFactory {
             proxygen::HTTPMessage *) noexcept override;
 
  private:
-  std::shared_ptr<BeringeiConfigurationAdapterIf> configurationAdapter_;
   folly::EventBase *eb_;
+  std::shared_ptr<BeringeiConfigurationAdapterIf> configurationAdapter_;
   std::shared_ptr<MySqlClient> mySqlClient_;
-  std::shared_ptr<BeringeiClient> beringeiReadClient_;
-  std::shared_ptr<BeringeiClient> beringeiWriteClient_;
   // topology name -> type-ahead cache
   std::shared_ptr<TACacheMap> typeaheadCache_;
+  std::shared_ptr<BeringeiClient> beringeiReadClient_;
+  std::shared_ptr<BeringeiClient> beringeiWriteClient_;
 };
+
 }
 } // facebook::gorilla

@@ -9,6 +9,7 @@ find_library(MYSQL_CLIENT_LIB NAMES "mysqlclient"
   PATHS "/usr/local/mysql/lib"
   NO_DEFAULT_PATH
 )
+find_library(CURL curl)
 
 set(BERINGEI_QUERY_SRCS
     QueryServiceFactory.cpp
@@ -21,6 +22,8 @@ set(BERINGEI_QUERY_SRCS
     QueryHandler.h
     BeringeiData.cpp
     BeringeiData.h
+    AggregatorService.cpp
+    AggregatorService.h
     StatsWriteHandler.cpp
     StatsWriteHandler.h
     StatsTypeAheadCache.cpp
@@ -48,6 +51,7 @@ target_link_libraries(
     beringei_query_lib
     beringei_client
     beringei_plugin
+    ${CURL}
     ${FBTHRIFT_LIBRARIES}
     ${FOLLY_LIBRARIES}
     ${GFLAGS_LIBRARIES}

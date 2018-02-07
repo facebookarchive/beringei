@@ -83,6 +83,8 @@ void StatsTypeAheadCache::fetchMetricNames(query::Topology &request) {
     macNodes_.insert(node.mac_addr);
     nodesByName_[node.name] = node;
   }
+  // e2e
+  macNodes_.insert("00:00:00:00:00:00");
 
   auto dbNodes = mySqlClient_->getNodesWithKeys(macNodes_);
   for (const auto &node : dbNodes) {

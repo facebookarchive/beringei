@@ -78,9 +78,9 @@ void StatsTypeAheadCacheHandler::onEOM() noexcept {
     LOG(INFO) << "Got topology: " << request.name;
     StatsTypeAheadCache taCache(mySqlClient_);
     taCache.fetchMetricNames(request);
-    LOG(INFO) << "Inserting cache obj";
+    LOG(INFO) << "Type-ahead cache loaded for: " << request.name;
+    // TODO - this doesn't update, need concurrent
     typeaheadCache_->insert(std::make_pair(request.name, taCache));
-    taCache.searchMetrics("snr");
   }
   catch (const std::exception &ex) {
     LOG(ERROR) << "Unable to handle stats type-ahead cache request: "

@@ -74,6 +74,12 @@ private:
   std::unordered_map<std::string, std::vector<int> > nameToMetricIds_;
   // metric id => meta data
   std::unordered_map<int, std::shared_ptr<query::KeyData>> metricIdMetadata_;
+  // graph struct for quick traversal
+/*  struct 
+  map<string
+  [s->n->r->]
+  std::map<char, same struct> typeaheadSearch_;*/
+  
 
   // mysql client
   std::shared_ptr<MySqlClient> mySqlClient_;

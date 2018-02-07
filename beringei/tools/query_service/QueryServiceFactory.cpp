@@ -26,21 +26,30 @@ using folly::EventBase;
 using folly::EventBaseManager;
 using folly::SocketAddress;
 
-DEFINE_int32(writer_queue_size, 100000, "Beringei writer queue size");
-
 namespace facebook {
 namespace gorilla {
 
-QueryServiceFactory::QueryServiceFactory() : RequestHandlerFactory() {
-  configurationAdapter_ = std::make_shared<BeringeiConfigurationAdapter>();
-  mySqlClient_ = std::make_shared<MySqlClient>();
-  mySqlClient_->refreshAll();
-  typeaheadCache_ =
-      std::make_shared<std::unordered_map<std::string, StatsTypeAheadCache> >();
-  beringeiReadClient_ = std::make_shared<BeringeiClient>(
-      configurationAdapter_, 1, BeringeiClient::kNoWriterThreads);
-  beringeiWriteClient_ = std::make_shared<BeringeiClient>(
-      configurationAdapter_, FLAGS_writer_queue_size, 5);
+QueryServiceFactory::QueryServiceFactory(
+  std::shared_ptr<BeringeiConfigurationAdapterIf> configurationAdapter,
+  std::shared_ptr<MySqlClient> mySqlClient,
+  std::shared_ptr<TACacheMap> typeaheadCache,
+  std::shared_ptr<BeringeiClient> beringeiReadClient,
+  std::shared_ptr<BeringeiClient> beringeiWriteClient)
+  : RequestHandlerFactory(),
+    configurationAdapter_(configurationAdapter),
+    mySqlClient_(mySqlClient),
+    typeaheadCache_(typeaheadCache),
+    beringeiReadClient_(beringeiReadClient),
+    beringeiWriteClient_(beringeiWriteClient) {
+//  configurationAdapter_ = std::make_shared<BeringeiConfigurationAdapter>();
+//  mySqlClient_ = std::make_shared<MySqlClient>();
+//  mySqlClient_->refreshAll();
+//  typeaheadCache_ =
+//      std::make_shared<std::unordered_map<std::string, StatsTypeAheadCache> >();
+//  beringeiReadClient_ = std::make_shared<BeringeiClient>(
+//      configurationAdapter_, 1, BeringeiClient::kNoWriterThreads);
+//  beringeiWriteClient_ = std::make_shared<BeringeiClient>(
+//      configurationAdapter_, FLAGS_writer_queue_size, 5);
 }
 
 void QueryServiceFactory::onServerStart(folly::EventBase *evb) noexcept {}

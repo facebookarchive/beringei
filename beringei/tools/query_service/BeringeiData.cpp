@@ -250,15 +250,18 @@ folly::dynamic BeringeiData::eventHandler(int dataPointIncrementMs,
           (upPoints * 30 + partialSeconds) / (timeBucketCount * 30) * 100.0;
     }
     auto &name = query_.data[keyIndex].displayName;
-    VLOG(2) << "Key ID: " << query_.data[keyIndex].key << ", Name: " << name
+    VLOG(2) << "Key ID: " << query_.data[keyIndex].key
+            << ", Name: " << name
             << ", Expected count: " << timeBucketCount
             << ", up count: " << upPoints
             << ", partial seconds: " << partialSeconds
             << ", uptime: " << uptimePerc << "%";
     auto linkMapIt = linkMap.find(name);
     if (linkMapIt != linkMap.items().end()) {
+      auto metricMapIt = linkMapIt->second.find(metricName);
       // replace data if metric is higher on current
-      if (uptimePerc < linkMap[name][metricName].asDouble()) {
+      if (metricMapIt != linkMapIt->second.items().end() &&
+          uptimePerc < metricMapIt->second.asDouble()) {
         continue;
       }
     }
