@@ -12,6 +12,7 @@
 #include "BucketUtils.h"
 #include "GorillaStatsManager.h"
 #include "GorillaTimeConstants.h"
+#include "Timer.h"
 
 #include "glog/logging.h"
 
@@ -21,7 +22,11 @@ namespace gorilla {
 DECLARE_int32(data_log_buffer_size);
 
 static const int kLogFileBufferSize = FLAGS_data_log_buffer_size;
+static const std::string kLogDataDequeueLatencyUs =
+    "log_data_dequeue_latency_us";
 static const std::string kLogDataFailures = "log_data_failures";
+static const std::string kLogDataEnqueueFailures = "log_data_enqueue_failures";
+static const std::string kLogFileOpenRetries = "log_file_open_retries";
 static const std::string kLogFilesystemFailures =
     "failed_writes.log_filesystem";
 
@@ -126,7 +131,7 @@ void BucketLogWriter::logData(
   info.value = value;
 
   if (!logDataQueue_.write(std::move(info))) {
-    GorillaStatsManager::addStatValue(kLogDataFailures, 1);
+    GorillaStatsManager::addStatValue(kLogDataEnqueueFailures, 1);
   }
 }
 
@@ -139,6 +144,7 @@ bool BucketLogWriter::writeOneLogEntry(bool blockingRead) {
     return false;
   }
 
+  Timer dequeueTimer(true);
   if (blockingRead) {
     // First read is blocking then as many as possible without blocking.
     logDataQueue_.blockingRead(info);
@@ -148,6 +154,8 @@ bool BucketLogWriter::writeOneLogEntry(bool blockingRead) {
   while (logDataQueue_.read(info)) {
     data.push_back(std::move(info));
   }
+  GorillaStatsManager::addStatValue(
+      kLogDataDequeueLatencyUs, dequeueTimer.get());
 
   bool onePreviousLogWriterCleared = false;
 
@@ -181,6 +189,7 @@ bool BucketLogWriter::writeOneLogEntry(bool blockingRead) {
       // If this bucket doesn't have a file open yet, open it now.
       if (!logWriter) {
         for (int i = 0; i < kFileOpenRetries; i++) {
+          GorillaStatsManager::addStatValue(kLogFileOpenRetries, i);
           auto f = shardWriter.fileUtils->open(
               info.unixTime, "wb", kLogFileBufferSize);
           if (f.file) {
@@ -203,6 +212,7 @@ bool BucketLogWriter::writeOneLogEntry(bool blockingRead) {
         uint32_t baseTime = timestamp(b + 1, info.shardId);
         LOG(INFO) << "Opening file in advance for shard " << info.shardId;
         for (int i = 0; i < kFileOpenRetries; i++) {
+          GorillaStatsManager::addStatValue(kLogFileOpenRetries, i);
           auto f =
               shardWriter.fileUtils->open(baseTime, "wb", kLogFileBufferSize);
           if (f.file) {
@@ -214,6 +224,7 @@ bool BucketLogWriter::writeOneLogEntry(bool blockingRead) {
           if (i == kFileOpenRetries - 1) {
             // This is kind of ok. We'll try again above.
             LOG(ERROR) << "Failed too many times to open log file " << f.name;
+            GorillaStatsManager::addStatValue(kLogFilesystemFailures, 1);
           }
           usleep(kSleepUsBetweenFailures);
         }
@@ -265,6 +276,9 @@ void BucketLogWriter::stopShard(int64_t shardId) {
 }
 
 void BucketLogWriter::startMonitoring() {
+  GorillaStatsManager::addStatExportType(kLogDataEnqueueFailures, SUM);
+  GorillaStatsManager::addStatExportType(kLogDataDequeueLatencyUs, AVG);
+  GorillaStatsManager::addStatExportType(kLogFileOpenRetries, SUM);
   GorillaStatsManager::addStatExportType(kLogDataFailures, SUM);
   GorillaStatsManager::addStatExportType(kLogFilesystemFailures, SUM);
 }

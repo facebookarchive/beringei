@@ -89,7 +89,7 @@ DataLogWriter::DataLogWriter(FileUtils::File&& out, int64_t baseTime)
 DataLogWriter::~DataLogWriter() {
   if (out_.file) {
     flushBuffer();
-    FileUtils::closeFile(out_.file);
+    FileUtils::closeFile(out_, FLAGS_gorilla_async_file_close);
   }
 }
 
@@ -98,7 +98,8 @@ void DataLogWriter::append(uint32_t id, int64_t unixTime, double value) {
   uint32_t numBits = 0;
 
   if (id > FLAGS_max_allowed_timeseries_id) {
-    LOG(ERROR) << "ID too large. Increase max_allowed_timeseries_id?";
+    LOG(ERROR) << "ID:" << id
+               << " too large. Increase max_allowed_timeseries_id?";
     return;
   }
 

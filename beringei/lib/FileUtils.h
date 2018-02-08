@@ -82,7 +82,7 @@ class FileUtils {
   // Creates a thread and closes files asynchronously. This is useful
   // in cases where flushing out the files to disk takes a while and
   // the caller doesn't care when this is actually happens.
-  static void closeFile(FILE* files);
+  static void closeFile(File& file, bool asyncClose);
 
  private:
   boost::filesystem::path filePath(int64_t id);
@@ -117,5 +117,5 @@ class TemporaryDirectory {
  private:
   std::string dirname_;
 };
-}
-} // facebook:gorilla
+} // namespace gorilla
+} // namespace facebook

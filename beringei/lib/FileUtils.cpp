@@ -36,7 +36,10 @@ namespace facebook {
 namespace gorilla {
 
 static const std::string kMsPerFileOpen = "ms_per_file_open";
+static const std::string kMsPerFileClose = "ms_per_file_close";
 static const std::string kFileOpenFailures = "file_open_failures";
+static const std::string kMsPerFileRemove = "ms_per_file_remove";
+static const std::string kMsPerDirList = "ms_per_dir_list";
 
 FileUtils::FileUtils(
     int64_t shardId,
@@ -84,6 +87,7 @@ void FileUtils::clearAll() {
 }
 
 std::vector<int64_t> FileUtils::ls() {
+  Timer lsTimer(true);
   std::vector<int64_t> files;
 
   boost::filesystem::directory_iterator end;
@@ -99,6 +103,8 @@ std::vector<int64_t> FileUtils::ls() {
   }
 
   std::sort(files.begin(), files.end());
+  GorillaStatsManager::addStatValue(
+      kMsPerDirList, lsTimer.get() / kGorillaUsecPerMs);
   return files;
 }
 
@@ -171,12 +177,15 @@ boost::filesystem::path FileUtils::filePath(
 }
 
 void FileUtils::remove(int64_t id) {
+  Timer removeTimer(true);
   boost::system::error_code ec;
   boost::filesystem::path path = filePath(id);
   boost::filesystem::remove(path, ec);
   if (ec) {
-    LOG(WARNING) << "Unlink " << path << " failed: " << ec;
+    LOG(ERROR) << "Unlink " << path << " failed: " << ec;
   }
+  GorillaStatsManager::addStatValue(
+      kMsPerFileRemove, removeTimer.get() / kGorillaUsecPerMs);
 }
 
 std::string FileUtils::joinPaths(
@@ -225,16 +234,32 @@ bool FileUtils::isDirectory(const std::string& filename) {
 void FileUtils::startMonitoring() {
   GorillaStatsManager::addStatExportType(kMsPerFileOpen, AVG);
   GorillaStatsManager::addStatExportType(kMsPerFileOpen, COUNT);
+  GorillaStatsManager::addStatExportType(kMsPerFileClose, AVG);
+  GorillaStatsManager::addStatExportType(kMsPerFileClose, COUNT);
+  GorillaStatsManager::addStatExportType(kMsPerFileRemove, AVG);
   GorillaStatsManager::addStatExportType(kFileOpenFailures, SUM);
+  GorillaStatsManager::addStatExportType(kMsPerDirList, AVG);
 }
 
-void FileUtils::closeFile(FILE* file) {
-  if (FLAGS_gorilla_async_file_close) {
-    std::thread t([file]() { fclose(file); });
-    t.detach();
-  } else {
-    fclose(file);
+void FileUtils::closeFile(File& file, bool asyncClose) {
+  Timer closeTimer(true);
+  if (file.file == nullptr) {
+    return;
   }
+  if (asyncClose) {
+    std::thread t([file, closeTimer]() {
+      fclose(file.file);
+      LOG(INFO) << "Closed file " << file.name;
+      GorillaStatsManager::addStatValue(
+          kMsPerFileClose, closeTimer.get() / kGorillaUsecPerMs);
+    });
+    t.detach();
+    return;
+  }
+  fclose(file.file);
+  LOG(INFO) << "Closed file " << file.name;
+  GorillaStatsManager::addStatValue(
+      kMsPerFileClose, closeTimer.get() / kGorillaUsecPerMs);
 }
-}
-} // facebook:gorilla
+} // namespace gorilla
+} // namespace facebook

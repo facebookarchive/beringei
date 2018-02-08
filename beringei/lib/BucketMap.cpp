@@ -654,9 +654,10 @@ void BucketMap::readLogFiles(uint32_t lastBlock) {
 
     auto file = files.open(id, "rb", 0);
     if (!file.file) {
-      LOG(ERROR) << "Could not open logfile for reading";
+      LOG(ERROR) << "Could not open shard " << shardId_ << " logfile";
       continue;
     }
+    LOG(INFO) << "Reading logfile " << file.name;
 
     uint32_t b = bucket(id);
     DataLogReader::readLog(
@@ -699,6 +700,7 @@ void BucketMap::readLogFiles(uint32_t lastBlock) {
           return true;
         });
     fclose(file.file);
+    LOG(INFO) << "Finished reading logfile " << file.name;
   }
 
   int64_t now = time(nullptr);

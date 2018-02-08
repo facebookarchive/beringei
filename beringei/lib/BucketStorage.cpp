@@ -51,6 +51,7 @@ static const std::string kBlockFileReadFailures = "block_file_read_failures";
 static const std::string kDedupedTimeSeriesSize = "timeseries_block_dedup_size";
 static const std::string kWrittenTimeSeriesSize =
     "timeseries_block_written_size";
+static const std::string kExpiredBucketFetch = "expired_bucket_fetches";
 
 BucketStorage::BucketStorage(
     uint8_t numBuckets,
@@ -188,7 +189,9 @@ BucketStorage::FetchStatus BucketStorage::fetch(
   uint8_t bucket = position % numBuckets_;
 
   if (pageOffset + dataLength > kPageSize) {
-    LOG(ERROR) << "Corrupt ID";
+    LOG(ERROR) << "Corrupt storage id:" << id << " pageIndex:" << pageIndex
+               << " pageOffset:" << pageOffset << " dataLength:" << dataLength
+               << " itemCount:" << itemCount;
     return FAILURE;
   }
 
@@ -198,7 +201,9 @@ BucketStorage::FetchStatus BucketStorage::fetch(
   }
 
   if (data_[bucket].position != position && data_[bucket].position != 0) {
-    LOG(WARNING) << "Tried to fetch data for an expired bucket.";
+    VLOG(0) << "Tried to fetch data for an expired bucket:" << bucket
+            << " position:" << position;
+    GorillaStatsManager::addStatValue(kExpiredBucketFetch, 1);
     return FAILURE;
   }
 
@@ -328,7 +333,8 @@ void BucketStorage::finalizeBucket(uint32_t position) {
     const uint32_t pageIndex = data_[bucket].activePages - 1;
 
     if (data_[bucket].disabled) {
-      LOG(ERROR) << "Trying to finalize a disabled bucket";
+      LOG(ERROR) << "Trying to finalize a disabled bucket:" << bucket
+                 << " position:" << position;
       return;
     }
 
@@ -373,7 +379,7 @@ void BucketStorage::write(
 
   auto dataFile = dataFiles_.open(position, "wb", kLargeFileBuffer);
   if (!dataFile.file) {
-    LOG(ERROR) << "Opening data file failed";
+    LOG(ERROR) << "Opening data block file:" << dataFile.name << " failed";
     return;
   }
 
@@ -417,28 +423,30 @@ void BucketStorage::write(
             sizeof(char),
             compressed->length(),
             dataFile.file) != compressed->length()) {
-      PLOG(ERROR) << "Writing to data file " << dataFile.name << " failed";
-      fclose(dataFile.file);
+      PLOG(ERROR) << "Writing compressed data block file " << dataFile.name
+                  << " failed";
+      FileUtils::closeFile(dataFile, false);
       return;
     }
 
-    LOG(INFO) << "Wrote compressed data block file. " << dataLen << " -> "
-              << compressed->length();
+    LOG(INFO) << "Wrote compressed data block file " << dataFile.name
+              << " dataLen:" << dataLen
+              << " compressed:" << compressed->length();
 
   } catch (std::exception& e) {
     LOG(ERROR) << e.what();
-    fclose(dataFile.file);
+    FileUtils::closeFile(dataFile, false);
     return;
   }
 
-  fclose(dataFile.file);
+  FileUtils::closeFile(dataFile, false);
 
   auto completeFile = completeFiles_.open(position, "wb", 0);
   if (!completeFile.file) {
-    LOG(ERROR) << "Opening marker file failed";
+    LOG(ERROR) << "Opening marker file " << completeFile.name << " failed";
     return;
   }
-  fclose(completeFile.file);
+  FileUtils::closeFile(completeFile, false);
 }
 
 bool BucketStorage::sanityCheck(uint8_t bucket, uint32_t position) {
@@ -471,6 +479,7 @@ void BucketStorage::startMonitoring() {
   GorillaStatsManager::addStatExportType(kDedupedTimeSeriesSize, COUNT);
   GorillaStatsManager::addStatExportType(kWrittenTimeSeriesSize, SUM);
   GorillaStatsManager::addStatExportType(kWrittenTimeSeriesSize, COUNT);
+  GorillaStatsManager::addStatExportType(kExpiredBucketFetch, COUNT);
 }
 
 std::pair<uint64_t, uint64_t> BucketStorage::getPagesSize() {
@@ -483,5 +492,5 @@ std::pair<uint64_t, uint64_t> BucketStorage::getPagesSize() {
   }
   return std::make_pair(activePagesSize, totalPagesSize);
 }
-}
-} // facebook:gorilla
+} // namespace gorilla
+} // namespace facebook

@@ -730,6 +730,8 @@ void BeringeiServiceHandler::finalizeBucket(const uint64_t timestamp) {
   for (auto& t : threads) {
     t.join();
   }
+
+  LOG(INFO) << "Finished finalizing buckets at time " << timestamp;
 }
 }
 } // facebook::gorilla
