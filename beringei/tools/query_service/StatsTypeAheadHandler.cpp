@@ -92,12 +92,12 @@ void StatsTypeAheadHandler::onEOM() noexcept {
       VLOG(1) << "\t\tName: " << key.displayName << ", key: " << key.key
               << ", node: " << key.nodeName;
       keyList.push_back(folly::dynamic::object
-        ("name", key.displayName)
+        ("displayName", key.displayName)
         ("key", key.key)
-        ("id", key.keyId)
-        ("node", key.nodeName)
-        ("site", key.siteName)
-        ("mac", key.node)
+        ("keyId", key.keyId)
+        ("nodeName", key.nodeName)
+        ("siteName", key.siteName)
+        ("node", key.node)
       );
     }
     // add to json

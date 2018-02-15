@@ -41,15 +41,6 @@ QueryServiceFactory::QueryServiceFactory(
     typeaheadCache_(typeaheadCache),
     beringeiReadClient_(beringeiReadClient),
     beringeiWriteClient_(beringeiWriteClient) {
-//  configurationAdapter_ = std::make_shared<BeringeiConfigurationAdapter>();
-//  mySqlClient_ = std::make_shared<MySqlClient>();
-//  mySqlClient_->refreshAll();
-//  typeaheadCache_ =
-//      std::make_shared<std::unordered_map<std::string, StatsTypeAheadCache> >();
-//  beringeiReadClient_ = std::make_shared<BeringeiClient>(
-//      configurationAdapter_, 1, BeringeiClient::kNoWriterThreads);
-//  beringeiWriteClient_ = std::make_shared<BeringeiClient>(
-//      configurationAdapter_, FLAGS_writer_queue_size, 5);
 }
 
 void QueryServiceFactory::onServerStart(folly::EventBase *evb) noexcept {}

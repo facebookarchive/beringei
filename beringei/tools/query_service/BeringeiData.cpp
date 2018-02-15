@@ -870,6 +870,8 @@ GetDataRequest BeringeiData::createBeringeiRequest(const query::Query &request,
                                                    const int numShards) {
   GetDataRequest beringeiRequest;
 
+  LOG(INFO) << "Begin: " << startTime_ << " <-> " << endTime_
+            << ", keys: " << request.key_ids.size();
   beringeiRequest.begin = startTime_;
   beringeiRequest.end = endTime_;
 

@@ -23,19 +23,24 @@ class AggregatorService {
  public:
   explicit AggregatorService(
     std::shared_ptr<TACacheMap> typeaheadCache,
-    std::shared_ptr<BeringeiClient> beringeiClient);
+    std::shared_ptr<BeringeiConfigurationAdapterIf> configurationAdapter,
+    std::shared_ptr<BeringeiClient> beringeiReadClient,
+    std::shared_ptr<BeringeiClient> beringeiWriteClient);
 
   // run eventbase
   void start();
   void timerCallback();
   query::Topology fetchTopology();
+  void buildQuery(std::unordered_map<std::string, double>& values, StatsTypeAheadCache* cache);
 
  private:
   folly::EventBase eb_;
   std::unique_ptr<folly::AsyncTimeout> timer_{nullptr};
   // from queryservicefactory
   std::shared_ptr<TACacheMap> typeaheadCache_;
-  std::shared_ptr<BeringeiClient> beringeiClient_;
+  std::shared_ptr<BeringeiConfigurationAdapterIf> configurationAdapter_;
+  std::shared_ptr<BeringeiClient> beringeiReadClient_;
+  std::shared_ptr<BeringeiClient> beringeiWriteClient_;
 };
 }
 } // facebook::gorilla

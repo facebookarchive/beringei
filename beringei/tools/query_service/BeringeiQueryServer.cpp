@@ -84,6 +84,8 @@ int main(int argc, char *argv[]) {
   // create timer thread
   auto aggregator = std::make_shared<AggregatorService>(
       typeaheadCache,
+      configurationAdapter,
+      beringeiReadClient,
       beringeiWriteClient);
   std::thread aggThread([&aggregator]() {
     aggregator->start();

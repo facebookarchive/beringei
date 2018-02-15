@@ -8,6 +8,7 @@
  */
 
 #include "AggregatorService.h"
+#include "BeringeiData.h"
 
 #include "beringei/if/gen-cpp2/Topology_types_custom_protocol.h"
 #include <curl/curl.h>
@@ -47,9 +48,13 @@ namespace gorilla {
 
 AggregatorService::AggregatorService(
   std::shared_ptr<TACacheMap> typeaheadCache,
-  std::shared_ptr<BeringeiClient> beringeiClient)
+  std::shared_ptr<BeringeiConfigurationAdapterIf> configurationAdapter,
+  std::shared_ptr<BeringeiClient> beringeiReadClient,
+  std::shared_ptr<BeringeiClient> beringeiWriteClient)
   : typeaheadCache_(typeaheadCache),
-    beringeiClient_(beringeiClient) {
+    configurationAdapter_(configurationAdapter),
+    beringeiReadClient_(beringeiReadClient),
+    beringeiWriteClient_(beringeiWriteClient) {
 
   timer_ = folly::AsyncTimeout::make(eb_, [&] () noexcept {
     timerCallback();
@@ -67,7 +72,7 @@ AggregatorService::timerCallback() {
       !topology.nodes.empty() &&
       !topology.links.empty()) {
     int64_t timeStamp = folly::to<int64_t>(
-       ceil(std::time(nullptr) / 30)) * 30;
+       ceil(std::time(nullptr) / 30.0)) * 30;
     // pop traffic
     std::vector<query::Node> popNodes;
     // nodes up + down
@@ -106,16 +111,18 @@ AggregatorService::timerCallback() {
     auto taCacheIt = typeaheadCache_->find(topology.name);
     if (taCacheIt != typeaheadCache_->end()) {
       LOG(INFO) << "Cache found for: " << topology.name;
+      // fetch back the metrics we care about (PER, MCS?)
+      // and average the values
+      buildQuery(aggValues, &taCacheIt->second);
       // find metrics, update beringei
       for (const auto& metric : aggValues) {
         std::vector<query::KeyData> keyData =
           taCacheIt->second.getKeyData(metric.first);
-        LOG(INFO) << "Metric: " << metric.first << ", size: " << keyData.size();
         if (keyData.size() != 1) {
+          LOG(INFO) << "Metric not found: " << metric.first;
           continue;
         }
         int keyId = keyData.front().keyId;
-        LOG(INFO) << "\tKey id: " << keyId;
         // create beringei data-point
         DataPoint bDataPoint;
         TimeValuePair bTimePair;
@@ -128,23 +135,67 @@ AggregatorService::timerCallback() {
         bDataPoint.value = bTimePair;
         bDataPoints.push_back(bDataPoint);
       }
-      LOG(INFO) << "Data-points: " << bDataPoints.size();
       folly::EventBase eb;
       eb.runInLoop([this, &bDataPoints]() mutable {
-        auto pushedPoints = beringeiClient_->putDataPoints(bDataPoints);
+        auto pushedPoints = beringeiWriteClient_->putDataPoints(bDataPoints);
         if (!pushedPoints) {
           LOG(ERROR) << "Failed to perform the put!";
         }
       });
       std::thread tEb([&eb]() { eb.loop(); });
       tEb.join();
-      LOG(INFO) << "Data-points complete";
+      LOG(INFO) << "Data-points written";
     } else {
       LOG(ERROR) << "Missing type-ahead cache for: " << topology.name;
     }
     // push metrics into beringei
   } else {
     LOG(INFO) << "Invalid topology";
+  }
+}
+
+void
+AggregatorService::buildQuery(
+    std::unordered_map<std::string, double>& values,
+    StatsTypeAheadCache* cache) {
+  // build queries
+  query::QueryRequest queryRequest;
+  std::vector<query::Query> queries;
+  std::vector<std::string> keyNames = {"per", "mcs", "snr"};
+  for (const auto keyName : keyNames) {
+    auto keyData = cache->getKeyData(keyName);
+    query::Query query;
+    query.type = "latest";
+    std::vector<int64_t> keyIds;
+    std::vector<query::KeyData> keyDataRenamed;
+    for (const auto& key : keyData) {
+      keyIds.push_back(key.keyId);
+      auto newKeyData = key;
+      newKeyData.displayName = key.linkName;
+      keyDataRenamed.push_back(newKeyData);
+    }
+    query.key_ids = keyIds;
+    query.data = keyDataRenamed;
+    query.min_ago = 5;
+    query.__isset.min_ago = true;
+    queries.push_back(query);
+  }
+  // fetch the last few minutes to receive the latest data point
+  queryRequest.queries = queries;
+  BeringeiData dataFetcher(configurationAdapter_, beringeiReadClient_, queryRequest);
+  folly::dynamic results = dataFetcher.process();
+  int queryIdx = 0;
+  for (const auto& query : results) {
+    double sum = 0;
+    int items = 0;
+    for (const auto& pair : query.items()) {
+      sum += pair.second.asDouble();
+      items++;
+    }
+    double avg = sum / items;
+    std::string keyName = keyNames[queryIdx] + ".avg";
+    values[keyName] = avg;
+    queryIdx++;
   }
 }
 
@@ -182,12 +233,10 @@ AggregatorService::fetchTopology() {
       long response_code;
       curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
       // response code 204 is a success
-      //LOG(INFO) << "Response code: " << response_code;
     }
     // cleanup
     curl_easy_cleanup(curl);
     topology = SimpleJSONSerializer::deserialize<query::Topology>(dataChunk.data);
-    //LOG(INFO) << "Got topology! " << topology.name;
     free(dataChunk.data);
     if (res != CURLE_OK) {
       LOG(WARNING) << "CURL error for endpoint " << endpoint << ": "
