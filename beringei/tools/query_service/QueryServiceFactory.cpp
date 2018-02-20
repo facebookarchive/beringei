@@ -19,6 +19,7 @@
 #include "StatsTypeAheadHandler.h"
 #include "StatsWriteHandler.h"
 #include "TableQueryHandler.h"
+#include "ScanRespWriteHandler.h"
 
 #include "beringei/plugins/BeringeiConfigurationAdapter.h"
 
@@ -72,6 +73,8 @@ QueryServiceFactory::onRequest(proxygen::RequestHandler * /* unused */,
   } else if (path == "/stats_typeahead_cache") {
     // accepts a topology object to refresh the cache
     return new StatsTypeAheadCacheHandler(mySqlClient_, typeaheadCache_);
+  } else if (path == "/scan_response") {
+    return new ScanRespWriteHandler(mySqlClient_);
   }
 
   // return not found for all other uris

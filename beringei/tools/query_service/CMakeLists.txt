@@ -42,6 +42,8 @@ set(BERINGEI_QUERY_SRCS
     AlertsWriteHandler.h
     LogsWriteHandler.cpp
     LogsWriteHandler.h
+    ScanRespWriteHandler.cpp
+    ScanRespWriteHandler.h
 )
 
 set(BERINGEI_QUERY_SERVICE_SRCS

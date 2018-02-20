@@ -171,3 +171,116 @@ struct MySqlAlertData {
   9: double trigger_value,
 }
 
+// scan responses// transmit and receive beamforming indices of a micro route
+enum ScanType {
+  PBF = 1,      // Periodic beamforming
+  IM = 2,       // Interference measurement
+  RTCAL = 3,    // Runtime calibration
+  CBF_TX = 4,   // Coordinated beamforming (aka interference nulling), tx side
+  CBF_RX = 5,   // Same, rx side
+}
+
+enum ScanMode {
+  COARSE = 1,
+  FINE = 2,
+  SELECTIVE = 3,
+}
+
+// Runtime Calibration
+enum RTCal {
+  NO_CAL = 0, // No calibration, init state
+  TOP_RX_CAL = 1, // Top Panel, responder Rx cal with fixed intiator Tx beam
+  TOP_TX_CAL = 2, // Top Panel, intiator Tx cal with fixed responder Rx beam
+  BOT_RX_CAL = 3, // Bot Panel, responder Rx cal with fixed intiator Tx beam
+  BOT_TX_CAL = 4, // Bot Panel, intiator Tx cal with fixed responder Rx beam
+  VBS_RX_CAL = 5, // Top + Bot, responder Rx cal with fixed intiator Tx beam
+  VBS_TX_CAL = 6, // Top + Bot, intiator Tx cal with fixed responder Rx beam
+  RX_CBF_AGGRESSOR = 7, // RX Coordinated BF Nulling, Aggressor link
+  RX_CBF_VICTIM = 8,    // RX Coordinated BF Nulling, Victim link
+  TX_CBF_AGGRESSOR = 9, // TX Coordinated BF Nulling, Aggressor link
+  TX_CBF_VICTIM = 10,   // TX Coordinated BF Nulling, Victim link
+  RT_CAL_INVALID = 11,
+}
+
+enum ScanFwStatus {
+  COMPLETE = 0,
+  INVALID_TYPE = 1,
+  INVALID_START_TSF = 2,
+  INVALID_STA = 3,
+  AWV_IN_PROG = 4,
+  STA_NOT_ASSOC = 5,
+  REQ_BUFFER_FULL = 6,
+  LINK_SHUT_DOWN = 7,
+  UNKNOWN_ERROR = 8,
+}
+
+// json_obj is the entire unedited ScanRespTop as received from the Controller
+//  as a (compressed) blob other fields in the table are used for searching
+// the mysql table for convenience
+struct MySqlScanResp {
+  1: string json_obj;
+  2: i32 token;
+  3: i32 node_id; // numeric id corresponding to the mac_addr
+  4: i16 scan_type;
+  5: i16 scan_sub_type;
+  6: string network; // topology name
+  7: bool apply_flag; // flag to intruct responder to apply new beams
+  // if there is an error indicated in status, you need to look at the json_obj
+  // to see the reason
+  // completion_status is a bitmask: bit 0 tx, bits 1... for each rx; 1 is error
+  8: i16 completion_status;
+  9: i64 start_bwgd;
+  10: i16 scan_mode;
+  11: i32 status;
+  12: i16 tx_power;
+}
+
+struct MicroRoute {
+  1: i16 tx;
+  2: i16 rx;
+}
+
+// individual micro-route measurement/report
+struct RouteInfo {
+  1: MicroRoute route; // beamforming indices of micro route
+  2: double rssi;      // received signal strength, in dBm
+  3: double snrEst;    // measured during the short training field, in dB
+  4: double postSnr;    // not valid during a scan - ignore it
+  5: i32 rxStart;      // relative arrival time of the packet, in us
+  6: byte packetIdx;   // Repeat count of this packet, 0-based
+  7: i16 sweepidx; // in case of multiple sweeps, indicates the index
+}
+
+// without "optional" keyword: tx acts as required, rx gets default value
+// with "optional" keyword: tx acts as optional, rx check __isset
+// with "required" rx fails if parameter is missing
+// if any required fields are missing, deserialization will fail and
+// it will return a 500 status to the controller
+struct ScanResp {
+   1: required i32 token; // token to match request to response
+   2: i64 curSuperframeNum; // time-stamp of measurement
+   3: list<RouteInfo> routeInfoList; // list of routes
+   4: i16 txPwrIndex; // tx power used during scan (tx node only)
+   5: i16 azimuthBeam; // before any new beams are applied
+   6: i16 oldBeam;  // PBF: the old azimuth beam; RTCAL, VBS and CBF: old phase
+   7: i16 newBeam;  // PBF new azimuth beam; RTCAL new phase
+   8: i16 numSweeps; //Number of times beams were scanned
+   9: i64 startSuperframeNum; // Start of BW Alloc for Scan
+   10: i64 endSuperframeNum; // End of BW Alloc for scan
+   11: required i16 status; // whether it completed normally or not (and why)
+   12: i16 sweepStartBeam; // Applicable for selective scan only
+   13: i16 sweepEndBeam; // Applicable for selective scan only
+   14: required i16 role; // Initiator (0) or Responder (1)
+   15: required string macAddr; // xx:xx:xx:xx:xx:xx format
+}
+
+struct ScanRespTop {
+  // only one responses per message
+  1: required map<string /* nodename */, ScanResp> responses;
+  2: required i64 startBwgdIdx; // starting BWGD
+  3: required i16 type; // PBF, RTCAL, etc.
+  4: i16 subType; // applies only to RTCAL
+  5: i16 mode; // coarse, fine, selective
+  6: bool apply; // flag to intruct responder to apply new beam
+  7: string txNode; // name of the tx node
+}

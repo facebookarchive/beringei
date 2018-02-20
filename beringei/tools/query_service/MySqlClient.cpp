@@ -306,6 +306,18 @@ MySqlClient::getEventCategoryId(const int64_t nodeId,
   return folly::none;
 }
 
+folly::Optional<std::string>
+MySqlClient::getTopologyName(const std::string &macAddr) const {
+  std::string macAddrLower = macAddr;
+  std::transform(macAddrLower.begin(), macAddrLower.end(), macAddrLower.begin(),
+                 ::tolower);
+  auto it = macAddrToNode_.find(macAddrLower);
+  if (it != macAddrToNode_.end()) {
+    return (it->second->network);
+  }
+  return folly::none;
+}
+
 void
 MySqlClient::addEvents(std::vector<query::MySqlEventData> events) noexcept {
   if (!events.size()) {
@@ -362,5 +374,65 @@ void MySqlClient::addAlert(query::MySqlAlertData alert) noexcept {
     LOG(ERROR) << " (MySQL error code: " << e.getErrorCode();
   }
 }
+
+// there are two mySQL tables for scan responses - tx and rx
+// each row of the table is a single scan response from a node
+// to retrieve scan results, the tables are JOINed by token/network/bwgd
+void MySqlClient::writeTxScanResponse(query::MySqlScanResp scanResponse) noexcept {
+  try {
+    // json_obj is stored as a compressed, stringified version of the
+    // complete scan response (all of the SNR, RSSI ...)
+    std::string query =
+      "INSERT INTO `tx_scan_results` "
+      "(`token`, `json_obj`, `tx_node_id`, `start_bwgd`, "
+      "`scan_type`, `network`,`scan_sub_type`, `scan_mode`, "
+      "`apply_flag`, `status`, `tx_power`) VALUES "
+      "(?, COMPRESS(?), ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+    std::unique_ptr<sql::PreparedStatement> prep_stmt(
+        connection_->prepareStatement(query));
+    LOG(INFO) << "scan response: " << scanResponse.token;
+    prep_stmt->setInt(1, scanResponse.token);
+    prep_stmt->setString(2, scanResponse.json_obj);
+    prep_stmt->setInt(3, scanResponse.node_id);
+    prep_stmt->setUInt64(4, scanResponse.start_bwgd);
+    prep_stmt->setInt(5, scanResponse.scan_type);
+    prep_stmt->setString(6, scanResponse.network);
+    prep_stmt->setInt(7, scanResponse.scan_sub_type);
+    prep_stmt->setInt(8, scanResponse.scan_mode);
+    prep_stmt->setInt(9, scanResponse.apply_flag);
+    prep_stmt->setInt(10, scanResponse.status);
+    prep_stmt->setInt(11, scanResponse.tx_power);
+    prep_stmt->execute();
+
+  }
+  catch (sql::SQLException &e) {
+    LOG(ERROR) << "tx scan response ERR: " << e.what();
+    LOG(ERROR) << " MySQL error code: " << e.getErrorCode();
+  }
 }
-} // facebook::gorilla
+
+void MySqlClient::writeRxScanResponse(query::MySqlScanResp scanResponse) noexcept {
+  try {
+    std::string query =
+      "INSERT INTO `rx_scan_results` "
+      "(`token`, `json_obj`, `rx_node_id`, `start_bwgd`, `network`, `status`)"
+      " VALUES (?, COMPRESS(?), ?, ?, ?, ?)";
+    std::unique_ptr<sql::PreparedStatement> prep_stmt(
+        connection_->prepareStatement(query));
+    LOG(INFO) << "scan response: " << scanResponse.token;
+    prep_stmt->setInt(1, scanResponse.token);
+    prep_stmt->setString(2, scanResponse.json_obj);
+    prep_stmt->setInt(3, scanResponse.node_id);
+    prep_stmt->setUInt64(4, scanResponse.start_bwgd);
+    prep_stmt->setString(5, scanResponse.network);
+    prep_stmt->setInt(6, scanResponse.status);
+    prep_stmt->execute();
+
+  }
+  catch (sql::SQLException &e) {
+    LOG(ERROR) << "rx scan response ERR: " << e.what();
+    LOG(ERROR) << " MySQL error code: " << e.getErrorCode();
+  }
+}
+} // gorilla
+} // facebook

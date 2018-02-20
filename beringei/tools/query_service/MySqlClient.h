@@ -75,8 +75,13 @@ class MySqlClient {
   folly::Optional<int64_t>
   getEventCategoryId(const int64_t nodeId, const std::string &category) const;
 
+  folly::Optional<std::string>
+  getTopologyName(const std::string &macAddr) const;
+
   void addEvents(std::vector<query::MySqlEventData> events) noexcept;
   void addAlert(query::MySqlAlertData alert) noexcept;
+  void writeTxScanResponse(query::MySqlScanResp scanResponse) noexcept;
+  void writeRxScanResponse(query::MySqlScanResp scanResponse) noexcept;
 
  private:
   sql::Driver *driver_;
