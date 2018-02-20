@@ -5,6 +5,8 @@
 # LICENSE file in the root directory of this source tree. An additional grant
 # of patent rights can be found in the PATENTS file in the same directory.
 
+set(CMAKE_CXX_FLAGS "-g")
+
 find_library(MYSQL_CLIENT_LIB NAMES "mysqlclient"
   PATHS "/usr/local/mysql/lib"
   NO_DEFAULT_PATH

@@ -11,9 +11,9 @@
 
 #include "MySqlClient.h"
 
-#include <folly/Memory.h>
 #include <folly/dynamic.h>
 #include <folly/futures/Future.h>
+#include <folly/Memory.h>
 #include <proxygen/httpserver/RequestHandler.h>
 
 #include "beringei/if/gen-cpp2/beringei_query_types_custom_protocol.h"

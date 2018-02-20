@@ -9,9 +9,9 @@
 
 #pragma once
 
+#include <folly/dynamic.h>
 #include <folly/futures/Future.h>
 #include <folly/Memory.h>
-#include <folly/dynamic.h>
 
 #include "beringei/client/BeringeiClient.h"
 #include "beringei/client/BeringeiConfigurationAdapterIf.h"
@@ -48,6 +48,7 @@ class BeringeiData {
    * data points, filling missing data with 0s.
    * timeBuckets_ size should be the same as each key's time series
    */
+  void valueOrNull(folly::dynamic& obj, double value, int count = 1);
   folly::dynamic transform();
   folly::dynamic latest();
   folly::dynamic handleQuery();

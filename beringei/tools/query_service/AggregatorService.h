@@ -30,8 +30,11 @@ class AggregatorService {
   // run eventbase
   void start();
   void timerCallback();
+  // requests topology from an api_service endpoint
   query::Topology fetchTopology();
-  void buildQuery(std::unordered_map<std::string, double>& values, StatsTypeAheadCache* cache);
+  void buildQuery(
+    std::unordered_map<std::string, double>& values,
+    const StatsTypeAheadCache* cache);
 
  private:
   folly::EventBase eb_;

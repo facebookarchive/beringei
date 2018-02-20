@@ -11,9 +11,10 @@
 
 #include "MySqlClient.h"
 
-#include <folly/Memory.h>
+#include <folly/concurrency/ConcurrentHashMap.h>
 #include <folly/dynamic.h>
 #include <folly/futures/Future.h>
+#include <folly/Memory.h>
 
 #include "beringei/client/BeringeiClient.h"
 #include "beringei/client/BeringeiConfigurationAdapterIf.h"
@@ -51,7 +52,7 @@ public:
                                 const query::Node &zNode);
 
   // fetch topology-wide key data
-  std::vector<query::KeyData> getKeyData(const std::string& metricName);
+  std::vector<query::KeyData> getKeyData(const std::string& metricName) const;
 
   // type-ahead search
   std::vector<std::vector<query::KeyData>>
@@ -74,19 +75,14 @@ private:
   std::unordered_map<std::string, std::vector<int> > nameToMetricIds_;
   // metric id => meta data
   std::unordered_map<int, std::shared_ptr<query::KeyData>> metricIdMetadata_;
-  // graph struct for quick traversal
-/*  struct 
-  map<string
-  [s->n->r->]
-  std::map<char, same struct> typeaheadSearch_;*/
-  
+
+  // TODO - graph struct for quick traversal
 
   // mysql client
   std::shared_ptr<MySqlClient> mySqlClient_;
 };
 
-using TACacheMap = std::unordered_map<std::string, StatsTypeAheadCache>;
-
+using TACacheMap = folly::ConcurrentHashMap<std::string, StatsTypeAheadCache>;
 
 }
 } // facebook::gorilla

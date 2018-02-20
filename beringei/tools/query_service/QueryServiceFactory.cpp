@@ -14,11 +14,11 @@
 #include "LogsWriteHandler.h"
 #include "NotFoundHandler.h"
 #include "QueryHandler.h"
-#include "TableQueryHandler.h"
-#include "StatsWriteHandler.h"
 #include "StatsTypeAheadCache.h"
-#include "StatsTypeAheadHandler.h"
 #include "StatsTypeAheadCacheHandler.h"
+#include "StatsTypeAheadHandler.h"
+#include "StatsWriteHandler.h"
+#include "TableQueryHandler.h"
 
 #include "beringei/plugins/BeringeiConfigurationAdapter.h"
 

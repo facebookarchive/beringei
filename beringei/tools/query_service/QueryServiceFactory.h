@@ -10,12 +10,13 @@
 
 #include "MySqlClient.h"
 #include "StatsTypeAheadCache.h"
+
 #include "beringei/client/BeringeiClient.h"
 #include "beringei/client/BeringeiConfigurationAdapterIf.h"
 
+#include <folly/io/async/EventBaseManager.h>
 #include <folly/Memory.h>
 #include <folly/Portability.h>
-#include <folly/io/async/EventBaseManager.h>
 #include <gflags/gflags.h>
 #include <proxygen/httpserver/HTTPServer.h>
 #include <proxygen/httpserver/RequestHandlerFactory.h>

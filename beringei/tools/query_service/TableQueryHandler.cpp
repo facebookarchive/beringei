@@ -73,7 +73,7 @@ void TableQueryHandler::onEOM() noexcept {
   }
   // match to a type-ahead cache
   auto taCacheIt = typeaheadCache_->find(request.topologyName);
-  if (taCacheIt == typeaheadCache_->end()) {
+  if (taCacheIt == typeaheadCache_->cend()) {
     LOG(INFO) << "\tTopology cache not found: " << request.topologyName;
     ResponseBuilder(downstream_)
         .status(500, "OK")

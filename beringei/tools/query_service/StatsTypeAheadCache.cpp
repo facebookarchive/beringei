@@ -41,7 +41,7 @@ StatsTypeAheadCache::StatsTypeAheadCache(
 }
   
 std::vector<query::KeyData> 
-StatsTypeAheadCache::getKeyData(const std::string& metricName) {
+StatsTypeAheadCache::getKeyData(const std::string& metricName) const {
   std::vector<query::KeyData> retKeyData;
   // return KeyData based on a metric name
   auto metricId = keyToMetricIds_.find(metricName);

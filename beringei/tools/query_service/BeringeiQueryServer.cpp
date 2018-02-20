@@ -13,17 +13,17 @@
 #include "QueryServiceFactory.h"
 #include "StatsTypeAheadCache.h"
 
-#include <folly/Memory.h>
+#include "beringei/plugins/BeringeiConfigurationAdapter.h"
+
 #include <folly/init/Init.h>
 #include <folly/io/async/EventBaseManager.h>
+#include <folly/Memory.h>
 #include <gflags/gflags.h>
 #include <proxygen/httpserver/HTTPServer.h>
 #include <proxygen/httpserver/RequestHandlerFactory.h>
 
-#include "beringei/plugins/BeringeiConfigurationAdapter.h"
-
-using namespace proxygen;
 using namespace facebook::gorilla;
+using namespace proxygen;
 
 using folly::EventBase;
 using folly::EventBaseManager;
@@ -57,7 +57,7 @@ int main(int argc, char *argv[]) {
   auto mySqlClient = std::make_shared<MySqlClient>();
   mySqlClient->refreshAll();
   auto typeaheadCache =
-      std::make_shared<std::unordered_map<std::string, StatsTypeAheadCache>>();
+      std::make_shared<TACacheMap>();
   auto beringeiReadClient = std::make_shared<BeringeiClient>(
       configurationAdapter, 1, BeringeiClient::kNoWriterThreads);
   auto beringeiWriteClient = std::make_shared<BeringeiClient>(

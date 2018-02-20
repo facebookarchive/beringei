@@ -7,11 +7,15 @@
  * of patent rights can be found in the PATENTS file in the same directory.
  */
 
-#include "mysql_connection.h"
-#include "mysql_driver.h"
 #include "StatsTypeAheadCacheHandler.h"
 
+#include "mysql_connection.h"
+#include "mysql_driver.h"
+
 #include <algorithm>
+#include <map>
+#include <utility>
+
 #include <cppconn/driver.h>
 #include <cppconn/exception.h>
 #include <cppconn/prepared_statement.h>
@@ -20,11 +24,9 @@
 #include <folly/DynamicConverter.h>
 #include <folly/Conv.h>
 #include <folly/io/IOBuf.h>
-#include <map>
 #include <proxygen/httpserver/ResponseBuilder.h>
 #include <thrift/lib/cpp/util/ThriftSerializer.h>
 #include <thrift/lib/cpp2/protocol/Serializer.h>
-#include <utility>
 
 using apache::thrift::SimpleJSONSerializer;
 using std::chrono::duration_cast;
@@ -79,8 +81,8 @@ void StatsTypeAheadCacheHandler::onEOM() noexcept {
     StatsTypeAheadCache taCache(mySqlClient_);
     taCache.fetchMetricNames(request);
     LOG(INFO) << "Type-ahead cache loaded for: " << request.name;
-    // TODO - this doesn't update, need concurrent
-    typeaheadCache_->insert(std::make_pair(request.name, taCache));
+    // re-insert into the map
+    typeaheadCache_->insert_or_assign(request.name, taCache);
   }
   catch (const std::exception &ex) {
     LOG(ERROR) << "Unable to handle stats type-ahead cache request: "

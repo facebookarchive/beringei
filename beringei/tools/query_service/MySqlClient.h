@@ -9,8 +9,8 @@
 
 #pragma once
 
-#include <folly/Memory.h>
 #include <folly/dynamic.h>
+#include <folly/Memory.h>
 #include <folly/futures/Future.h>
 
 #include "beringei/if/gen-cpp2/beringei_query_types_custom_protocol.h"

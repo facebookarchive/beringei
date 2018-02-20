@@ -74,7 +74,7 @@ void StatsTypeAheadHandler::onEOM() noexcept {
             << "\" on \"" << request.topologyName << "\"";
   // check for cache client
   auto taIt = typeaheadCache_->find(request.topologyName);
-  if (taIt == typeaheadCache_->end()) {
+  if (taIt == typeaheadCache_->cend()) {
     LOG(ERROR) << "No type-ahead cache for \"" << request.topologyName << "\"";
     ResponseBuilder(downstream_)
         .status(500, "OK")

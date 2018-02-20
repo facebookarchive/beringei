@@ -11,6 +11,7 @@
 #include "BeringeiData.h"
 
 #include "beringei/if/gen-cpp2/Topology_types_custom_protocol.h"
+
 #include <curl/curl.h>
 #include <folly/io/async/AsyncTimeout.h>
 #include <thrift/lib/cpp/util/ThriftSerializer.h>
@@ -109,7 +110,7 @@ AggregatorService::timerCallback() {
     std::vector<DataPoint> bDataPoints;
     // query metric data from beringei
     auto taCacheIt = typeaheadCache_->find(topology.name);
-    if (taCacheIt != typeaheadCache_->end()) {
+    if (taCacheIt != typeaheadCache_->cend()) {
       LOG(INFO) << "Cache found for: " << topology.name;
       // fetch back the metrics we care about (PER, MCS?)
       // and average the values
@@ -157,7 +158,7 @@ AggregatorService::timerCallback() {
 void
 AggregatorService::buildQuery(
     std::unordered_map<std::string, double>& values,
-    StatsTypeAheadCache* cache) {
+    const StatsTypeAheadCache* cache) {
   // build queries
   query::QueryRequest queryRequest;
   std::vector<query::Query> queries;

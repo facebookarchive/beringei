@@ -314,59 +314,96 @@ folly::dynamic BeringeiData::latest() {
   return response;
 }
 
+void
+BeringeiData::valueOrNull(folly::dynamic& obj, double value, int count) {
+  if (value == std::numeric_limits<double>::max() ||
+      std::isnan(value) ||
+      std::isinf(value)) {
+    obj.push_back(nullptr);
+  } else if (count > 1) {
+    obj.push_back((double)value / count);
+  } else {
+    obj.push_back(value);
+  }
+}
+
 folly::dynamic BeringeiData::transform() {
   // time align all data
   int64_t timeBucketCount = (endTime_ - startTime_) / 30;
   int keyCount = beringeiTimeSeries_.size();
-  // count is a special aggregation that will be missed due to default values
-  int timeSeriesCounts[timeBucketCount]{};
   // pre-allocate the array size
   double *timeSeries = new double[keyCount * timeBucketCount]{};
-  int keyIndex = 0;
-  // store the latest value for each key
-  double latestValue[keyCount]{};
-  for (const auto &keyTimeSeries : beringeiTimeSeries_) {
-    const std::string &keyName = keyTimeSeries.first.key;
-    // fetch the last value, assume 0 for not-found
-    // TODO - 0 probably isn't what we want
-    latestValue[keyIndex] = keyTimeSeries.second.size() > 0 ? keyTimeSeries.second.back().value : 0;
-    for (const auto &timePair : keyTimeSeries.second) {
-      int timeBucketId = (timePair.unixTime - startTime_) / 30;
-      timeSeries[keyIndex * timeBucketCount + timeBucketId] = timePair.value;
-      timeSeriesCounts[timeBucketId]++;
-    }
-    keyIndex++;
-  }
   int dataPointAggCount = 1;
   if (timeBucketCount > MAX_DATA_POINTS) {
     dataPointAggCount = std::ceil((double)timeBucketCount / MAX_DATA_POINTS);
   }
-  int condensedBucketCount = timeBucketCount / dataPointAggCount;
+  int condensedBucketCount = std::ceil((double)timeBucketCount / dataPointAggCount);
+  int countPerBucket[keyCount][condensedBucketCount + 1]{};
   // allocate condensed time series, sum series (by key) for later
   // sorting, and sum of time bucket
-  double cTimeSeries[keyCount][condensedBucketCount]{};
+  double cTimeSeries[keyCount][condensedBucketCount + 1]{};
   double sumSeries[keyCount]{};
-  double sumTimeBucket[condensedBucketCount]{};
+  // sum of all known data points in each bucket
+  double sumTimeBucket[condensedBucketCount + 1]{};
+  // sum of the average of known data points in each bucket
+  double sumOfAvgTimeBucket[condensedBucketCount + 1]{};
+  int countTimeBucket[condensedBucketCount + 1]{};
+  int keyIndex = 0;
+  // store the latest value for each key
+  for (const auto &keyTimeSeries : beringeiTimeSeries_) {
+    const std::string &keyName = keyTimeSeries.first.key;
+    // fetch the last value, assume 0 for not-found
+    for (const auto &timePair : keyTimeSeries.second) {
+      int timeBucketId = (timePair.unixTime - startTime_) / 30;
+      // log # of dps per bucket for DP smoothing
+      int condensedBucketId = timeBucketId > 0 ? (timeBucketId / dataPointAggCount) : 0;
+      int oldIndex = (keyIndex * timeBucketCount + timeBucketId);
+      int newIndex = (keyIndex * timeBucketCount + (condensedBucketId * dataPointAggCount) + countPerBucket[keyIndex][condensedBucketId]);
+      if (isnan(timePair.value)) {
+        continue;
+      }
+      // aggregate count by bucket (per-key)
+      countPerBucket[keyIndex][condensedBucketId]++;
+      // aggregate count by time bucket (all-keys)
+      countTimeBucket[condensedBucketId]++;
+
+      // place the value into the next position in the bucket (don't care
+      // about the correct time slot in the bucket)
+      timeSeries[newIndex] = timePair.value;
+      // sum all data-points in the series
+      sumSeries[keyIndex] += timePair.value;
+      sumTimeBucket[condensedBucketId] += timePair.value;
+    }
+    keyIndex++;
+  }
   for (int i = 0; i < keyCount; i++) {
     int timeBucketId = 0;
     int startBucketId = 0;
-    int endBucketId = 0 + dataPointAggCount;
     while (startBucketId < timeBucketCount) {
-      // fetch all data points we need to aggregate
-      if (endBucketId >= timeBucketCount) {
-        endBucketId = timeBucketCount - 1;
+      // number of data-points in condensed bucket (ignoring missing)
+      int bucketDpCount = countPerBucket[i][timeBucketId];
+      double sum = std::numeric_limits<double>::max();
+      double avg = std::numeric_limits<double>::max();
+      double min = std::numeric_limits<double>::max();
+      double max = std::numeric_limits<double>::max();
+      // perform aggregations only if we have data
+      if (bucketDpCount > 0) {
+        // sum all non-missing data points
+        sum = std::accumulate(
+            &timeSeries[i * timeBucketCount + startBucketId],
+            &timeSeries[i * timeBucketCount + startBucketId + bucketDpCount/* do we need +1 for .end()? */], 0.0);
+        if (!isnan(sum)) {
+          // divide by the # of DPs in the bucket, ignoring missing data
+          avg = sum / (double)(bucketDpCount);
+        }
+        sumOfAvgTimeBucket[timeBucketId] += avg;
+        // min + max over the real data
+        auto minMax = std::minmax_element(
+            &timeSeries[i * timeBucketCount + startBucketId],
+            &timeSeries[i * timeBucketCount + startBucketId + bucketDpCount/* todo - same question */]);
+        min = *minMax.first;
+        max = *minMax.second;
       }
-      // aggregations
-      double sum = std::accumulate(
-          &timeSeries[i * timeBucketCount + startBucketId],
-          &timeSeries[i * timeBucketCount + endBucketId + 1], 0.0);
-      double avg = sum / (double)(endBucketId - startBucketId + 1);
-      auto minMax = std::minmax_element(
-          &timeSeries[i * timeBucketCount + startBucketId],
-          &timeSeries[i * timeBucketCount + endBucketId + 1]);
-      double min = *minMax.first;
-      double max = *minMax.second;
-      sumTimeBucket[timeBucketId] += avg;
       if (query_.agg_type == "avg") {
         // the time aggregated bucket for this key
         if (i == 0) {
@@ -375,25 +412,26 @@ folly::dynamic BeringeiData::transform() {
         } else {
           aggSeries_["min"][timeBucketId] =
               std::min(aggSeries_["min"][timeBucketId], min);
-          aggSeries_["max"][timeBucketId] =
-              std::max(aggSeries_["max"][timeBucketId], max);
+          // max only added if count is set
+          if (bucketDpCount > 0) {
+            if (aggSeries_["max"][timeBucketId] == std::numeric_limits<double>::max()) {
+              aggSeries_["max"][timeBucketId] = max;
+            } else {
+              aggSeries_["max"][timeBucketId] =
+                  std::max(aggSeries_["max"][timeBucketId], max);
+            }
+          }
         }
       } else if (query_.agg_type == "count") {
-        double countSum =
-            std::accumulate(&timeSeriesCounts[startBucketId],
-                            &timeSeriesCounts[endBucketId + 1], 0);
-        double countAvg = countSum / (double)(endBucketId - startBucketId + 1);
+        double countSum = countTimeBucket[timeBucketId];
+        double countAvg = countSum == 0 ? 0 : (countSum / (double)(bucketDpCount));
         aggSeries_[query_.agg_type].push_back(countAvg);
       } else {
         // no aggregation
         cTimeSeries[i][timeBucketId] = avg;
-        if (keyCount > MAX_COLUMNS) {
-          sumSeries[i] += sum;
-        }
       }
       // set next bucket
       startBucketId += dataPointAggCount;
-      endBucketId += dataPointAggCount;
       timeBucketId++;
     }
   }
@@ -413,10 +451,28 @@ folly::dynamic BeringeiData::transform() {
       for (int i = 0; i < keyCount; i++) {
         keySums.push_back(std::make_pair(i, sumSeries[i]));
       }
+      // sort for 'bottom' aggregation, ignoring nan/inf data
       auto sortLess = [](auto &lhs,
-                         auto &rhs) { return lhs.second < rhs.second; };
+                         auto &rhs) {
+        if (std::isnan(rhs.second) || std::isinf(rhs.second)) {
+          return true;
+        }
+        if (std::isnan(lhs.second) || std::isinf(lhs.second)) {
+          return false;
+        }
+        return lhs.second < rhs.second;
+      };
+      // sort for 'top' aggregation, ignoring nan/inf data
       auto sortGreater = [](auto &lhs,
-                            auto &rhs) { return lhs.second > rhs.second; };
+                            auto &rhs) {
+        if (std::isnan(lhs.second) || std::isinf(lhs.second)) {
+          return false;
+        }
+        if (std::isnan(rhs.second) || std::isinf(rhs.second)) {
+          return true;
+        }
+        return lhs.second > rhs.second;
+      };
       if (query_.agg_type == "bottom") {
         std::sort(keySums.begin(), keySums.end(), sortLess);
       } else {
@@ -427,7 +483,7 @@ folly::dynamic BeringeiData::transform() {
         columns.push_back(columnNames_[kv.first]);
         // loop over time series
         for (int i = 0; i < condensedBucketCount; i++) {
-          datapoints[i].push_back(cTimeSeries[kv.first][i]);
+          valueOrNull(datapoints[i], cTimeSeries[kv.first][i]);
         }
       }
     } else {
@@ -436,33 +492,40 @@ folly::dynamic BeringeiData::transform() {
         columns.push_back(columnNames_[i]);
         // loop over time series
         for (int e = 0; e < condensedBucketCount; e++) {
-          datapoints[e].push_back(cTimeSeries[i][e]);
+          valueOrNull(datapoints[e], cTimeSeries[i][e]);
         }
       }
     }
   } else if (query_.agg_type == "sum") {
     columns.push_back(query_.agg_type);
     for (int i = 0; i < condensedBucketCount; i++) {
-      datapoints[i].push_back(sumTimeBucket[i]);
+      // divide by the received data points per interval?
+      valueOrNull(datapoints[i], sumOfAvgTimeBucket[i]);
     }
   } else if (query_.agg_type == "count") {
     for (const auto &aggSerie : aggSeries_) {
       columns.push_back(aggSerie.first);
       for (int i = 0; i < condensedBucketCount; i++) {
-        datapoints[i].push_back(aggSerie.second[i]);
+        valueOrNull(datapoints[i], aggSerie.second[i]);
       }
     }
   } else if (query_.agg_type == "avg") {
-    // show agg series
+    // adds min + max from above
     for (const auto &aggSerie : aggSeries_) {
       columns.push_back(aggSerie.first);
       for (int i = 0; i < condensedBucketCount; i++) {
-        datapoints[i].push_back(aggSerie.second[i]);
+        valueOrNull(datapoints[i], aggSerie.second[i]);
       }
     }
+    // add average from sum values
     columns.push_back("avg");
     for (int i = 0; i < condensedBucketCount; i++) {
-      datapoints[i].push_back(sumTimeBucket[i] / keyCount);
+      if (countTimeBucket[i] > 0) {
+        // divide by the # of received data points for the bucket
+        valueOrNull(datapoints[i], sumTimeBucket[i], countTimeBucket[i]);
+      } else {
+        valueOrNull(datapoints[i], std::numeric_limits<double>::max());
+      }
     }
   } else if (query_.agg_type == "none") {
     // agg series
@@ -470,9 +533,22 @@ folly::dynamic BeringeiData::transform() {
       columns.push_back(columnNames_[i]);
       // loop over time series
       for (int e = 0; e < condensedBucketCount; e++) {
-        datapoints[e].push_back(cTimeSeries[i][e]);
+        valueOrNull(datapoints[e], cTimeSeries[i][e]);
       }
     }
+  }
+  int dpC = 0;
+  for (const auto& dpLine : datapoints) {
+    try {
+      folly::toJson(dpLine);
+    } catch (const std::exception& ex) {
+      for (const auto& dp : dpLine) {
+        LOG(INFO) << "\t\tDP: " << dp;
+      }
+      LOG(ERROR) << "toJson failed: " << ex.what();
+    }
+    
+    dpC++;
   }
   delete[] timeSeries;
   folly::dynamic response = folly::dynamic::object;
@@ -846,7 +922,10 @@ int BeringeiData::getShardId(const std::string &key, const int numShards) {
 }
 
 void BeringeiData::validateQuery(const query::Query &request) {
-  if (request.__isset.start_ts && request.__isset.end_ts) {
+  if (request.__isset.min_ago) {
+    startTime_ = std::time(nullptr) - (60 * request.min_ago);
+    endTime_ = std::time(nullptr);
+  } else if (request.start_ts != 0 && request.end_ts != 0) {
     // TODO - sanity check time
     startTime_ = std::ceil(request.start_ts / 30.0) * 30;
     endTime_ = std::ceil(request.end_ts / 30.0) * 30;
@@ -855,23 +934,18 @@ void BeringeiData::validateQuery(const query::Query &request) {
                  << endTime_;
       throw std::runtime_error("Request for invalid time window");
     }
-  } else if (request.__isset.min_ago) {
-    startTime_ = std::time(nullptr) - (60 * request.min_ago);
-    endTime_ = std::time(nullptr);
   } else {
     // default to 1 day here
     startTime_ = std::time(nullptr) - (24 * 60 * 60);
     endTime_ = std::time(nullptr);
   }
-//  LOG(INFO) << "Request for start: " << startTime_ << " <-> " << endTime_;
+  LOG(INFO) << "Request for start: " << startTime_ << " <-> " << endTime_;
 }
 
 GetDataRequest BeringeiData::createBeringeiRequest(const query::Query &request,
                                                    const int numShards) {
   GetDataRequest beringeiRequest;
 
-  LOG(INFO) << "Begin: " << startTime_ << " <-> " << endTime_
-            << ", keys: " << request.key_ids.size();
   beringeiRequest.begin = startTime_;
   beringeiRequest.end = endTime_;
 

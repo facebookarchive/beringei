@@ -11,9 +11,9 @@
 
 #include "StatsTypeAheadCache.h"
 
+#include <folly/dynamic.h>
 #include <folly/futures/Future.h>
 #include <folly/Memory.h>
-#include <folly/dynamic.h>
 #include <proxygen/httpserver/RequestHandler.h>
 
 #include "beringei/client/BeringeiClient.h"
