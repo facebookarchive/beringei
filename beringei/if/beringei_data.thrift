@@ -178,3 +178,46 @@ struct GetLastUpdateTimesResult {
   // Set to true if there are more results in the shard.
   2: bool moreResults,
 }
+
+// Key and Data Logging Structures
+
+enum CheckpointStatus {
+  NO_CHECKPOINT = 0,
+
+  // Future calls will summarize all previous entries before this one.
+  BEGIN_CHECKPOINT =  1,
+
+  // A checkpoint has finished.
+  // Future readers may now ignore all logs before the most recent
+  // BEGIN_CHECKPOINT.
+  COMPLETE_CHECKPOINT = 2,
+}
+
+struct KeyMapping {
+  1: i32 shardId,
+  2: i32 keyId,
+  3: string key,
+  4: i32 categoryId,
+
+  // Data for this ID before this timestamp should be discarded.
+  // In normal operation, IDs are not be re-used until after the corresponding
+  // data has completely aged out. However, this ensures frequent shard movement
+  // coupled with intermittent I/O errors causes data loss instead of data
+  // corruption.
+  5: i32 creationTime,
+}
+
+struct AppendKeysRequest {
+  1: list<KeyMapping> keys,
+  2: CheckpointStatus status,
+}
+
+struct DataPointWithID {
+  1: i32 shardId,
+  2: i32 keyId,
+  3: TimeValuePair point,
+}
+
+struct LogDataPointsRequest {
+  1: list<DataPointWithID> points,
+}
