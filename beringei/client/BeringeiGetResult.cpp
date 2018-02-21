@@ -12,7 +12,11 @@
 #include <algorithm>
 #include <vector>
 
+#ifndef BERINGEI_AUTOSETUP
 #include <folly/container/Enumerate.h>
+#else
+#include <folly/Enumerate.h>
+#endif
 
 #include "beringei/lib/GorillaStatsManager.h"
 #include "beringei/lib/TimeSeries.h"

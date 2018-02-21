@@ -12,7 +12,12 @@
 #include <string>
 #include <vector>
 
+#ifndef BERINGEI_AUTOSETUP
 #include <folly/synchronization/SmallLocks.h>
+#else
+#include <folly/SmallLocks.h>
+#endif
+
 #include "BucketStorage.h"
 #include "TimeSeriesStream.h"
 #include "beringei/if/gen-cpp2/beringei_data_types.h"

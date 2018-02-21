@@ -1,5 +1,4 @@
-# Pull base image.
-FROM ubuntu:16.10
+FROM ubuntu:17.10
 
 ENV WORKDIR /usr/local/beringei
 ENV RUN_CMD ./beringei/service/beringei_main \
@@ -12,6 +11,8 @@ ENV RUN_CMD ./beringei/service/beringei_main \
               -logtostderr \
               -v=2
 
+RUN apt-get update
+RUN apt-get -y upgrade
 # Copy files from CircleCI into docker container.
 COPY . $WORKDIR
 
@@ -22,13 +23,21 @@ CMD ["bash"]
 WORKDIR $WORKDIR
 RUN $WORKDIR/setup_ubuntu.sh
 
+RUN apt-get install -y libmysqlclient20 libmysqlclient-dev libmysql++3v5 libmysqlcppconn7v5 libmysqlcppconn-dev libboost-all-dev libcap-dev libdouble-conversion-dev libevent-dev libgflags2.2 libgoogle-glog-dev libjemalloc-dev libkrb5-dev liblz4-dev liblzma-dev libnuma-dev libsasl2-dev libsnappy-dev libssl-dev zlib1g-dev
+
+# cmake is restricted to look in /usr/local/mysql, linking here
+RUN mkdir -p /usr/local/mysql/lib
+RUN ln -s /usr/lib/libmysqlpp.so* /usr/local/mysql/lib
+RUN ln -s /usr/lib/x86_64-linux-gnu/libmysqlclient.* /usr/local/mysql/lib/
+
 # Create a build directory.
 RUN mkdir $WORKDIR/build
 WORKDIR $WORKDIR/build
 
 # Compile and install
+ENV BERINGEI_AUTOSETUP true
 RUN cmake ..
-RUN make install
+RUN make -j $(nproc --all) install
 
 RUN ./beringei/tools/beringei_configuration_generator --host_names localhost --file_path $WORKDIR/beringei.json
 

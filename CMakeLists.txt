@@ -66,6 +66,10 @@ include_directories(${FOLLY_INCLUDE_DIR} ${FBTHRIFT_INCLUDE_DIR} ${PROXYGEN_INCL
 add_subdirectory(${TP_PROJECTS_DIR}/gtest)
 include_directories(${GTEST_INCLUDE_DIRS} ${GMOCK_INCLUDE_DIRS})
 
+if( $ENV{BERINGEI_AUTOSETUP} STREQUAL "true")
+    add_definitions("-DBERINGEI_AUTOSETUP")
+endif()
+
 enable_testing()
 add_subdirectory("beringei")
 

@@ -10,7 +10,12 @@
 #include "CaseUtils.h"
 
 #include <folly/String.h>
+
+#ifndef BERINGEI_AUTOSETUP
 #include <folly/hash/SpookyHashV2.h>
+#else
+#include <folly/SpookyHashV2.h>
+#endif
 
 namespace facebook {
 namespace gorilla {

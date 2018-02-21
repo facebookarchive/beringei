@@ -9,7 +9,12 @@
 
 #include "PersistentKeyList.h"
 
+#ifndef BERINGEI_AUTOSETUP
 #include <folly/compression/Compression.h>
+#else
+#include <folly/io/Compression.h>
+#endif
+
 #include <folly/io/IOBuf.h>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
