@@ -15,6 +15,7 @@
 #include <memory>
 #include <vector>
 
+#include "DataLogUtil.h"
 #include "FileUtils.h"
 
 namespace facebook {
