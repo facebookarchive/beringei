@@ -9,7 +9,6 @@
 
 #include <folly/FileUtil.h>
 #include <folly/init/Init.h>
-#include <thrift/lib/cpp/util/ThriftSerializer.h>
 #include <thrift/lib/cpp2/protocol/Serializer.h>
 #include <iostream>
 
