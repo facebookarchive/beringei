@@ -10,9 +10,16 @@
 #include "BeringeiClientImpl.h"
 
 #include <folly/String.h>
+
+#ifndef BERINGEI_AUTOSETUP
 #include <folly/container/Enumerate.h>
-#include <folly/gen/Base.h>
 #include <folly/synchronization/LifoSem.h>
+#else
+#include <folly/Enumerate.h>
+#include <folly/LifoSem.h>
+#endif
+
+#include <folly/gen/Base.h>
 #include <thrift/lib/cpp2/async/RequestChannel.h>
 
 #include "beringei/lib/GorillaStatsManager.h"
@@ -634,8 +641,13 @@ BeringeiGetResult BeringeiClientImpl::get(
     GetDataRequest& request,
     const std::string& serviceOverride) {
   auto eb = BeringeiNetworkClient::getEventBase();
+#ifndef BERINGEI_AUTOSETUP
   return futureGet(request, eb, folly::getCPUExecutor().get(), serviceOverride)
       .getVia(eb);
+#else
+  return futureGet(request, eb, wangle::getCPUExecutor().get(), serviceOverride)
+      .getVia(eb);
+#endif
 }
 
 void BeringeiClientImpl::writeDataPointsForever(WriteClient* writeClient) {

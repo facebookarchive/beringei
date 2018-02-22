@@ -11,7 +11,12 @@
 
 #include "BucketStorage.h"
 
+#ifndef BERINGEI_AUTOSETUP
 #include <folly/compression/Compression.h>
+#else
+#include <folly/io/Compression.h>
+#endif
+
 #include <folly/io/IOBuf.h>
 
 namespace facebook {

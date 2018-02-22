@@ -15,7 +15,13 @@
 #include <vector>
 
 #include <folly/io/async/EventBaseManager.h>
+
+#ifndef BERINGEI_AUTOSETUP
 #include <folly/synchronization/RWSpinLock.h>
+#else
+#include <folly/RWSpinLock.h>
+#endif
+
 #include "beringei/client/BeringeiConfigurationAdapterIf.h"
 #include "beringei/if/gen-cpp2/BeringeiService.h"
 

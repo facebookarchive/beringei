@@ -13,9 +13,15 @@
 #include <vector>
 
 #include <folly/Executor.h>
-#include <folly/executors/GlobalExecutor.h>
 #include <folly/experimental/FunctionScheduler.h>
+
+#ifndef BERINGEI_AUTOSETUP
+#include <folly/executors/GlobalExecutor.h>
 #include <folly/synchronization/RWSpinLock.h>
+#else
+#include <wangle/concurrent/GlobalExecutor.h>
+#include <folly/RWSpinLock.h>
+#endif
 
 #include "beringei/client/BeringeiConfigurationAdapterIf.h"
 #include "beringei/client/BeringeiGetResult.h"
@@ -90,7 +96,11 @@ class BeringeiClientImpl {
   folly::Future<BeringeiGetResult> futureGet(
       GetDataRequest& request,
       folly::EventBase* eb,
+#ifndef BERINGEI_AUTOSETUP
       folly::Executor* workExecutor = folly::getCPUExecutor().get(),
+#else
+      folly::Executor* workExecutor = wangle::getCPUExecutor().get(),
+#endif
       const std::string& serviceOverride = "");
 
   // Returns true if reading from gorilla is enabled, false otherwise.
