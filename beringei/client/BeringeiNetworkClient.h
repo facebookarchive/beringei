@@ -14,6 +14,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include <folly/Executor.h>
 #include <folly/io/async/EventBaseManager.h>
 #include <folly/synchronization/RWSpinLock.h>
 #include "beringei/client/BeringeiConfigurationAdapterIf.h"
@@ -51,6 +52,10 @@ class BeringeiNetworkClient {
       std::pair<std::string, int>,
       std::pair<GetDataRequest, std::vector<size_t>>>
       MultiGetRequestMap;
+
+  folly::Future<std::vector<DataPoint>> futurePerformPut(
+      PutRequestMap& requests,
+      std::shared_ptr<folly::Executor> worker);
 
   // Fire off a putData request. Returns the dropped data
   // points. Might move data points from the requests.
