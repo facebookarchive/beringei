@@ -53,7 +53,7 @@ class BeringeiNetworkClient {
       std::pair<GetDataRequest, std::vector<size_t>>>
       MultiGetRequestMap;
 
-  folly::Future<std::vector<DataPoint>> futurePerformPut(
+  virtual folly::Future<std::vector<DataPoint>> futurePerformPut(
       PutRequestMap& requests,
       std::shared_ptr<folly::Executor> worker);
 
