@@ -130,10 +130,21 @@ int DataLogUtil::readLog(
     int64_t baseTime,
     size_t maxAllowedTimeSeriesId,
     std::function<bool(uint32_t, int64_t, double)> out) {
+  std::vector<double> previousValues{};
+  return readLog(
+      buffer, len, baseTime, maxAllowedTimeSeriesId, previousValues, out);
+}
+
+int DataLogUtil::readLog(
+    const char* buffer,
+    size_t len,
+    int64_t baseTime,
+    size_t maxAllowedTimeSeriesId,
+    std::vector<double>& previousValues,
+    std::function<bool(uint32_t, int64_t, double)> out) {
   // Read out all the available points.
   int points = 0;
   int64_t prevTime = baseTime;
-  std::vector<double> previousValues;
   uint64_t bitPos = 0;
   folly::StringPiece data(buffer, len);
   // Need at least three bytes for a complete value.

@@ -10,6 +10,7 @@
 #pragma once
 
 #include <cstdint>
+#include <vector>
 
 #include <folly/FBString.h>
 
@@ -36,6 +37,14 @@ class DataLogUtil {
       size_t len,
       int64_t baseTime,
       size_t maxAllowedTimeSeriesId,
+      std::function<bool(uint32_t, int64_t, double)> out);
+
+  static int readLog(
+      const char* buffer,
+      size_t len,
+      int64_t baseTime,
+      size_t maxAllowedTimeSeriesId,
+      std::vector<double>& previousValues,
       std::function<bool(uint32_t, int64_t, double)> out);
 };
 
