@@ -79,7 +79,7 @@ class BucketMap {
       int shardId,
       const std::string& dataDirectory,
       std::shared_ptr<KeyListWriter> keyWriter,
-      std::shared_ptr<BucketLogWriter> logWriter,
+      std::shared_ptr<BucketLogWriterIf> logWriter,
       State state,
       std::shared_ptr<LogReaderFactory> logReaderFactory);
   virtual ~BucketMap() {}
@@ -242,7 +242,7 @@ class BucketMap {
   const std::string dataDirectory_;
 
   std::shared_ptr<KeyListWriter> keyWriter_;
-  std::shared_ptr<BucketLogWriter> logWriter_;
+  std::shared_ptr<BucketLogWriterIf> logWriter_;
   Timer addTimer_;
   std::mutex stateChangeMutex_;
 

@@ -7,14 +7,14 @@
  * of patent rights can be found in the PATENTS file in the same directory.
  */
 
-#include "BucketLogWriter.h"
+#include "beringei/lib/BucketLogWriter.h"
 
-#include "BucketUtils.h"
-#include "GorillaStatsManager.h"
-#include "GorillaTimeConstants.h"
-#include "Timer.h"
+#include <glog/logging.h>
 
-#include "glog/logging.h"
+#include "beringei/lib/BucketUtils.h"
+#include "beringei/lib/GorillaStatsManager.h"
+#include "beringei/lib/GorillaTimeConstants.h"
+#include "beringei/lib/Timer.h"
 
 namespace facebook {
 namespace gorilla {
@@ -41,8 +41,6 @@ static const int kMaxActiveBuckets = 2;
 static const int kFileOpenRetries = 5;
 static const int kSleepUsBetweenFailures = 100 * kGorillaUsecPerMs; // 100 us
 const std::string BucketLogWriter::kLogFilePrefix = "log";
-
-uint32_t BucketLogWriter::numShards_ = 1;
 
 BucketLogWriter::BucketLogWriter(
     int windowSize,
@@ -282,5 +280,6 @@ void BucketLogWriter::startMonitoring() {
   GorillaStatsManager::addStatExportType(kLogDataFailures, SUM);
   GorillaStatsManager::addStatExportType(kLogFilesystemFailures, SUM);
 }
-}
-} // facebook:gorilla
+
+} // namespace gorilla
+} // namespace facebook

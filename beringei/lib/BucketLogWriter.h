@@ -13,15 +13,37 @@
 #include <thread>
 #include <unordered_map>
 
-#include "DataLog.h"
-#include "FileUtils.h"
-
 #include <folly/MPMCQueue.h>
+#include <gtest/gtest.h>
+
+#include "beringei/lib/DataLog.h"
+#include "beringei/lib/FileUtils.h"
 
 namespace facebook {
 namespace gorilla {
 
-class BucketLogWriter {
+class BucketLogWriterIf {
+ public:
+  virtual ~BucketLogWriterIf() {}
+
+  /// This will push the given data entry to a queue for logging.
+  /// @param[in] shardId Shard for this log.
+  /// @param[in] index Index into the internal vector of TimeSeries.
+  /// @param[in] unixTime Time of the data point.
+  /// @param[in] value Value of the data point.
+  virtual void
+  logData(int64_t shardId, int32_t index, int64_t unixTime, double value) = 0;
+
+  /// Starts writing points for this shard.
+  /// @param[in] shard Shard to start writing data point.
+  virtual void startShard(int64_t shardId) = 0;
+
+  /// Stops writing points for this shard and closes all the open files.
+  /// @param[in] shard Shard to stop writing data point.
+  virtual void stopShard(int64_t shardId) = 0;
+};
+
+class BucketLogWriter : public BucketLogWriterIf {
  public:
   static const std::string kLogFilePrefix;
 
@@ -33,29 +55,26 @@ class BucketLogWriter {
 
   ~BucketLogWriter();
 
-  // This will push the given data entry to a queue for logging.
-  void logData(int64_t shardId, int32_t index, int64_t unixTime, double value);
+  /// @see BucketLogWriterIf.
+  void logData(int64_t shardId, int32_t index, int64_t unixTime, double value)
+      override;
 
+  /// @see BucketLogWriterIf.
+  void startShard(int64_t shardId) override;
+
+  /// @see BucketLogWriterIf.
+  void stopShard(int64_t shardId) override;
+
+  /// Initialize all monitoring for this class.
+  static void startMonitoring();
+
+  /// Flush the current buffered queue.
+  void flushQueue();
+
+ private:
   // Writes a single entry from the queue. Does not need to be called
   // if `writerThread` was defined in the constructor.
   bool writeOneLogEntry(bool blockingRead);
-
-  // Starts writing points for this shard.
-  void startShard(int64_t shardId);
-
-  // Stops writing points for this shard and closes all the open
-  // files.
-  void stopShard(int64_t shardId);
-
-  void flushQueue();
-
-  static void startMonitoring();
-
-  static void setNumShards(uint32_t numShards) {
-    numShards_ = numShards;
-  }
-
- private:
   void startWriterThread();
   void stopWriterThread();
 
@@ -89,7 +108,6 @@ class BucketLogWriter {
   };
 
   std::unordered_map<int64_t, ShardWriter> shardWriters_;
-  static uint32_t numShards_;
 };
 
 } // namespace gorilla

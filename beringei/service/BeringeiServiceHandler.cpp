@@ -154,8 +154,6 @@ BeringeiServiceHandler::BeringeiServiceHandler(
   KeyListWriter::startMonitoring();
   BucketStorage::startMonitoring();
 
-  BucketLogWriter::setNumShards(FLAGS_gorilla_shards);
-
   std::vector<std::shared_ptr<KeyListWriter>> keyWriters;
   for (int i = 0; i < FLAGS_key_writer_threads; i++) {
     keyWriters.emplace_back(

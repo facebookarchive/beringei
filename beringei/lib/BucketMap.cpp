@@ -65,7 +65,7 @@ BucketMap::BucketMap(
     int shardId,
     const std::string& dataDirectory,
     std::shared_ptr<KeyListWriter> keyWriter,
-    std::shared_ptr<BucketLogWriter> logWriter,
+    std::shared_ptr<BucketLogWriterIf> logWriter,
     BucketMap::State state,
     std::shared_ptr<LogReaderFactory> logReaderFactory)
     : n_(buckets),
