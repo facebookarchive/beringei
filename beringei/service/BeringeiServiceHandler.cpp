@@ -7,13 +7,14 @@
  * of patent rights can be found in the PATENTS file in the same directory.
  */
 
-#include "BeringeiServiceHandler.h"
+#include "beringei/service/BeringeiServiceHandler.h"
 
 #include <algorithm>
 #include <iostream>
 
 #include <folly/Random.h>
 #include <folly/experimental/FunctionScheduler.h>
+
 #include "beringei/lib/BucketLogWriter.h"
 #include "beringei/lib/BucketMap.h"
 #include "beringei/lib/BucketStorage.h"
@@ -129,7 +130,9 @@ BeringeiServiceHandler::BeringeiServiceHandler(
       memoryUsageGuard_(std::move(memoryUsageGuard)),
       serviceName_(serviceName),
       port_(port),
-      adjustTimestamps_(adjustTimestamps) {
+      adjustTimestamps_(adjustTimestamps),
+      logReaderFactory_(
+          std::make_shared<LocalLogReaderFactory>(FLAGS_data_directory)) {
   // the number of threads for each thread pool must exceed 0
   CHECK_GT(fLI::FLAGS_key_writer_threads, 0);
   CHECK_GT(fLI::FLAGS_log_writer_threads, 0);
@@ -184,7 +187,8 @@ BeringeiServiceHandler::BeringeiServiceHandler(
         FLAGS_data_directory,
         keyWriter,
         bucketLogWriter,
-        BucketMap::UNOWNED);
+        BucketMap::UNOWNED,
+        logReaderFactory_);
 
     if (FLAGS_create_directories) {
       FileUtils utils(i, "", FLAGS_data_directory);
@@ -733,5 +737,6 @@ void BeringeiServiceHandler::finalizeBucket(const uint64_t timestamp) {
 
   LOG(INFO) << "Finished finalizing buckets at time " << timestamp;
 }
-}
-} // facebook::gorilla
+
+} // namespace gorilla
+} // namespace facebook

@@ -17,6 +17,7 @@
 #include "beringei/client/BeringeiConfigurationAdapterIf.h"
 #include "beringei/if/gen-cpp2/BeringeiService.h"
 #include "beringei/lib/BucketMap.h"
+#include "beringei/lib/LogReader.h"
 #include "beringei/lib/MemoryUsageGuardIf.h"
 #include "beringei/lib/ShardData.h"
 
@@ -96,6 +97,7 @@ class BeringeiServiceHandler : virtual public BeringeiServiceSvIf {
   folly::FunctionScheduler cleanThread_;
   folly::FunctionScheduler bucketFinalizerThread_;
   folly::FunctionScheduler refreshShardConfigThread_;
+  std::shared_ptr<LogReaderFactory> logReaderFactory_;
 };
 
 } // namespace gorilla

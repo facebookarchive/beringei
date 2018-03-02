@@ -66,7 +66,8 @@ BucketMap::BucketMap(
     const std::string& dataDirectory,
     std::shared_ptr<KeyListWriter> keyWriter,
     std::shared_ptr<BucketLogWriter> logWriter,
-    BucketMap::State state)
+    BucketMap::State state,
+    std::shared_ptr<LogReaderFactory> logReaderFactory)
     : n_(buckets),
       windowSize_(windowSize),
       reliableDataStartTime_(0),
@@ -78,7 +79,8 @@ BucketMap::BucketMap(
       dataDirectory_(dataDirectory),
       keyWriter_(keyWriter),
       logWriter_(logWriter),
-      lastFinalizedBucket_(0) {}
+      lastFinalizedBucket_(0),
+      logReaderFactory_(logReaderFactory) {}
 
 // Insert the given data point, creating a new row if necessary.
 // Returns the number of new rows created (0 or 1) and the number of
@@ -667,10 +669,11 @@ void BucketMap::readLogFiles(uint32_t lastBlock) {
     }
     lastTimestamp = std::max(lastTimestamp, unixTime);
   };
+
   uint32_t unknownKeys = 0;
   int64_t lastTimestamp = timestamp(lastBlock + 1);
-  auto logReader = std::make_unique<LocalLogReader>(
-      shardId_, dataDirectory_, windowSize_, std::move(ingestData));
+  auto logReader = logReaderFactory_->getLogReader(
+      shardId_, windowSize_, std::move(ingestData));
   logReader->readLog(lastBlock, lastTimestamp, unknownKeys);
 
   int64_t now = time(nullptr);
@@ -952,5 +955,6 @@ std::vector<BucketMap::Item> BucketMap::getDeviatingTimeSeries(
 
   return deviations;
 }
+
 } // namespace gorilla
 } // namespace facebook

@@ -70,5 +70,16 @@ void LocalLogReader::readLog(
   }
 }
 
+LocalLogReaderFactory::LocalLogReaderFactory(const std::string& dir)
+    : dataDir_(dir) {}
+
+std::unique_ptr<LogReader> LocalLogReaderFactory::getLogReader(
+    uint32_t shardId,
+    int64_t windowSize,
+    DataPointCallback&& func) const {
+  return std::make_unique<LocalLogReader>(
+      shardId, dataDir_, windowSize, std::move(func));
+}
+
 } // namespace gorilla
 } // namespace facebook

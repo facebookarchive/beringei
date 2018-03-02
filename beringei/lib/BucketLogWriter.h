@@ -91,5 +91,6 @@ class BucketLogWriter {
   std::unordered_map<int64_t, ShardWriter> shardWriters_;
   static uint32_t numShards_;
 };
-}
-} // facebook:gorilla
+
+} // namespace gorilla
+} // namespace facebook

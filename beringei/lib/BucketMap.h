@@ -21,6 +21,7 @@
 #include "beringei/lib/BucketedTimeSeries.h"
 #include "beringei/lib/CaseUtils.h"
 #include "beringei/lib/KeyListWriter.h"
+#include "beringei/lib/LogReader.h"
 #include "beringei/lib/PersistentKeyList.h"
 #include "beringei/lib/Timer.h"
 
@@ -79,7 +80,8 @@ class BucketMap {
       const std::string& dataDirectory,
       std::shared_ptr<KeyListWriter> keyWriter,
       std::shared_ptr<BucketLogWriter> logWriter,
-      State state);
+      State state,
+      std::shared_ptr<LogReaderFactory> logReaderFactory);
   virtual ~BucketMap() {}
   // Insert the given data point, creating a new row if necessary.
   // Returns the number of new rows created (0 or 1) and the number of
@@ -267,6 +269,8 @@ class BucketMap {
 
   // Circular vector for the deviations.
   std::vector<std::vector<uint32_t>> deviations_;
+  std::shared_ptr<LogReaderFactory> logReaderFactory_;
 };
+
 } // namespace gorilla
 } // namespace facebook
