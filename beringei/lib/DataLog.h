@@ -15,8 +15,8 @@
 #include <memory>
 #include <vector>
 
-#include "DataLogUtil.h"
-#include "FileUtils.h"
+#include "beringei/lib/DataLogUtil.h"
+#include "beringei/lib/FileUtils.h"
 
 namespace facebook {
 namespace gorilla {
@@ -59,5 +59,6 @@ class DataLogReader {
       int64_t baseTime,
       std::function<bool(uint32_t, int64_t, double)>);
 };
-}
-} // facebook:gorilla
+
+} // namespace gorilla
+} // namespace facebook

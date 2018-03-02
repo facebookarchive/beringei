@@ -9,9 +9,10 @@
 
 #pragma once
 
+#include <mutex>
+
 #include <folly/SharedMutex.h>
 #include <folly/experimental/FunctionScheduler.h>
-#include <mutex>
 
 #include "beringei/client/BeringeiConfigurationAdapterIf.h"
 #include "beringei/if/gen-cpp2/BeringeiService.h"
@@ -96,5 +97,6 @@ class BeringeiServiceHandler : virtual public BeringeiServiceSvIf {
   folly::FunctionScheduler bucketFinalizerThread_;
   folly::FunctionScheduler refreshShardConfigThread_;
 };
-}
-} // facebook::gorilla
+
+} // namespace gorilla
+} // namespace facebook

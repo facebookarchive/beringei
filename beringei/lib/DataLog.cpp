@@ -7,14 +7,13 @@
  * of patent rights can be found in the PATENTS file in the same directory.
  */
 
-#include "DataLog.h"
-
-#include "FileUtils.h"
+#include "beringei/lib/DataLog.h"
 
 #include <folly/GroupVarint.h>
 
-#include "BitUtil.h"
-#include "GorillaStatsManager.h"
+#include "beringei/lib/BitUtil.h"
+#include "beringei/lib/FileUtils.h"
+#include "beringei/lib/GorillaStatsManager.h"
 
 namespace {
 const static int kPreviousValuesVectorSizeIncrement = 1000;
@@ -145,5 +144,6 @@ int DataLogReader::readLog(
   return DataLogUtil::readLog(
       buffer.get(), len, baseTime, FLAGS_max_allowed_timeseries_id, out);
 }
-}
-} // facebook:gorilla
+
+} // namespace gorilla
+} // namespace facebook

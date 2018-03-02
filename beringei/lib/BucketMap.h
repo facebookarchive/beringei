@@ -14,15 +14,15 @@
 #include <unordered_map>
 #include <vector>
 
-#include "BucketLogWriter.h"
-#include "BucketStorage.h"
-#include "BucketedTimeSeries.h"
-#include "CaseUtils.h"
-#include "KeyListWriter.h"
-#include "PersistentKeyList.h"
-#include "Timer.h"
-
 #include <folly/synchronization/RWSpinLock.h>
+
+#include "beringei/lib/BucketLogWriter.h"
+#include "beringei/lib/BucketStorage.h"
+#include "beringei/lib/BucketedTimeSeries.h"
+#include "beringei/lib/CaseUtils.h"
+#include "beringei/lib/KeyListWriter.h"
+#include "beringei/lib/PersistentKeyList.h"
+#include "beringei/lib/Timer.h"
 
 namespace facebook {
 namespace gorilla {
@@ -268,5 +268,5 @@ class BucketMap {
   // Circular vector for the deviations.
   std::vector<std::vector<uint32_t>> deviations_;
 };
-}
-} // facebook::gorilla
+} // namespace gorilla
+} // namespace facebook

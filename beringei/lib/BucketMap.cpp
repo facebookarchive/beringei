@@ -7,15 +7,16 @@
  * of patent rights can be found in the PATENTS file in the same directory.
  */
 
-#include "BucketMap.h"
+#include "beringei/lib/BucketMap.h"
 
-#include "BucketLogWriter.h"
-#include "BucketUtils.h"
-#include "DataBlockReader.h"
-#include "DataLog.h"
-#include "GorillaStatsManager.h"
-#include "GorillaTimeConstants.h"
-#include "TimeSeries.h"
+#include "beringei/lib/BucketLogWriter.h"
+#include "beringei/lib/BucketUtils.h"
+#include "beringei/lib/DataBlockReader.h"
+#include "beringei/lib/DataLog.h"
+#include "beringei/lib/GorillaStatsManager.h"
+#include "beringei/lib/GorillaTimeConstants.h"
+#include "beringei/lib/LogReader.h"
+#include "beringei/lib/TimeSeries.h"
 
 DEFINE_int32(
     data_point_queue_size,
@@ -579,7 +580,6 @@ void BucketMap::readKeyList() {
       shardId_,
       dataDirectory_,
       [&](uint32_t id, const char* key, uint16_t category, int32_t timestamp) {
-
         if (strlen(key) >= kMaxAllowedKeyLength) {
           LOG(ERROR) << "Key too long. Key file is corrupt for shard "
                      << shardId_;
@@ -640,68 +640,38 @@ void BucketMap::readKeyList() {
 
 void BucketMap::readLogFiles(uint32_t lastBlock) {
   LOG(INFO) << "Reading logs for shard " << shardId_;
-  FileUtils files(shardId_, BucketLogWriter::kLogFilePrefix, dataDirectory_);
+  auto ingestData = [this](
+                        uint32_t key,
+                        int64_t unixTime,
+                        double value,
+                        uint32_t& unknownKeys,
+                        int64_t& lastTimestamp) {
+    folly::RWSpinLock::ReadHolder guard(lock_);
+    if (key < rows_.size() && rows_[key].get()) {
+      TimeValuePair tv;
+      tv.unixTime = unixTime;
+      tv.value = value;
+      rows_[key]->second.put(bucket(unixTime), tv, &storage_, key, nullptr);
+    } else {
+      unknownKeys++;
+    }
 
+    int64_t gap = unixTime - lastTimestamp;
+    if (gap > FLAGS_missing_logs_threshold_secs &&
+        lastTimestamp > timestamp(1)) {
+      LOG(ERROR) << gap << " seconds of missing logs from " << lastTimestamp
+                 << " to " << unixTime << " for shard " << shardId_;
+      GorillaStatsManager::addStatValue(kDataHoles, 1);
+      GorillaStatsManager::addStatValue(kMissingLogs, gap);
+      reliableDataStartTime_ = unixTime;
+    }
+    lastTimestamp = std::max(lastTimestamp, unixTime);
+  };
   uint32_t unknownKeys = 0;
   int64_t lastTimestamp = timestamp(lastBlock + 1);
-
-  for (int64_t id : files.ls()) {
-    if (id < timestamp(lastBlock + 1)) {
-      LOG(INFO) << "Skipping log file " << id << " because it's already "
-                << "covered by a block";
-      continue;
-    }
-
-    auto file = files.open(id, "rb", 0);
-    if (!file.file) {
-      LOG(ERROR) << "Could not open shard " << shardId_ << " logfile";
-      continue;
-    }
-    LOG(INFO) << "Reading logfile " << file.name;
-
-    uint32_t b = bucket(id);
-    DataLogReader::readLog(
-        file, id, [&](uint32_t key, int64_t unixTime, double value) {
-
-          if (unixTime < timestamp(b) || unixTime > timestamp(b + 1)) {
-            LOG(ERROR) << "Unix time is out of the expected range: " << unixTime
-                       << " [" << timestamp(b) << "," << timestamp(b + 1)
-                       << "]";
-            GorillaStatsManager::addStatValue(kCorruptLogFiles);
-
-            // It's better to stop reading this log file here because
-            // none of the data can be trusted after this.
-            return false;
-          }
-
-          folly::RWSpinLock::ReadHolder guard(lock_);
-          if (key < rows_.size() && rows_[key].get()) {
-            TimeValuePair tv;
-            tv.unixTime = unixTime;
-            tv.value = value;
-            rows_[key]->second.put(
-                bucket(unixTime), tv, &storage_, key, nullptr);
-          } else {
-            unknownKeys++;
-          }
-
-          int64_t gap = unixTime - lastTimestamp;
-          if (gap > FLAGS_missing_logs_threshold_secs &&
-              lastTimestamp > timestamp(1)) {
-            LOG(ERROR) << gap << " seconds of missing logs from "
-                       << lastTimestamp << " to " << unixTime << " for shard "
-                       << shardId_;
-            GorillaStatsManager::addStatValue(kDataHoles, 1);
-            GorillaStatsManager::addStatValue(kMissingLogs, gap);
-            reliableDataStartTime_ = unixTime;
-          }
-          lastTimestamp = std::max(lastTimestamp, unixTime);
-
-          return true;
-        });
-    fclose(file.file);
-    LOG(INFO) << "Finished reading logfile " << file.name;
-  }
+  auto logReader = std::make_unique<LocalLogReader>(
+      shardId_, dataDirectory_, windowSize_, std::move(ingestData));
+  logReader->readLog(lastBlock, lastTimestamp, unknownKeys);
 
   int64_t now = time(nullptr);
   int64_t gap = now - lastTimestamp;
@@ -982,5 +952,5 @@ std::vector<BucketMap::Item> BucketMap::getDeviatingTimeSeries(
 
   return deviations;
 }
-}
-} // facebook::gorilla
+} // namespace gorilla
+} // namespace facebook
