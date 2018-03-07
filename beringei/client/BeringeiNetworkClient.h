@@ -139,6 +139,12 @@ class BeringeiNetworkClient {
     return folly::EventBaseManager::get()->getEventBase();
   }
 
+  virtual bool getHostForScanShard(
+      const ScanShardRequest& request,
+      std::pair<std::string, int>& hostInfo) {
+    return getHostForShard(request.shardId, hostInfo);
+  }
+
  protected:
   // Default constructor that doesn't do any initialization. Should be
   // only used from tests.

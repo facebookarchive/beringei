@@ -113,12 +113,15 @@ class BeringeiClientImpl {
   // Fetch all data for the given shard for a time-window range.
   void scanShard(const ScanShardRequest& request, ScanShardResult& result);
 
-  virtual BeringeiScanShardResult scanShard(const ScanShardRequest& request);
+  virtual BeringeiScanShardResult scanShard(
+      const ScanShardRequest& request,
+      const std::string& serviceOverride = "");
 
   folly::Future<BeringeiScanShardResult> futureScanShard(
       const ScanShardRequest& request,
       folly::EventBase* eb,
-      folly::Executor* workExecutor = folly::getCPUExecutor().get());
+      folly::Executor* workExecutor = folly::getCPUExecutor().get(),
+      const std::string& serviceOverride = "");
 
   void flushQueue();
 
@@ -172,7 +175,7 @@ class BeringeiClientImpl {
   void futureContextAddFn(
       BeringeiFutureContext& context,
       folly::Executor* workExecutor,
-      folly::Future<R> future,
+      folly::Future<R>&& future,
       F&& fn);
 
   template <typename F>

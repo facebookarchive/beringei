@@ -57,6 +57,14 @@ struct BeringeiFutureGetContext : public BeringeiFutureContext {
   std::unique_ptr<BeringeiGetResultCollector> resultCollector;
   std::vector<BeringeiNetworkClient::MultiGetRequestMap> getRequests;
 };
+
+struct BeringeiFutureScanShardContext : public BeringeiFutureContext {
+  explicit BeringeiFutureScanShardContext(const ScanShardRequest& requestArg)
+      : request(requestArg) {}
+
+  ScanShardRequest request;
+  std::unique_ptr<BeringeiScanShardResultCollector> resultCollector;
+};
 } // namespace
 
 DEFINE_int32(
@@ -605,7 +613,7 @@ template <typename R, typename F>
 void BeringeiClientImpl::futureContextAddFn(
     BeringeiFutureContext& context,
     folly::Executor* workExecutor,
-    folly::Future<R> future,
+    folly::Future<R>&& future,
     F&& fn) {
   context.getFutures.push_back(
       future.via(workExecutor)
@@ -985,32 +993,49 @@ void BeringeiClientImpl::scanShard(
 
 folly::Future<BeringeiScanShardResult> BeringeiClientImpl::futureScanShard(
     const ScanShardRequest& request,
-    folly::EventBase*,
-    folly::Executor*) {
-  ScanShardResult rawResult;
-  scanShard(request, rawResult);
+    folly::EventBase* eb,
+    folly::Executor* workExecutor,
+    const std::string& serviceOverride) {
+  auto context = std::make_shared<BeringeiFutureScanShardContext>(request);
+  futureContextInit(
+      *context, FLAGS_gorilla_parallel_scan_shard, serviceOverride);
 
-  BeringeiScanShardResult result;
-  result.status = rawResult.status;
-  result.keys = std::move(rawResult.keys);
-  result.data.reserve(rawResult.data.size());
-  for (size_t i = 0; i < rawResult.data.size(); ++i) {
-    result.data.emplace_back();
-    TimeSeries::getValues(
-        rawResult.data[i],
-        result.data.back(),
-        0,
-        std::numeric_limits<int64_t>::max());
+  context->resultCollector = std::make_unique<BeringeiScanShardResultCollector>(
+      context->readClients.size(), request.begin, request.end);
+
+  for (const auto& client : folly::enumerate(context->readClients)) {
+    std::pair<std::string, int> hostInfo;
+    if ((*client)->getHostForScanShard(request, hostInfo)) {
+      futureContextAddFn(
+          *context,
+          workExecutor,
+          (*client)->performScanShard(hostInfo, request, eb),
+          [context, request, clientId = client.index](
+              ScanShardResult&& result) {
+            if (context->resultCollector->addResult(
+                    std::move(result), request, clientId)) {
+              context->oneComplete.setValue();
+            }
+          });
+    }
   }
-  result.queriedRecently = std::move(rawResult.queriedRecently);
 
-  return folly::makeFuture<BeringeiScanShardResult>(std::move(result));
+  return futureContextFinalize(
+      *context,
+      [context, shouldThrow = throwExceptionOnTransientFailure_](
+          std::pair<unsigned long, folly::Try<folly::Unit>>&&) {
+        return context->resultCollector->finalize(
+            shouldThrow, context->clientNames);
+      });
 }
 
 BeringeiScanShardResult BeringeiClientImpl::scanShard(
-    const ScanShardRequest& request) {
+    const ScanShardRequest& request,
+    const std::string& serviceOverride) {
   auto eb = BeringeiNetworkClient::getEventBase();
-  return futureScanShard(request, eb, folly::getCPUExecutor().get()).getVia(eb);
+  return futureScanShard(
+             request, eb, folly::getCPUExecutor().get(), serviceOverride)
+      .getVia(eb);
 }
 
 void BeringeiClientImpl::setQueueCapacity(int& queueCapacity) {

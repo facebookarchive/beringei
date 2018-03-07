@@ -42,8 +42,7 @@ namespace gorilla {
 static const std::string kStaleShardInfoUsed =
     "gorilla_network_client.stale_shard_info_used";
 
-static const int kDefaultThriftTimeoutMs =
-    2 * kGorillaMsPerSecond; // 60 seconds
+static const int kDefaultThriftTimeoutMs = 2 * kGorillaMsPerSecond;
 
 const static int kSleepBetweenRetrySecs = 10;
 
