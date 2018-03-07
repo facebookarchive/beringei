@@ -957,6 +957,36 @@ void BeringeiClientImpl::scanShard(
   readClientCopy->performScanShard(request, result);
 }
 
+folly::Future<BeringeiScanShardResult> BeringeiClientImpl::futureScanShard(
+    const ScanShardRequest& request,
+    folly::EventBase*,
+    folly::Executor*) {
+  ScanShardResult rawResult;
+  scanShard(request, rawResult);
+
+  BeringeiScanShardResult result;
+  result.status = rawResult.status;
+  result.keys = std::move(rawResult.keys);
+  result.data.reserve(rawResult.data.size());
+  for (size_t i = 0; i < rawResult.data.size(); ++i) {
+    result.data.emplace_back();
+    TimeSeries::getValues(
+        rawResult.data[i],
+        result.data.back(),
+        0,
+        std::numeric_limits<int64_t>::max());
+  }
+  result.queriedRecently = std::move(rawResult.queriedRecently);
+
+  return folly::makeFuture<BeringeiScanShardResult>(std::move(result));
+}
+
+BeringeiScanShardResult BeringeiClientImpl::scanShard(
+    const ScanShardRequest& request) {
+  auto eb = BeringeiNetworkClient::getEventBase();
+  return futureScanShard(request, eb, folly::getCPUExecutor().get()).getVia(eb);
+}
+
 void BeringeiClientImpl::setQueueCapacity(int& queueCapacity) {
   queueCapacity = queueCapacity ? queueCapacity : FLAGS_gorilla_queue_capacity;
 }

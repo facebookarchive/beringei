@@ -116,6 +116,11 @@ class BeringeiNetworkClient {
       const ScanShardRequest& request,
       ScanShardResult& result);
 
+  virtual folly::Future<ScanShardResult> performScanShard(
+      const std::pair<std::string, int>& hostInfo,
+      const ScanShardRequest& request,
+      folly::EventBase* eb = getEventBase());
+
   static uint32_t getTimeoutMs();
 
   virtual std::shared_ptr<BeringeiServiceAsyncClient> getBeringeiThriftClient(

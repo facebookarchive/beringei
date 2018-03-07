@@ -20,6 +20,7 @@
 #include "beringei/client/BeringeiConfigurationAdapterIf.h"
 #include "beringei/client/BeringeiGetResult.h"
 #include "beringei/client/BeringeiNetworkClient.h"
+#include "beringei/client/BeringeiScanShardResult.h"
 #include "beringei/client/RequestBatchingQueue.h"
 
 namespace facebook {
@@ -109,6 +110,13 @@ class BeringeiClientImpl {
 
   // Fetch all data for the given shard for a time-window range.
   void scanShard(const ScanShardRequest& request, ScanShardResult& result);
+
+  virtual BeringeiScanShardResult scanShard(const ScanShardRequest& request);
+
+  folly::Future<BeringeiScanShardResult> futureScanShard(
+      const ScanShardRequest& request,
+      folly::EventBase* eb,
+      folly::Executor* workExecutor = folly::getCPUExecutor().get());
 
   void flushQueue();
 

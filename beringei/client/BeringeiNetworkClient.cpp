@@ -235,6 +235,13 @@ void BeringeiNetworkClient::performScanShard(
   }
 }
 
+folly::Future<ScanShardResult> BeringeiNetworkClient::performScanShard(
+    const std::pair<std::string, int>& hostInfo,
+    const ScanShardRequest& request,
+    folly::EventBase* eb) {
+  return getBeringeiThriftClient(hostInfo, eb)->future_scanShard(request);
+}
+
 bool BeringeiNetworkClient::getShardKeys(
     int shardNumber,
     int limit,
