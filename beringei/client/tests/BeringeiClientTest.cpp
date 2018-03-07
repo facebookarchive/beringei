@@ -7,7 +7,10 @@
  * of patent rights can be found in the PATENTS file in the same directory.
  */
 
+#include <limits>
+
 #include <folly/Random.h>
+#include <folly/container/Enumerate.h>
 #include <folly/futures/Future.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -18,17 +21,52 @@
 #include "beringei/client/tests/MockConfigurationAdapter.h"
 #include "beringei/if/gen-cpp2/BeringeiService.h"
 #include "beringei/lib/BucketedTimeSeries.h"
+#include "beringei/lib/TimeSeries.h"
 
 using namespace ::testing;
 using namespace facebook::gorilla;
 using namespace folly;
 using namespace std;
 
+DECLARE_int32(mintimestampdelta);
+
+namespace {
+using HostInfo = std::pair<std::string, int>;
+
+facebook::gorilla::Key buildKey(const std::string& key, int shard) {
+  facebook::gorilla::Key k;
+  k.key = key;
+  k.shardId = shard;
+  return k;
+}
+
+TimeValuePair tvp(int64_t unixTime, double value) {
+  TimeValuePair tv;
+  tv.unixTime = unixTime;
+  tv.value = value;
+  return tv;
+}
+
+std::unique_ptr<BeringeiClientImpl> createBeringeiClient(
+    std::shared_ptr<BeringeiConfigurationAdapterIf> configurationAdapter,
+    int queueCapacity,
+    bool throwExceptionOnPartialRead,
+    const std::vector<std::shared_ptr<BeringeiNetworkClient>>& readers,
+    const std::vector<BeringeiNetworkClient*>& writers = {}) {
+  auto client = std::make_unique<BeringeiClientImpl>(
+      configurationAdapter, throwExceptionOnPartialRead);
+
+  client->initializeTestClients(queueCapacity, readers, writers);
+  return client;
+}
+} // namespace
+
 namespace facebook {
 namespace gorilla {
 DECLARE_int32(gorilla_retry_delay_secs);
-}
-}
+DECLARE_bool(gorilla_parallel_scan_shard);
+} // namespace gorilla
+} // namespace facebook
 
 class BeringeiClientMock : public BeringeiNetworkClient {
  public:
@@ -65,11 +103,9 @@ class BeringeiClientMock : public BeringeiNetworkClient {
     request.first.keys.push_back(key);
   }
 
-  // Assume shards are evenly distributed across 2 hosts.
-  bool getHostForShard(int64_t shard, std::pair<std::string, int>& hostInfo)
-      override {
+  bool getHostForShard(int64_t shard, HostInfo& hostInfo) override {
     hostInfo.first = "some_host";
-    hostInfo.second = shard % 2;
+    hostInfo.second = shard % getNumShards();
     return true;
   }
 
@@ -110,8 +146,40 @@ class BeringeiClientMock : public BeringeiNetworkClient {
         .then([result]() { return result; });
   }
 
+  MOCK_METHOD2(
+      mockPerformScanShard,
+      ScanShardResult(
+          const HostInfo& hostInfo,
+          const ScanShardRequest& request));
+
+  virtual folly::Future<ScanShardResult> performScanShard(
+      const std::pair<std::string, int>& hostInfo,
+      const ScanShardRequest& request,
+      folly::EventBase*) override {
+    ScanShardResult result = mockPerformScanShard(hostInfo, request);
+    return makeFuture<ScanShardResult>(std::move(result));
+  }
+
+  virtual void performScanShard(
+      const ScanShardRequest& request,
+      ScanShardResult& result) override {
+    std::pair<std::string, int> hostInfo;
+    bool success = getHostForShard(request.shardId, hostInfo);
+
+    if (!success) {
+      result = {};
+      result.status = StatusCode::RPC_FAIL;
+    } else {
+      result = mockPerformScanShard(hostInfo, request);
+    }
+  }
+
  private:
   int64_t numShards_;
+
+  static folly::EventBase* getEventBase() {
+    return folly::EventBaseManager::get()->getEventBase();
+  }
 };
 
 class BeringeiClientTest : public testing::Test {
@@ -143,7 +211,7 @@ class BeringeiClientTest : public testing::Test {
 
     for (int i = 19; i < 22; i++) {
       TimeValuePair tv;
-      tv.unixTime = i * minTimestampDelta;
+      tv.unixTime = i * FLAGS_mintimestampdelta;
       tv.value = i;
       b1.put(i, tv, &storage, 0, nullptr);
       resultVec[0].second.push_back(tv);
@@ -151,7 +219,7 @@ class BeringeiClientTest : public testing::Test {
 
     for (int i = 19; i < 22; i++) {
       TimeValuePair tv;
-      tv.unixTime = (i + 7) * minTimestampDelta;
+      tv.unixTime = (i + 7) * FLAGS_mintimestampdelta;
       tv.value = i;
       b2.put(i + 7, tv, &storage, 0, nullptr);
       resultVec[1].second.push_back(tv);
@@ -183,28 +251,6 @@ class BeringeiClientTest : public testing::Test {
     resWithHoles.results[0].status = StatusCode::MISSING_TOO_MUCH_DATA;
   }
 
-  facebook::gorilla::Key buildKey(const std::string& key, int shard) {
-    facebook::gorilla::Key k;
-    k.key = key;
-    k.shardId = shard;
-    return k;
-  }
-
-  std::unique_ptr<BeringeiClientImpl> createBeringeiClient(
-      std::shared_ptr<BeringeiConfigurationAdapterIf> configurationAdapter,
-      int queueCapacity,
-      int writerThreads,
-      bool throwExceptionOnPartialRead,
-      BeringeiNetworkClient* testClient,
-      BeringeiNetworkClient* shadowClient = nullptr) {
-    auto client = std::make_unique<BeringeiClientImpl>(
-        configurationAdapter, throwExceptionOnPartialRead);
-
-    client->initializeTestClients(
-        queueCapacity, writerThreads, testClient, shadowClient);
-    return client;
-  }
-
   vector<DataPoint> dps;
 
   GetDataRequest getReq;
@@ -220,18 +266,44 @@ class BeringeiClientTest : public testing::Test {
 
   facebook::gorilla::Key k1;
   facebook::gorilla::Key k2;
-
-  // This must match default value for FLAGS_mintimestampdelta.
-  // It ensures we do not drop any pairs inserted via put() in Setup()
-  const uint32_t minTimestampDelta = 30;
 };
+
+class BeringeiClientScanShardTest : public testing::Test {
+ public:
+  BeringeiClientScanShardTest()
+      : forever_(std::numeric_limits<decltype(forever_)>::max()),
+        k1_(buildKey("k1", shard_)),
+        k2_(buildKey("k2", shard_)) {}
+
+  void SetUp() override {
+    scanShardReq_ = ScanShardRequest();
+    scanShardReq_.shardId = shard_;
+    scanShardReq_.begin = 0;
+    scanShardReq_.end = forever_;
+  }
+
+  ScanShardRequest scanShardReq_;
+  using UnixTime = decltype(scanShardReq_.end);
+
+  static const int shard_ = 1;
+
+  const UnixTime forever_;
+
+  const facebook::gorilla::Key k1_;
+  const facebook::gorilla::Key k2_;
+};
+
+class BeringeiClientScanShardNwayTest
+    : public BeringeiClientScanShardTest,
+      public ::testing::WithParamInterface<int> {};
 
 // PUTS
 
 TEST_F(BeringeiClientTest, Put) {
   auto client = new StrictMock<BeringeiClientMock>(3);
   auto adapterMock = std::make_shared<StrictMock<MockConfigurationAdapter>>();
-  auto beringeiClient = createBeringeiClient(adapterMock, 7, 1, false, client);
+  auto beringeiClient =
+      createBeringeiClient(adapterMock, 7, false, {}, {client});
 
   PutDataRequest req1;
   req1.data.push_back(dps[0]);
@@ -260,7 +332,8 @@ TEST_F(BeringeiClientTest, PutRetryAll) {
 
   auto client = new StrictMock<BeringeiClientMock>(8);
   auto adapterMock = std::make_shared<StrictMock<MockConfigurationAdapter>>();
-  auto beringeiClient = createBeringeiClient(adapterMock, 12, 1, false, client);
+  auto beringeiClient =
+      createBeringeiClient(adapterMock, 12, false, {}, {client});
 
   {
     ::testing::InSequence dummy;
@@ -278,7 +351,8 @@ TEST_F(BeringeiClientTest, PutRetryOne) {
 
   auto client = new StrictMock<BeringeiClientMock>(8);
   auto adapterMock = std::make_shared<StrictMock<MockConfigurationAdapter>>();
-  auto beringeiClient = createBeringeiClient(adapterMock, 12, 1, false, client);
+  auto beringeiClient =
+      createBeringeiClient(adapterMock, 12, false, {}, {client});
 
   PutDataRequest req1;
   req1.data.push_back(dps[0]);
@@ -304,7 +378,7 @@ TEST_F(BeringeiClientTest, PutRetryShadow) {
   auto shadowClient = new StrictMock<BeringeiClientMock>(8);
   auto adapterMock = std::make_shared<StrictMock<MockConfigurationAdapter>>();
   auto beringeiClient =
-      createBeringeiClient(adapterMock, 7, 1, false, client, shadowClient);
+      createBeringeiClient(adapterMock, 7, false, {}, {client, shadowClient});
 
   EXPECT_CALL(*client, performPut(_))
       .WillOnce(Return(std::vector<DataPoint>{}));
@@ -323,10 +397,10 @@ TEST_F(BeringeiClientTest, PutRetryShadow) {
 // GETS
 
 TEST_F(BeringeiClientTest, Get) {
-  auto client = new StrictMock<BeringeiClientMock>(8);
+  auto client = std::make_shared<StrictMock<BeringeiClientMock>>(8);
   auto adapterMock = std::make_shared<StrictMock<MockConfigurationAdapter>>();
-  auto beringeiClient = createBeringeiClient(
-      adapterMock, 1, BeringeiClientImpl::kNoWriterThreads, false, client);
+  auto beringeiClient =
+      createBeringeiClient(adapterMock, 1, false, {client, client}, {});
 
   BeringeiNetworkClient::GetRequestMap expected;
   expected[make_pair("", 3)].first.keys.push_back(k1);
@@ -350,10 +424,10 @@ TEST_F(BeringeiClientTest, Get) {
 }
 
 TEST_F(BeringeiClientTest, GetPoints) {
-  auto client = new StrictMock<BeringeiClientMock>(8);
+  auto client = std::make_shared<StrictMock<BeringeiClientMock>>(8);
   auto adapterMock = std::make_shared<StrictMock<MockConfigurationAdapter>>();
-  auto beringeiClient = createBeringeiClient(
-      adapterMock, 1, BeringeiClientImpl::kNoWriterThreads, false, client);
+  auto beringeiClient =
+      createBeringeiClient(adapterMock, 1, false, {client, client}, {});
 
   BeringeiNetworkClient::GetRequestMap expected;
   expected[make_pair("", 3)].first.keys.push_back(k1);
@@ -374,17 +448,16 @@ TEST_F(BeringeiClientTest, GetPoints) {
 
   auto fullReq = getReq;
   // range below must match that used in BeringeiClientTest::SetUp
-  fullReq.begin = 19 * minTimestampDelta;
-  fullReq.end = 29 * minTimestampDelta;
+  fullReq.begin = 19 * FLAGS_mintimestampdelta;
+  fullReq.end = 29 * FLAGS_mintimestampdelta;
   result.clear();
   beringeiClient->get(fullReq, result);
   ASSERT_EQ(resultVec.size(), result.size());
 
-  auto sortFn = [](
-      const std::pair<facebook::gorilla::Key, std::vector<TimeValuePair>>& a,
-      const std::pair<facebook::gorilla::Key, std::vector<TimeValuePair>>& b) {
-    return a.first.key < b.first.key;
-  };
+  auto sortFn =
+      [](const std::pair<facebook::gorilla::Key, std::vector<TimeValuePair>>& a,
+         const std::pair<facebook::gorilla::Key, std::vector<TimeValuePair>>&
+             b) { return a.first.key < b.first.key; };
 
   sort(resultVec.begin(), resultVec.end(), sortFn);
   sort(result.begin(), result.end(), sortFn);
@@ -401,10 +474,10 @@ TEST_F(BeringeiClientTest, GetPoints) {
 // FAILOVER READ GETS
 
 TEST_F(BeringeiClientTest, ReadClientFailoverOtherScope) {
-  auto client = new StrictMock<BeringeiClientMock>(8);
+  auto client = std::make_shared<StrictMock<BeringeiClientMock>>(8);
   auto adapterMock = std::make_shared<StrictMock<MockConfigurationAdapter>>();
-  auto beringeiClient = createBeringeiClient(
-      adapterMock, 1, BeringeiClientImpl::kNoWriterThreads, false, client);
+  auto beringeiClient =
+      createBeringeiClient(adapterMock, 1, false, {client, client}, {});
 
   BeringeiNetworkClient::GetRequestMap shardUnowned;
   shardUnowned[make_pair("", 3)].first.keys.push_back(k1);
@@ -444,10 +517,10 @@ TEST_F(BeringeiClientTest, ReadClientFailoverOtherScope) {
 }
 
 TEST_F(BeringeiClientTest, ReadClientRetrySameScope) {
-  auto client = new StrictMock<BeringeiClientMock>(8);
+  auto client = std::make_shared<StrictMock<BeringeiClientMock>>(8);
   auto adapterMock = std::make_shared<StrictMock<MockConfigurationAdapter>>();
-  auto beringeiClient = createBeringeiClient(
-      adapterMock, 1, BeringeiClientImpl::kNoWriterThreads, false, client);
+  auto beringeiClient =
+      createBeringeiClient(adapterMock, 1, false, {client, client}, {});
 
   BeringeiNetworkClient::GetRequestMap partialShardUnowned;
   // Have data for first key, but not for second
@@ -483,10 +556,10 @@ TEST_F(BeringeiClientTest, ReadClientRetrySameScope) {
 }
 
 TEST_F(BeringeiClientTest, ReadClientSameHostFailoverOtherScope) {
-  auto client = new StrictMock<BeringeiClientMock>(8);
+  auto client = std::make_shared<StrictMock<BeringeiClientMock>>(8);
   auto adapterMock = std::make_shared<StrictMock<MockConfigurationAdapter>>();
-  auto beringeiClient = createBeringeiClient(
-      adapterMock, 1, BeringeiClientImpl::kNoWriterThreads, false, client);
+  auto beringeiClient =
+      createBeringeiClient(adapterMock, 1, false, {client, client}, {});
 
   BeringeiNetworkClient::GetRequestMap partialShardUnowned;
   // Have data for first key, but not for second talking to same host
@@ -538,10 +611,10 @@ TEST_F(BeringeiClientTest, ReadClientSameHostFailoverOtherScope) {
 }
 
 TEST_F(BeringeiClientTest, MultiMasterGet) {
-  auto client = new StrictMock<BeringeiClientMock>(8);
+  auto client = std::make_shared<StrictMock<BeringeiClientMock>>(2);
   auto adapterMock = std::make_shared<StrictMock<MockConfigurationAdapter>>();
-  auto beringeiClient = createBeringeiClient(
-      adapterMock, 1, BeringeiClientImpl::kNoWriterThreads, false, client);
+  auto beringeiClient =
+      createBeringeiClient(adapterMock, 1, false, {client, client}, {});
 
   GetDataRequest req;
   req.keys = {buildKey("zero", 0),
@@ -571,10 +644,10 @@ TEST_F(BeringeiClientTest, MultiMasterGet) {
 }
 
 TEST_F(BeringeiClientTest, NetworkClientHandleException) {
-  auto client = new StrictMock<BeringeiClientMock>(8);
+  auto client = std::make_shared<StrictMock<BeringeiClientMock>>(8);
   auto adapterMock = std::make_shared<StrictMock<MockConfigurationAdapter>>();
-  auto beringeiClient = createBeringeiClient(
-      adapterMock, 1, BeringeiClientImpl::kNoWriterThreads, false, client);
+  auto beringeiClient =
+      createBeringeiClient(adapterMock, 1, false, {client, client}, {});
 
   BeringeiNetworkClient::GetRequestMap rpcFail;
   rpcFail[make_pair("", 3)].first.keys.push_back(k1);
@@ -614,14 +687,10 @@ TEST_F(BeringeiClientTest, NetworkClientHandleException) {
 
 TEST_F(BeringeiClientTest, NetworkClientThrowException) {
   for (bool throwOnError : {false, true}) {
-    auto client = new StrictMock<BeringeiClientMock>(8);
+    auto client = std::make_shared<StrictMock<BeringeiClientMock>>(8);
     auto adapterMock = std::make_shared<StrictMock<MockConfigurationAdapter>>();
     auto beringeiClient = createBeringeiClient(
-        adapterMock,
-        1,
-        BeringeiClientImpl::kNoWriterThreads,
-        throwOnError,
-        client);
+        adapterMock, 1, throwOnError, {client, client}, {});
 
     BeringeiNetworkClient::GetRequestMap rpcFirstRequest, rpcSecondRequest;
     BeringeiNetworkClient::GetRequestMap rpcFirstFail, rpcSecondFail;
@@ -665,15 +734,15 @@ TEST_F(BeringeiClientTest, NetworkClientThrowException) {
         }
       }
     }
-    Mock::VerifyAndClearExpectations(client);
+    Mock::VerifyAndClearExpectations(client.get());
   }
 }
 
 TEST_F(BeringeiClientTest, ReadClientFailoverShardInProgress) {
-  auto client = new StrictMock<BeringeiClientMock>(8);
+  auto client = std::make_shared<StrictMock<BeringeiClientMock>>(8);
   auto adapterMock = std::make_shared<StrictMock<MockConfigurationAdapter>>();
-  auto beringeiClient = createBeringeiClient(
-      adapterMock, 1, BeringeiClientImpl::kNoWriterThreads, false, client);
+  auto beringeiClient =
+      createBeringeiClient(adapterMock, 1, false, {client, client}, {});
 
   // Should retry both SHARD_IN_PROGRESS and MISSING_TOO_MUCH_DATA.
   BeringeiNetworkClient::GetRequestMap shardInProgress;
@@ -708,10 +777,10 @@ TEST_F(BeringeiClientTest, ReadClientFailoverShardInProgress) {
 }
 
 TEST_F(BeringeiClientTest, ReadClientShardInProgressPartialResults) {
-  auto client = new StrictMock<BeringeiClientMock>(8);
+  auto client = std::make_shared<StrictMock<BeringeiClientMock>>(8);
   auto adapterMock = std::make_shared<StrictMock<MockConfigurationAdapter>>();
-  auto beringeiClient = createBeringeiClient(
-      adapterMock, 1, BeringeiClientImpl::kNoWriterThreads, false, client);
+  auto beringeiClient =
+      createBeringeiClient(adapterMock, 1, false, {client, client}, {});
 
   BeringeiNetworkClient::GetRequestMap shardInProgress;
   shardInProgress[make_pair("", 3)].first.keys.push_back(k1);
@@ -742,12 +811,12 @@ TEST_F(BeringeiClientTest, ReadClientShardInProgressPartialResults) {
 }
 
 TEST_F(BeringeiClientTest, ReadClientThrowsExceptions) {
-  auto client = new StrictMock<BeringeiClientMock>(8);
+  auto client = std::make_shared<StrictMock<BeringeiClientMock>>(8);
   auto adapterMock = std::make_shared<StrictMock<MockConfigurationAdapter>>();
 
   // Configured to throw exceptions.
-  auto beringeiClient = createBeringeiClient(
-      adapterMock, 1, BeringeiClientImpl::kNoWriterThreads, true, client);
+  auto beringeiClient =
+      createBeringeiClient(adapterMock, 1, true, {client, client}, {});
 
   BeringeiNetworkClient::GetRequestMap shardInProgress;
   shardInProgress[make_pair("", 3)].first.keys.push_back(k1);
@@ -781,7 +850,7 @@ TEST_F(BeringeiClientTest, ReadClientThrowsExceptions) {
   }
 
   // Verify everything above is good.
-  Mock::VerifyAndClear(client);
+  Mock::VerifyAndClear(client.get());
 
   // Try again, but MISSING_TOO_MUCH_DATA persists.
   // No exception is thrown, as this is not a transient failure.
@@ -803,7 +872,7 @@ TEST_F(BeringeiClientTest, ReadClientThrowsExceptions) {
   }
 
   // Verify everything above is good.
-  Mock::VerifyAndClear(client);
+  Mock::VerifyAndClear(client.get());
 
   // Try again, but SHARD_IN_PROGRESS persists.
   // Exception is thrown.
@@ -814,3 +883,46 @@ TEST_F(BeringeiClientTest, ReadClientThrowsExceptions) {
 
   ASSERT_ANY_THROW(beringeiClient->get(getReq, result));
 }
+
+TEST_P(BeringeiClientScanShardNwayTest, Basic) {
+  auto client = std::make_shared<StrictMock<BeringeiClientMock>>(8);
+  auto adapterMock = std::make_shared<StrictMock<MockConfigurationAdapter>>();
+
+  FLAGS_gorilla_parallel_scan_shard = GetParam() > 1;
+
+  std::vector<std::shared_ptr<BeringeiNetworkClient>> readers;
+  while (readers.size() < GetParam()) {
+    readers.push_back(client);
+  }
+
+  auto beringeiClient = createBeringeiClient(adapterMock, 1, false, readers);
+
+  BeringeiScanShardResult expectBeringei;
+  ScanShardResult provideNetwork;
+
+  expectBeringei.status = provideNetwork.status = StatusCode::OK;
+  expectBeringei.keys = provideNetwork.keys = {k1_.key};
+  expectBeringei.data.push_back({});
+  for (unsigned i = 0; i < 3; ++i) {
+    expectBeringei.data[0].push_back(tvp(19 + i * FLAGS_mintimestampdelta, i));
+  }
+  TimeSeriesBlock block;
+  TimeSeries::writeValues(expectBeringei.data[0], block);
+  provideNetwork.data = {{block}};
+  expectBeringei.queriedRecently = provideNetwork.queriedRecently = {false};
+
+  HostInfo hostInfo;
+  EXPECT_TRUE(client->getHostForShard(scanShardReq_.shardId, hostInfo));
+  for (int i = 0; i < GetParam(); ++i) {
+    EXPECT_CALL(*client, mockPerformScanShard(hostInfo, scanShardReq_))
+        .WillOnce(Return(provideNetwork));
+  }
+  BeringeiScanShardResult result = beringeiClient->scanShard(scanShardReq_);
+
+  EXPECT_EQ(result, expectBeringei);
+}
+
+INSTANTIATE_TEST_CASE_P(
+    Count,
+    BeringeiClientScanShardNwayTest,
+    ::testing::Values(1));

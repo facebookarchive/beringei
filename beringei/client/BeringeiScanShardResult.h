@@ -17,15 +17,19 @@
 namespace facebook {
 namespace gorilla {
 struct BeringeiScanShardResult {
-  BeringeiScanShardResult() {}
-  explicit BeringeiScanShardResult(size_t size)
+  explicit BeringeiScanShardResult(size_t size = 0)
       : status(StatusCode::OK), keys(size), data(size), queriedRecently(size) {}
   BeringeiScanShardResult(const BeringeiScanShardResult&) = delete;
   BeringeiScanShardResult& operator=(const BeringeiScanShardResult&) = delete;
   BeringeiScanShardResult(BeringeiScanShardResult&&) = default;
   BeringeiScanShardResult& operator=(BeringeiScanShardResult&&) = default;
 
+  // @pre *this and rhs do not violate the class invariant
+  bool operator==(const BeringeiScanShardResult& rhs) const;
+
   StatusCode status;
+
+  // Class invariant is keys.size() == data.size() == queriedRecently.size()
   std::vector<std::string> keys;
   std::vector<std::vector<TimeValuePair>> data;
   std::vector<bool> queriedRecently;

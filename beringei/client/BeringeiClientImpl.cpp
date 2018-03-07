@@ -97,6 +97,7 @@ DEFINE_int32(
     500,
     "Size ratio between the queue capacity and the actual queue size. "
     "Needed because the queue stores vectors");
+DEFINE_bool(gorilla_parallel_scan_shard, false, "Fan-out scanShard operations");
 
 const static std::string kEnqueueDroppedKey = "gorilla_client.enqueue_dropped.";
 const static std::string kEnqueuedKey = "gorilla_client.enqueued.";
@@ -226,28 +227,23 @@ void BeringeiClientImpl::initialize(
 
 void BeringeiClientImpl::initializeTestClients(
     int queueCapacity,
-    int writerThreads,
-    BeringeiNetworkClient* testClient,
-    BeringeiNetworkClient* shadowTestClient) {
+    const std::vector<std::shared_ptr<BeringeiNetworkClient>>& readers,
+    const std::vector<BeringeiNetworkClient*>& writers) {
   setQueueCapacity(queueCapacity);
+  int writerThreads = writers.empty() ? kNoWriterThreads : writers.size();
   setNumWriterThreads(writerThreads);
 
   // Select a queue size that is big enough to hold all the data point
   // vectors, given the average size of each vector.
   size_t queueSize = std::max(
       queueCapacity / FLAGS_gorilla_queue_capacity_size_ratio, kMinQueueSize);
-  if (writerThreads > 0) {
+
+  for (auto client : readers) {
+    readClients_.push_back(client);
+  }
+  for (auto client : writers) {
     writeClients_.emplace_back(
-        new WriteClient(testClient, queueCapacity, queueSize));
-    if (shadowTestClient) {
-      writeClients_.emplace_back(
-          new WriteClient(shadowTestClient, queueCapacity, queueSize));
-    }
-  } else {
-    // Push back two clients so we can test read fallbacks
-    std::shared_ptr<BeringeiNetworkClient> sharedTestClient(testClient);
-    readClients_.push_back(sharedTestClient);
-    readClients_.push_back(sharedTestClient);
+        new WriteClient(client, queueCapacity, queueSize));
   }
 
   startWriterThreads(writerThreads);

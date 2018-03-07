@@ -151,11 +151,11 @@ class BeringeiClientImpl {
       int writerThreads,
       int readServicesUpdateInterval);
 
+  // @param[in] writers become owned by this
   void initializeTestClients(
       int queueCapacity,
-      int writerThreads,
-      BeringeiNetworkClient* testClient,
-      BeringeiNetworkClient* shadowTestClient);
+      const std::vector<std::shared_ptr<BeringeiNetworkClient>>& readers,
+      const std::vector<BeringeiNetworkClient*>& writers);
 
  protected:
   // Constructor that does nothing. Used from tests.
