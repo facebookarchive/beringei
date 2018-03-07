@@ -27,13 +27,15 @@ namespace facebook {
 namespace fb303 {
 class FacebookBase2;
 }
-}
+} // namespace facebook
 
 namespace facebook {
 namespace gorilla {
 using GorillaResultVector =
     std::vector<std::pair<Key, std::vector<TimeValuePair>>>;
 using GorillaServicesVector = std::vector<std::string>;
+
+class BeringeiFutureContext;
 
 class BeringeiClientImpl {
  public:
@@ -161,6 +163,21 @@ class BeringeiClientImpl {
   // Constructor that does nothing. Used from tests.
   explicit BeringeiClientImpl() {}
 
+  void futureContextInit(
+      BeringeiFutureContext& context,
+      bool parallel,
+      const std::string& serviceOverride);
+
+  template <typename R, typename F>
+  void futureContextAddFn(
+      BeringeiFutureContext& context,
+      folly::Executor* workExecutor,
+      folly::Future<R> future,
+      F&& fn);
+
+  template <typename F>
+  auto futureContextFinalize(BeringeiFutureContext& context, F&& fn);
+
   std::vector<std::shared_ptr<BeringeiNetworkClient>> getAllReadClients(
       const std::string& serviceOverride);
   std::shared_ptr<BeringeiNetworkClient> getReadClientCopy();
@@ -244,5 +261,5 @@ class BeringeiClientImpl {
   std::atomic<int> numRetryQueuedDataPoints_;
   std::vector<std::thread> retryWriters_;
 };
-}
-} // facebook:gorilla
+} // namespace gorilla
+} // namespace facebook

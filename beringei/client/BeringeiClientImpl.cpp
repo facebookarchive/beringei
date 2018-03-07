@@ -35,29 +35,29 @@ DEFINE_double(
 
 namespace facebook {
 namespace gorilla {
-namespace {
-struct BeringeiFutureGetContext {
-  BeringeiFutureGetContext() = delete;
-  explicit BeringeiFutureGetContext(const GetDataRequest& request)
-      : readRequest(request),
-        readClients{},
-        resultCollector(nullptr),
-        oneComplete(),
-        getRequests{},
-        clientNames{},
-        getFutures{},
-        either{} {}
-  GetDataRequest readRequest;
+
+struct BeringeiFutureContext {
+  BeringeiFutureContext()
+      : readClients{}, clientNames{}, oneComplete(), getFutures{}, either{} {}
   std::vector<std::shared_ptr<BeringeiNetworkClient>> readClients;
-  std::unique_ptr<BeringeiGetResultCollector> resultCollector;
+  std::vector<std::string> clientNames;
   // Fulfilled when we've received one full copy of the data.
   folly::Promise<folly::Unit> oneComplete;
-  std::vector<BeringeiNetworkClient::MultiGetRequestMap> getRequests;
-  std::vector<std::string> clientNames;
   std::vector<folly::Future<folly::Unit>> getFutures;
   std::vector<folly::Future<folly::Unit>> either;
 };
-}
+
+namespace {
+struct BeringeiFutureGetContext : public BeringeiFutureContext {
+  BeringeiFutureGetContext() = delete;
+  explicit BeringeiFutureGetContext(const GetDataRequest& request)
+      : readRequest(request), resultCollector(nullptr), getRequests{} {}
+
+  GetDataRequest readRequest;
+  std::unique_ptr<BeringeiGetResultCollector> resultCollector;
+  std::vector<BeringeiNetworkClient::MultiGetRequestMap> getRequests;
+};
+} // namespace
 
 DEFINE_int32(
     gorilla_client_writer_threads,
@@ -586,69 +586,99 @@ void BeringeiClientImpl::get(
   }
 }
 
+void BeringeiClientImpl::futureContextInit(
+    BeringeiFutureContext& context,
+    bool parallel,
+    const std::string& serviceOverride) {
+  // XXX: dreweckhardt 2018-01-11 For non-parallel operation get all clients
+  // then truncate because there's no getReadClientCopy taking the service
+  // override and it's not worth micro-optimizing outside the normal path
+  context.readClients = getAllReadClients(serviceOverride);
+  if (!parallel && !context.readClients.empty()) {
+    context.readClients.resize(1);
+  }
+  context.clientNames = from(context.readClients) | dereference |
+      member(&BeringeiNetworkClient::getServiceName) | as<std::vector>();
+}
+
+template <typename R, typename F>
+void BeringeiClientImpl::futureContextAddFn(
+    BeringeiFutureContext& context,
+    folly::Executor* workExecutor,
+    folly::Future<R> future,
+    F&& fn) {
+  context.getFutures.push_back(
+      future.via(workExecutor)
+          .then(std::forward<F>(fn))
+          .onError([](const std::exception& e) { LOG(ERROR) << e.what(); }));
+}
+
+template <typename F>
+auto BeringeiClientImpl::futureContextFinalize(
+    BeringeiFutureContext& context,
+    F&& fn) {
+  // Futures madness.
+  // Block until either every result has arrived or we received enough results
+  // to construct a full data set and then a timeout occured.
+  context.either.push_back(context.oneComplete.getFuture().then([]() {
+    return folly::futures::sleep(
+        std::chrono::milliseconds(BeringeiNetworkClient::getTimeoutMs()));
+  }));
+  context.either.push_back(
+      collectAll(context.getFutures)
+          .then([](const std::vector<folly::Try<folly::Unit>>&) {}));
+  return folly::collectAny(context.either).then(std::forward<F>(fn));
+}
+
 folly::Future<BeringeiGetResult> BeringeiClientImpl::futureGet(
     GetDataRequest& getDataRequest,
     folly::EventBase* eb,
     folly::Executor* workExecutor,
     const std::string& serviceOverride) {
   auto getContext = std::make_shared<BeringeiFutureGetContext>(getDataRequest);
-  getContext->readClients = getAllReadClients(serviceOverride);
+  futureContextInit(*getContext, true /* parallel */, serviceOverride);
+
   const auto& request = getContext->readRequest;
   auto& getRequests = getContext->getRequests;
   auto& readClients = getContext->readClients;
+
   getContext->getRequests =
       std::vector<BeringeiNetworkClient::MultiGetRequestMap>(
           readClients.size());
-  getContext->clientNames = from(readClients) | dereference |
-      member(&BeringeiNetworkClient::getServiceName) | as<std::vector>();
   getContext->resultCollector = std::make_unique<BeringeiGetResultCollector>(
       request.keys.size(), readClients.size(), request.begin, request.end);
-  auto& getFutures = getContext->getFutures;
-  for (int clientId = 0; clientId < readClients.size(); clientId++) {
+
+  for (const auto& client : folly::enumerate(readClients)) {
     for (const auto& key : folly::enumerate(request.keys)) {
-      readClients[clientId]->addKeyToGetRequest(
-          key.index, *key, getRequests[clientId]);
+      (*client)->addKeyToGetRequest(key.index, *key, getRequests[client.index]);
     }
 
-    for (auto& r : getRequests[clientId]) {
+    for (auto& r : getRequests[client.index]) {
       r.second.first.begin = request.begin;
       r.second.first.end = request.end;
       // TODO: BeringeiGetResult::addResults() blocks on a lock, which we
       //       shouldn't do in the CPU thread pool. Though this approach still
       //       reduces latency compared to everything in one thread.
       //       Maybe split the decompression and merging steps?
-      getFutures.push_back(
-          readClients[clientId]
-              ->performGet(r.first, std::move(r.second.first), eb)
-              .via(workExecutor)
-              .then([
-                getContext,
-                clientId,
-                indices = std::move(r.second.second)
-              ](GetDataResult && result) {
-                if (getContext->resultCollector->addResults(
-                        result, indices, clientId)) {
-                  getContext->oneComplete.setValue();
-                }
-              })
-              .onError(
-                  [](const std::exception& e) { LOG(ERROR) << e.what(); }));
+      futureContextAddFn(
+          *getContext,
+          workExecutor,
+          (*client)->performGet(r.first, std::move(r.second.first), eb),
+          [getContext,
+           clientId = client.index,
+           indices = std::move(r.second.second)](GetDataResult&& result) {
+            if (getContext->resultCollector->addResults(
+                    result, indices, clientId)) {
+              getContext->oneComplete.setValue();
+            }
+          });
     }
   }
-  // Futures madness.
-  // Block until either every result has arrived or we received enough results
-  // to construct a full data set and then a timeout occured.
-  auto& either = getContext->either;
-  either.push_back(getContext->oneComplete.getFuture().then([]() {
-    return folly::futures::sleep(
-        std::chrono::milliseconds(BeringeiNetworkClient::getTimeoutMs()));
-  }));
-  either.push_back(
-      collectAll(getFutures)
-          .then([](const std::vector<folly::Try<folly::Unit>>&) {}));
-  return folly::collectAny(either).then(
-      [ getContext, shouldThrow = throwExceptionOnTransientFailure_ ](
-          std::pair<unsigned long, folly::Try<folly::Unit>> &&) {
+
+  return futureContextFinalize(
+      *getContext,
+      [getContext, shouldThrow = throwExceptionOnTransientFailure_](
+          std::pair<unsigned long, folly::Try<folly::Unit>>&&) {
         return getContext->resultCollector->finalize(
             shouldThrow, getContext->clientNames);
       });
@@ -996,5 +1026,5 @@ void BeringeiClientImpl::setNumWriterThreads(int& writerThreads) {
     writerThreads = 0;
   }
 }
-}
-} // facebook:gorilla
+} // namespace gorilla
+} // namespace facebook
