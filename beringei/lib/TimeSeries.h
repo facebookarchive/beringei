@@ -35,6 +35,47 @@ class TimeSeries {
       int64_t end) {
     TimeSeriesStream::readValues(values, block.data, block.count, begin, end);
   }
+
+  template <typename T>
+  static void getValues(
+      const std::vector<TimeSeriesBlock>& in,
+      T& values,
+      int64_t begin,
+      int64_t end) {
+    for (const auto& block : in) {
+      TimeSeries::getValues(block, values, begin, end);
+    }
+  }
+
+  // Merge all uncompressed data points that fall between begin and
+  // end inclusive to the given datastructure.  When non-null, inSize
+  // becomes number of entries from in, and mismatches the number of
+  // data points from in which did not match out.
+  //
+  // @param[in] minTimestampDelta ignore new input values not at
+  // least this much newer than the last output added
+  // @param[in] compareValues increment *mismatches when an ignored
+  // (within minTimestampDelta) input value has an absolute or relative
+  // difference that is at greater than mismatchEpsilon newest output
+  // @param[in] mismatchEpsilon threshold for compareValues
+  static void mergeValues(
+      const std::vector<TimeSeriesBlock>& in,
+      std::vector<facebook::gorilla::TimeValuePair>& out,
+      int64_t begin,
+      int64_t end,
+      int32_t minTimestampDelta,
+      bool compareValues,
+      double mismatchEpsilon,
+      int64_t* inSize,
+      int64_t* mismatches);
+
+  static void mergeValues(
+      std::vector<facebook::gorilla::TimeValuePair>&& in,
+      std::vector<facebook::gorilla::TimeValuePair>& out,
+      int32_t minTimestampDelta,
+      bool compareValues,
+      double mismatchEpsilon,
+      int64_t* mismatches);
 };
 }
 } // facebook::gorilla

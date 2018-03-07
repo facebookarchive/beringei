@@ -24,6 +24,15 @@ using namespace apache::thrift;
 using namespace folly::gen;
 using namespace facebook;
 
+DEFINE_bool(
+    gorilla_compare_reads,
+    false,
+    "whether to compare the data read from different gorilla services");
+DEFINE_double(
+    gorilla_compare_epsilon,
+    0.1,
+    "the allowed error between data for comparison");
+
 namespace facebook {
 namespace gorilla {
 namespace {
