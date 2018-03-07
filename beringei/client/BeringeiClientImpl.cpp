@@ -74,7 +74,7 @@ DEFINE_int32(
 DEFINE_int32(
     gorilla_concurrent_writes_per_thread,
     1000,
-    "Number of concurrent inflight writes, per writer thread.");
+    "Number of concurrent in flight writes, per writer thread.");
 DEFINE_int32(
     gorilla_queue_capacity,
     1,
@@ -598,9 +598,9 @@ void BeringeiClientImpl::futureContextInit(
     BeringeiFutureContext& context,
     bool parallel,
     const std::string& serviceOverride) {
-  // XXX: dreweckhardt 2018-01-11 For non-parallel operation get all clients
-  // then truncate because there's no getReadClientCopy taking the service
-  // override and it's not worth micro-optimizing outside the normal path
+  // For non-parallel operation get all clients then truncate because there's
+  // no getReadClientCopy taking the service override and it's not worth
+  // micro-optimizing outside the normal path
   context.readClients = getAllReadClients(serviceOverride);
   if (!parallel && !context.readClients.empty()) {
     context.readClients.resize(1);
@@ -627,7 +627,7 @@ auto BeringeiClientImpl::futureContextFinalize(
     F&& fn) {
   // Futures madness.
   // Block until either every result has arrived or we received enough results
-  // to construct a full data set and then a timeout occured.
+  // to construct a full data set and then a timeout occurred.
   context.either.push_back(context.oneComplete.getFuture().then([]() {
     return folly::futures::sleep(
         std::chrono::milliseconds(BeringeiNetworkClient::getTimeoutMs()));
@@ -1001,7 +1001,7 @@ folly::Future<BeringeiScanShardResult> BeringeiClientImpl::futureScanShard(
       *context, FLAGS_gorilla_parallel_scan_shard, serviceOverride);
 
   context->resultCollector = std::make_unique<BeringeiScanShardResultCollector>(
-      context->readClients.size(), request.begin, request.end);
+      context->readClients.size(), request);
 
   for (const auto& client : folly::enumerate(context->readClients)) {
     std::pair<std::string, int> hostInfo;
@@ -1010,10 +1010,9 @@ folly::Future<BeringeiScanShardResult> BeringeiClientImpl::futureScanShard(
           *context,
           workExecutor,
           (*client)->performScanShard(hostInfo, request, eb),
-          [context, request, clientId = client.index](
-              ScanShardResult&& result) {
+          [context, clientId = client.index](ScanShardResult&& result) {
             if (context->resultCollector->addResult(
-                    std::move(result), request, clientId)) {
+                    std::move(result), clientId)) {
               context->oneComplete.setValue();
             }
           });
