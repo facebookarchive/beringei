@@ -13,6 +13,7 @@
 #include <vector>
 
 #include <folly/MPMCQueue.h>
+
 #include "beringei/if/gen-cpp2/beringei_data_types.h"
 
 namespace facebook {
@@ -55,5 +56,6 @@ class RequestBatchingQueue {
   folly::MPMCQueue<std::vector<DataPoint>> queue_;
   std::atomic<int> numQueuedDataPoints_;
 };
-}
-} // facebook::gorilla
+
+} // namespace gorilla
+} // namespace facebook

@@ -47,29 +47,30 @@ bool RequestBatchingQueue::push(std::vector<DataPoint>& points) {
 std::pair<bool, int> RequestBatchingQueue::pop(
     std::function<bool(DataPoint& dp)> popCallback) {
   std::vector<DataPoint> points;
-  queue_.blockingRead(points);
   int popped = 0;
   bool continuePopping = true;
-
   while (continuePopping) {
+    auto success = queue_.tryReadUntil(
+        std::chrono::steady_clock::now() +
+            std::chrono::milliseconds(FLAGS_request_batch_timeout_ms),
+        points);
+
+    if (!success) {
+      break;
+    }
+
     if (points.size() == 0) {
-      // Signals shutdown.
       return {false, popped};
     }
-    numQueuedDataPoints_ -= points.size();
 
+    numQueuedDataPoints_ -= points.size();
     for (auto& dp : points) {
       if (!popCallback(dp)) {
-        // Callback has had enough, but still push all the points in
-        // this vector.
         continuePopping = false;
       }
+
       popped++;
     }
-
-    auto timeout = std::chrono::steady_clock::now() +
-        std::chrono::milliseconds(FLAGS_request_batch_timeout_ms);
-    continuePopping &= queue_.tryReadUntil(timeout, points);
   }
 
   return {true, popped};
@@ -82,5 +83,6 @@ void RequestBatchingQueue::flush(int n) {
     queue_.blockingWrite(std::move(points));
   }
 }
-}
-} // facebook::gorilla
+
+} // namespace gorilla
+} // namespace facebook
