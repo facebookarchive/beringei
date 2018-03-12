@@ -296,8 +296,11 @@ void BeringeiClientImpl::startWriterThreads(int numWriterThreads) {
 
 void BeringeiClientImpl::stopWriterThreads() {
   // Terminate all the writer threads.
-  for (auto& writeClient : writeClients_) {
-    writeClient->queue.flush(writers_.size());
+  if (writeClients_.size()) {
+    int writerThreadsPerClient = writers_.size() / writeClients_.size();
+    for (auto& writeClient : writeClients_) {
+      writeClient->queue.flush(writerThreadsPerClient);
+    }
   }
 
   for (auto& thread : writers_) {
@@ -723,7 +726,7 @@ void BeringeiClientImpl::writeDataPointsForever(WriteClient* writeClient) {
       });
 
       if (!points.first) {
-        LOG(WARNING) << "SHUTDOWN!!!!!11!!!!!1111!!!!!!!111111";
+        LOG(WARNING) << "Shutting down Beringei writer thread.";
         keepWriting = false;
       }
       if (points.second == 0) {
