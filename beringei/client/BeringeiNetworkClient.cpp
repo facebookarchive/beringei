@@ -7,7 +7,7 @@
  * of patent rights can be found in the PATENTS file in the same directory.
  */
 
-#include "BeringeiNetworkClient.h"
+#include "beringei/client/BeringeiNetworkClient.h"
 
 #include <atomic>
 
@@ -33,8 +33,8 @@ DEFINE_int32(
     "Processing timeout for talking to Gorilla hosts.");
 
 using namespace apache::thrift;
-using std::vector;
 using std::unique_ptr;
+using std::vector;
 
 namespace facebook {
 namespace gorilla {
@@ -543,5 +543,10 @@ bool BeringeiNetworkClient::isCorrespondingService(
     const std::string& serviceName) {
   return serviceName_ == serviceName;
 }
+
+bool BeringeiNetworkClient::isShadow() const {
+  return isShadow_;
 }
-} // facebook:gorilla
+
+} // namespace gorilla
+} // namespace facebook

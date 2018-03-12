@@ -146,6 +146,11 @@ class BeringeiClientImpl {
         size_t queueCapacity,
         size_t queueSize)
         : queue(queueCapacity, queueSize), client(networkClient) {}
+
+    size_t getNumShards() const {
+      return client->getNumShards();
+    }
+
     RequestBatchingQueue queue;
     std::unique_ptr<BeringeiNetworkClient> client;
     std::atomic<int> requestsInFlight{0};
@@ -185,7 +190,17 @@ class BeringeiClientImpl {
       const std::string& serviceOverride);
   std::shared_ptr<BeringeiNetworkClient> getReadClientCopy();
 
+  template <typename T>
+  size_t getMaxNumShards(const std::vector<T>& clients) const {
+    size_t result = 0;
+    for (const auto& client : clients) {
+      result = std::max(result, size_t(client->getNumShards()));
+    }
+    return result;
+  }
+
   std::vector<std::unique_ptr<WriteClient>> writeClients_;
+  size_t maxNumShards_;
 
  private:
   // Make a get request with a specific BeringeiNetworkClient

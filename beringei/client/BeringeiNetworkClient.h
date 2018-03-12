@@ -17,6 +17,7 @@
 #include <folly/Executor.h>
 #include <folly/io/async/EventBaseManager.h>
 #include <folly/synchronization/RWSpinLock.h>
+
 #include "beringei/client/BeringeiConfigurationAdapterIf.h"
 #include "beringei/if/gen-cpp2/BeringeiService.h"
 
@@ -26,7 +27,7 @@ namespace facebook {
 namespace fb303 {
 class FacebookBase2;
 }
-}
+} // namespace facebook
 
 namespace facebook {
 namespace gorilla {
@@ -145,6 +146,8 @@ class BeringeiNetworkClient {
     return getHostForShard(request.shardId, hostInfo);
   }
 
+  bool isShadow() const;
+
  protected:
   // Default constructor that doesn't do any initialization. Should be
   // only used from tests.
@@ -204,7 +207,8 @@ class BeringeiNetworkClient {
  private:
   std::vector<std::unique_ptr<ShardCacheEntry>> shardCache_;
   folly::RWSpinLock shardCacheLock_;
-  bool isShadow_;
+  bool isShadow_ = false;
 };
-}
-} // facebook:gorilla
+
+} // namespace gorilla
+} // namespace facebook

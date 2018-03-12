@@ -145,7 +145,8 @@ const static int kMaxRetryBatchSize = 10000;
 BeringeiClientImpl::BeringeiClientImpl(
     std::shared_ptr<BeringeiConfigurationAdapterIf> asyncClientAdapter,
     bool throwExceptionOnTransientFailure)
-    : configurationAdapter_(asyncClientAdapter),
+    : maxNumShards_(0),
+      configurationAdapter_(asyncClientAdapter),
       throwExceptionOnTransientFailure_(throwExceptionOnTransientFailure),
       retryQueue_(std::max(
           (int)FLAGS_gorilla_retry_queue_capacity /
@@ -183,7 +184,6 @@ void BeringeiClientImpl::initialize(
     }
   } else {
     // Writes
-
     auto writeServices = configurationAdapter_->getWriteServices();
     for (const auto& service : writeServices) {
       writeClients_.emplace_back(new WriteClient(
@@ -191,7 +191,9 @@ void BeringeiClientImpl::initialize(
           queueCapacity,
           queueSize));
     }
+    maxNumShards_ = getMaxNumShards(writeClients_);
 
+    // Shadow
     auto shadowServices = configurationAdapter_->getShadowServices();
     for (const auto& service : shadowServices) {
       writeClients_.emplace_back(new WriteClient(
@@ -253,7 +255,7 @@ void BeringeiClientImpl::initializeTestClients(
     writeClients_.emplace_back(
         new WriteClient(client, queueCapacity, queueSize));
   }
-
+  maxNumShards_ = getMaxNumShards(writeClients_);
   startWriterThreads(writerThreads);
 }
 
@@ -1053,5 +1055,6 @@ void BeringeiClientImpl::setNumWriterThreads(int& writerThreads) {
     writerThreads = 0;
   }
 }
+
 } // namespace gorilla
 } // namespace facebook
