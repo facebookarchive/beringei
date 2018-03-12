@@ -170,9 +170,7 @@ void BeringeiClientImpl::initialize(
   // both.
   if (writerThreads == 0) {
     // If readServices fails, just assume there are no gorilla services.
-    const auto readServices = selectReadServices();
-    currentReadServices_ = readServices;
-    initBeringeiNetworkClients(readClients_, readServices);
+    updateReadServices();
 
     if (readServicesUpdateInterval != kNoReadServicesUpdates) {
       readServicesUpdateScheduler_.addFunction(
@@ -505,6 +503,10 @@ void BeringeiClientImpl::get(
     GetDataResult& result,
     const std::string& serviceOverride) {
   auto readClientCopies = getAllReadClients(serviceOverride);
+  std::unordered_map<std::string, int64_t> keyShards;
+  for (const auto& key : request.keys) {
+    keyShards[key.get_key()] = key.get_shardId();
+  }
 
   // Make a copy of the request we'll use for doing a per client request
   // Then clear keys, so we can reorder them as we get successful responses
@@ -579,6 +581,12 @@ void BeringeiClientImpl::get(
         clientRequest.keys.end(),
         std::make_move_iterator(partialKeys.begin()),
         std::make_move_iterator(partialKeys.end()));
+    // Restore the original shardId.
+    for (auto& key : clientRequest.keys) {
+      if (auto id = folly::get_ptr(keyShards, key.get_key())) {
+        key.shardId = *id;
+      }
+    }
   }
 }
 
@@ -816,7 +824,10 @@ void BeringeiClientImpl::updateReadServices() {
   if (readServices.size() != 0 && readServices != currentReadServices_) {
     std::vector<std::shared_ptr<BeringeiNetworkClient>> readClients;
     initBeringeiNetworkClients(readClients, readServices);
+    auto maxNumShards = getMaxNumShards(readClients);
     currentReadServices_ = readServices;
+    maxNumShards_ = maxNumShards;
+
     folly::RWSpinLock::WriteHolder guard(&readClientLock_);
     readClients_ = readClients;
   }
@@ -965,15 +976,8 @@ std::shared_ptr<BeringeiNetworkClient> BeringeiClientImpl::getReadClientCopy() {
   return readClients_[0];
 }
 
-int64_t BeringeiClientImpl::getNumShards() {
-  auto readClientCopy = getReadClientCopy();
-  if (readClientCopy) {
-    return readClientCopy->getNumShards();
-  }
-  // there was an error getting a client...
-  // might want to do something more clever here but returning
-  // 0 would be a safe place to start.
-  return 0;
+int64_t BeringeiClientImpl::getMaxNumShards() const {
+  return maxNumShards_;
 }
 
 int64_t BeringeiClientImpl::getNumShardsFromWriteClient() {

@@ -7,7 +7,7 @@
  * of patent rights can be found in the PATENTS file in the same directory.
  */
 
-#include "BeringeiGetResult.h"
+#include "beringei/client/BeringeiGetResult.h"
 
 #include <algorithm>
 #include <vector>
@@ -232,5 +232,6 @@ void BeringeiGetResultCollector::merge(
   }
   mismatches_[1ull << service] += mismatches;
 }
+
 } // namespace gorilla
 } // namespace facebook

@@ -102,7 +102,8 @@ class BeringeiClientImpl {
     return readClients_.size() > 0;
   }
 
-  int64_t getNumShards();
+  // Returns the maximum numshards from all regions.
+  int64_t getMaxNumShards() const;
 
   // Return the number of shards from the write client.
   // Used in cases where only write clients are created.
@@ -200,6 +201,10 @@ class BeringeiClientImpl {
   }
 
   std::vector<std::unique_ptr<WriteClient>> writeClients_;
+
+  // Max number of shards between regions. Since each BeringeiClient can
+  // only be read or write, this corresponds to max number of shards of read
+  // regions or write regions.
   size_t maxNumShards_;
 
  private:

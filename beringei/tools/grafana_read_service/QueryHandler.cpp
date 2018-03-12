@@ -51,7 +51,7 @@ void QueryHandler::onEOM() noexcept {
   BeringeiClient client(
       configurationAdapter_, 1, BeringeiClient::kNoWriterThreads);
 
-  int numShards = client.getNumShards();
+  int numShards = client.getMaxNumShards();
   std::vector<std::pair<Key, std::vector<TimeValuePair>>> beringeiResult;
   auto beringeiRequest = createBeringeiRequest(request, numShards);
   client.get(beringeiRequest, beringeiResult);

@@ -65,7 +65,7 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  int shardCount = beringeiClient->getNumShards();
+  int shardCount = beringeiClient->getMaxNumShards();
   LOG(INFO) << "Config knows about these read services: ";
   for (const auto& rservice : beringeiConfig->getReadServices()) {
     LOG(INFO) << "  " << rservice;
