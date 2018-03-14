@@ -13,7 +13,6 @@
 
 #include <folly/Conv.h>
 #include <folly/SocketAddress.h>
-#include <folly/executors/GlobalExecutor.h>
 #include <thrift/lib/cpp/async/TAsyncSocket.h>
 #include <thrift/lib/cpp2/async/HeaderClientChannel.h>
 
@@ -91,48 +90,72 @@ class RequestHandler : public apache::thrift::RequestCallback {
   std::function<void(bool, ClientReceiveState&)> callback_;
 };
 
-folly::Future<std::vector<DataPoint>> BeringeiNetworkClient::futurePerformPut(
-    PutRequestMap& requests,
-    std::shared_ptr<folly::Executor> worker) {
-  std::vector<folly::Future<std::vector<DataPoint>>> pendingResponses;
-  pendingResponses.reserve(requests.size());
+vector<DataPoint> BeringeiNetworkClient::performPut(PutRequestMap& requests) {
+  std::atomic<int> numActiveRequests(0);
+  std::vector<std::shared_ptr<BeringeiServiceAsyncClient>> clients;
+  std::vector<DataPoint> dropped;
+  std::mutex droppedMutex;
 
   for (auto& request : requests) {
-    // We don't need to keep clients alive for future_* calls.
-    auto client = getBeringeiThriftClient(
-        request.first, folly::getIOExecutor()->getEventBase());
+    try {
+      auto client = getBeringeiThriftClient(request.first);
 
-    VLOG(3) << "Sending DPs: " << request.second.data.size();
-    pendingResponses.push_back(
-        client->future_putDataPoints(request.second)
-            .via(worker.get())
-            .then([](PutDataResult& result) {
-              VLOG(3) << "dropped DPS: " << result.data.size();
-              return std::move(result.data);
-            })
-            .onError([dps = request.second](const std::exception& e) mutable {
-              LOG(ERROR) << "putDataPoints failed. Reason: " << e.what();
-              return std::move(dps.data);
-            }));
-  }
+      // Keep clients alive
+      clients.push_back(client);
+      std::unique_ptr<apache::thrift::RequestCallback> callback(
+          new RequestHandler(
+              false, [&](bool success, ClientReceiveState& state) {
+                if (success) {
+                  try {
+                    PutDataResult putDataResult;
+                    client->recv_putDataPoints(putDataResult, state);
 
-  return collectAll(pendingResponses).via(worker.get()).then([](auto& results) {
-    std::vector<DataPoint> dropped;
-    for (auto& maybeResult : results) {
-      auto& result = maybeResult.value();
+                    std::lock_guard<std::mutex> guard(droppedMutex);
+                    dropped.insert(
+                        dropped.end(),
+                        std::make_move_iterator(putDataResult.data.begin()),
+                        std::make_move_iterator(putDataResult.data.end()));
+                  } catch (const std::exception& e) {
+                    LOG(ERROR) << "Exception from recv_putData: " << e.what();
+                    std::lock_guard<std::mutex> guard(droppedMutex);
+                    dropped.insert(
+                        dropped.end(),
+                        std::make_move_iterator(request.second.data.begin()),
+                        std::make_move_iterator(request.second.data.end()));
+                  }
+                } else {
+                  auto exn = state.exception();
+                  auto error = exn.what().toStdString();
+                  LOG(ERROR) << "putDataPoints Failed. Reason: " << error;
+
+                  std::lock_guard<std::mutex> guard(droppedMutex);
+                  dropped.insert(
+                      dropped.end(),
+                      std::make_move_iterator(request.second.data.begin()),
+                      std::make_move_iterator(request.second.data.end()));
+                }
+
+                if (--numActiveRequests == 0) {
+                  getEventBase()->terminateLoopSoon();
+                }
+              }));
+
+      client->putDataPoints(std::move(callback), request.second);
+      numActiveRequests++;
+    } catch (std::exception& e) {
+      LOG(ERROR) << e.what();
+      std::lock_guard<std::mutex> guard(droppedMutex);
       dropped.insert(
           dropped.end(),
-          std::make_move_iterator(result.begin()),
-          std::make_move_iterator(result.end()));
+          std::make_move_iterator(request.second.data.begin()),
+          std::make_move_iterator(request.second.data.end()));
     }
+  }
 
-    return dropped;
-  });
-}
-
-std::vector<DataPoint> BeringeiNetworkClient::performPut(
-    PutRequestMap& requests) {
-  return futurePerformPut(requests, folly::getCPUExecutor()).get();
+  if (numActiveRequests > 0) {
+    getEventBase()->loopForever();
+  }
+  return dropped;
 }
 
 void markRequestResultFailed(const GetDataRequest& req, GetDataResult& res) {

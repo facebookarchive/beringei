@@ -149,12 +149,6 @@ class BeringeiClientMock : public BeringeiNetworkClient {
       performPut,
       vector<DataPoint>(BeringeiNetworkClient::PutRequestMap& requests));
 
-  virtual folly::Future<std::vector<DataPoint>> futurePerformPut(
-      BeringeiNetworkClient::PutRequestMap& request,
-      std::shared_ptr<folly::Executor> /* unused */ = nullptr) override {
-    return folly::makeFuture(performPut(request));
-  }
-
   bool addDataPointToRequest(
       DataPoint& dp,
       BeringeiNetworkClient::PutRequestMap& requests,

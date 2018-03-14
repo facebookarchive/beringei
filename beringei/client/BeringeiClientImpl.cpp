@@ -11,7 +11,6 @@
 
 #include <folly/String.h>
 #include <folly/container/Enumerate.h>
-#include <folly/executors/CPUThreadPoolExecutor.h>
 #include <folly/gen/Base.h>
 #include <folly/synchronization/LifoSem.h>
 #include <thrift/lib/cpp2/async/RequestChannel.h>
@@ -72,10 +71,6 @@ DEFINE_int32(
     0,
     "number of threads concurrently writing to Beringei for each service");
 DEFINE_int32(
-    gorilla_concurrent_writes_per_thread,
-    1000,
-    "Number of concurrent in flight writes, per writer thread.");
-DEFINE_int32(
     gorilla_queue_capacity,
     1,
     "number of points to buffer in the Beringei write queue for each service");
@@ -85,6 +80,10 @@ DEFINE_int32(
     gorilla_min_queue_size,
     100,
     "slow down writes if the queue contains fewer elements than this");
+DEFINE_int32(
+    gorilla_sleep_per_put_us,
+    100000,
+    "sleep for this long between puts if the queue is near-empty");
 
 DEFINE_int32(
     gorilla_retry_queue_capacity,
@@ -121,15 +120,6 @@ const static std::string kRetryQueueSizeKey = "gorilla_client.retry_queue_size";
 const static std::string kBadReadServices = "gorilla_client.bad_read_services";
 const static std::string kRedirectForMissingData =
     "gorilla_client.redirect_for_missing_data";
-
-const static std::string kAsyncGorillaWriteUs =
-    "gorilla_client.async_write_send_us";
-const static std::string kAsyncGorillaResponseUs =
-    "gorilla_client.async_write_response_us";
-const static std::string kThrottledDropped =
-    "gorilla_client.throttled_dropped.";
-const static std::string kInFlightRequests =
-    "gorilla_client.in_flight_requests.";
 
 const int BeringeiClientImpl::kDefaultReadServicesUpdateInterval = 15;
 const int BeringeiClientImpl::kNoWriterThreads = -1;
@@ -210,8 +200,6 @@ void BeringeiClientImpl::initialize(
   GorillaStatsManager::addStatExportType(kRetryQueueWriteFailures, SUM);
   GorillaStatsManager::addStatExportType(kBadReadServices, SUM);
   GorillaStatsManager::addStatExportType(kRedirectForMissingData, SUM);
-  GorillaStatsManager::addStatExportType(kAsyncGorillaWriteUs, AVG);
-  GorillaStatsManager::addStatExportType(kAsyncGorillaResponseUs, AVG);
 
   for (auto& writeClient : writeClients_) {
     const std::string service = writeClient->client->getServiceName();
@@ -228,8 +216,6 @@ void BeringeiClientImpl::initialize(
     GorillaStatsManager::addStatExportType(kUsPerPut + service, AVG);
     GorillaStatsManager::addStatExportType(kPutRetryKey + service, SUM);
     GorillaStatsManager::addStatExportType(kPutRetryKey + service, COUNT);
-    GorillaStatsManager::addStatExportType(kThrottledDropped + service, SUM);
-    GorillaStatsManager::addStatExportType(kInFlightRequests + service, AVG);
   }
 }
 
@@ -278,8 +264,6 @@ void BeringeiClientImpl::getLastUpdateTimes(
 
 void BeringeiClientImpl::startWriterThreads(int numWriterThreads) {
   if (numWriterThreads > 0) {
-    writeWorkers_ =
-        std::make_shared<folly::CPUThreadPoolExecutor>(numWriterThreads);
     for (auto& writeClient : writeClients_) {
       for (int i = 0; i < numWriterThreads; i++) {
         writers_.emplace_back(
@@ -318,9 +302,6 @@ void BeringeiClientImpl::stopWriterThreads() {
     thread.join();
   }
   retryWriters_.clear();
-
-  // This will wait for pending tasks.
-  writeWorkers_ = nullptr;
 }
 
 void BeringeiClientImpl::flushQueue() {
@@ -743,73 +724,51 @@ void BeringeiClientImpl::writeDataPointsForever(WriteClient* writeClient) {
         continue;
       }
 
-      if (writeClient->requestsInFlight++ >=
-          FLAGS_gorilla_concurrent_writes_per_thread) {
-        writeClient->requestsInFlight--;
-        LOG(ERROR) << "Throttling datapoints: " << points.second;
-        GorillaStatsManager::addStatValue(
-            kThrottledDropped + writeClient->client->getServiceName(),
-            points.second);
-        continue;
+      // Send all the popped data points.
+      std::vector<DataPoint> dropped =
+          putWithStats(writeClient->client.get(), points.second, requests);
+      if (dropped.size() > 0) {
+        droppedDataPoints.insert(
+            droppedDataPoints.end(),
+            std::make_move_iterator(dropped.begin()),
+            std::make_move_iterator(dropped.end()));
       }
 
-      GorillaStatsManager::addStatValue(
-          kInFlightRequests + writeClient->client->getServiceName(),
-          writeClient->requestsInFlight);
-      auto timer = std::make_shared<Timer>(true);
+      if (droppedDataPoints.size() > 0) {
+        // Retry and send the failed data points in another thread
+        // after a delay to allow the server to come back up if it's
+        // down.
+        size_t droppedCount = droppedDataPoints.size();
+        RetryOperation op;
+        op.client = writeClient->client.get();
+        op.dataPoints = std::move(droppedDataPoints);
+        op.retryTimeSecs = time(nullptr) + FLAGS_gorilla_retry_delay_secs;
+        if (numRetryQueuedDataPoints_ + droppedCount >=
+                FLAGS_gorilla_retry_queue_capacity ||
+            !retryQueue_.write(std::move(op))) {
+          logDroppedDataPoints(
+              writeClient->client.get(), droppedCount, "retry queue is full");
+          GorillaStatsManager::addStatValue(kRetryQueueWriteFailures);
+        } else {
+          numRetryQueuedDataPoints_ += droppedCount;
+          GorillaStatsManager::addStatValue(
+              kPutRetryKey + writeClient->client->getServiceName(),
+              droppedCount);
+          GorillaStatsManager::addStatValue(
+              kRetryQueueSizeKey, numRetryQueuedDataPoints_);
+        }
+      }
 
-      futurePutWithStats(writeClient->client.get(), points.second, requests)
-          .via(writeWorkers_.get())
-          .then([this,
-                 timer,
-                 writeClient,
-                 droppedDataPoints = std::move(droppedDataPoints)](
-                    std::vector<DataPoint>& dropped) mutable {
-            GorillaStatsManager::addStatValue(
-                kAsyncGorillaResponseUs, timer->get());
-
-            from(dropped) | move | appendTo(droppedDataPoints);
-            requeueDropped(writeClient, droppedDataPoints);
-          })
-          .onError([](const std::exception& e) {
-            LOG(ERROR) << "Failed Gorilla Put: " << e.what();
-          })
-          .ensure([writeClient] { writeClient->requestsInFlight--; });
-
-      GorillaStatsManager::addStatValue(kAsyncGorillaWriteUs, timer->get());
       size_t queueSize = writeClient->queue.size();
       GorillaStatsManager::addStatValue(
           kQueueSizeKey + writeClient->client->getServiceName(), queueSize);
+
+      // Wait for a bit if there isn't much in the queue.
+      if (queueSize < FLAGS_gorilla_min_queue_size) {
+        usleep(FLAGS_gorilla_sleep_per_put_us);
+      }
     } catch (std::exception& e) {
       LOG(ERROR) << e.what();
-    }
-  }
-}
-
-void BeringeiClientImpl::requeueDropped(
-    WriteClient* writeClient,
-    std::vector<DataPoint>& droppedDataPoints) {
-  if (droppedDataPoints.size() > 0) {
-    // Retry and send the failed data points in another thread
-    // after a delay to allow the server to come back up if it's
-    // down.
-    size_t droppedCount = droppedDataPoints.size();
-    RetryOperation op;
-    op.client = writeClient->client.get();
-    op.dataPoints = std::move(droppedDataPoints);
-    op.retryTimeSecs = time(nullptr) + FLAGS_gorilla_retry_delay_secs;
-    if (numRetryQueuedDataPoints_ + droppedCount >=
-            FLAGS_gorilla_retry_queue_capacity ||
-        !retryQueue_.write(std::move(op))) {
-      logDroppedDataPoints(
-          writeClient->client.get(), droppedCount, "retry queue is full");
-      GorillaStatsManager::addStatValue(kRetryQueueWriteFailures);
-    } else {
-      numRetryQueuedDataPoints_ += droppedCount;
-      GorillaStatsManager::addStatValue(
-          kPutRetryKey + writeClient->client->getServiceName(), droppedCount);
-      GorillaStatsManager::addStatValue(
-          kRetryQueueSizeKey, numRetryQueuedDataPoints_);
     }
   }
 }
@@ -893,29 +852,18 @@ void BeringeiClientImpl::logDroppedDataPoints(
       kPutDroppedKey + client->getServiceName(), dropped);
 }
 
-folly::Future<std::vector<DataPoint>> BeringeiClientImpl::futurePutWithStats(
-    BeringeiNetworkClient* client,
-    int points,
-    BeringeiNetworkClient::PutRequestMap& requestMap) {
-  auto timer = std::make_shared<Timer>(true);
-  return client->futurePerformPut(requestMap, writeWorkers_)
-      .via(writeWorkers_.get())
-      .then([points, timer, serviceName = client->getServiceName()](
-                std::vector<DataPoint>& dropped) {
-        GorillaStatsManager::addStatValue(
-            kUsPerPut + serviceName, timer->get());
-        GorillaStatsManager::addStatValue(
-            kPutKey + serviceName, points - dropped.size());
-
-        return std::move(dropped);
-      });
-}
-
 std::vector<DataPoint> BeringeiClientImpl::putWithStats(
     BeringeiNetworkClient* client,
     int points,
     BeringeiNetworkClient::PutRequestMap& requestMap) {
-  return futurePutWithStats(client, points, requestMap).get();
+  Timer timer(true);
+  std::vector<DataPoint> dropped = client->performPut(requestMap);
+  GorillaStatsManager::addStatValue(
+      kUsPerPut + client->getServiceName(), timer.get());
+  GorillaStatsManager::addStatValue(
+      kPutKey + client->getServiceName(), points - dropped.size());
+
+  return dropped;
 }
 
 void BeringeiClientImpl::stopRequests() {

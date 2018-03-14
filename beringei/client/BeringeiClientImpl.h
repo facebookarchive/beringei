@@ -154,7 +154,6 @@ class BeringeiClientImpl {
 
     RequestBatchingQueue queue;
     std::unique_ptr<BeringeiNetworkClient> client;
-    std::atomic<int> requestsInFlight{0};
   };
 
   void initialize(
@@ -243,15 +242,6 @@ class BeringeiClientImpl {
       int points,
       BeringeiNetworkClient::PutRequestMap& requestMap);
 
-  folly::Future<std::vector<DataPoint>> futurePutWithStats(
-      BeringeiNetworkClient* client,
-      int points,
-      BeringeiNetworkClient::PutRequestMap& requestMap);
-
-  void requeueDropped(
-      WriteClient* writeClient,
-      std::vector<DataPoint>& droppedDataPoints);
-
   void initBeringeiNetworkClients(
       std::vector<std::shared_ptr<BeringeiNetworkClient>>& clients,
       const std::vector<std::string>& readServices);
@@ -267,7 +257,6 @@ class BeringeiClientImpl {
   std::vector<std::shared_ptr<BeringeiNetworkClient>> readClients_;
 
   std::vector<std::thread> writers_;
-  std::shared_ptr<folly::Executor> writeWorkers_;
 
   std::vector<std::string> currentReadServices_;
   folly::FunctionScheduler readServicesUpdateScheduler_;
