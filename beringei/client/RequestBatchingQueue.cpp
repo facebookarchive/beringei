@@ -9,11 +9,6 @@
 
 #include "beringei/client/RequestBatchingQueue.h"
 
-DEFINE_int32(
-    request_batch_timeout_ms,
-    60,
-    "Milliseconds to wait before sending an incomplete batch.");
-
 namespace facebook {
 namespace gorilla {
 
@@ -47,31 +42,26 @@ bool RequestBatchingQueue::push(std::vector<DataPoint>& points) {
 std::pair<bool, int> RequestBatchingQueue::pop(
     std::function<bool(DataPoint& dp)> popCallback) {
   std::vector<DataPoint> points;
+  queue_.blockingRead(points);
   int popped = 0;
   bool continuePopping = true;
-  while (continuePopping) {
-    auto success = queue_.tryReadUntil(
-        std::chrono::steady_clock::now() +
-            std::chrono::milliseconds(FLAGS_request_batch_timeout_ms),
-        points);
-
-    if (!success) {
-      break;
-    }
-
+  do {
     if (points.size() == 0) {
+      // Signals shutdown.
       return {false, popped};
     }
-
     numQueuedDataPoints_ -= points.size();
+
     for (auto& dp : points) {
       if (!popCallback(dp)) {
+        // Callback has had enough, but still push all the points in
+        // this vector.
         continuePopping = false;
       }
-
       popped++;
     }
-  }
+
+  } while (continuePopping && queue_.read(points));
 
   return {true, popped};
 }
