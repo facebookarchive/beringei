@@ -228,10 +228,15 @@ bool BucketLogWriter::writeOneLogEntry(bool blockingRead) {
         }
       }
 
+      if (logWriter) {
+        logWriter->append(info.index, info.unixTime, info.value);
+      } else {
+        GorillaStatsManager::addStatValue(kLogDataFailures, 1);
+      }
+
       // Only clear at most one previous bucket because the operation
       // is really slow and queue might fill up if multiple buckets
       // are cleared.
-
       auto now = time(nullptr);
       int nowBucket = bucket(now, info.shardId);
       if (!onePreviousLogWriterCleared &&
@@ -246,12 +251,6 @@ bool BucketLogWriter::writeOneLogEntry(bool blockingRead) {
       if (now > shardWriter.nextClearTimeSecs) {
         shardWriter.fileUtils->clearTo(time(nullptr) - keepLogFilesAroundTime_);
         shardWriter.nextClearTimeSecs += duration(1);
-      }
-
-      if (logWriter) {
-        logWriter->append(info.index, info.unixTime, info.value);
-      } else {
-        GorillaStatsManager::addStatValue(kLogDataFailures, 1);
       }
     }
   }
