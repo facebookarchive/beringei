@@ -233,11 +233,13 @@ bool BucketLogWriter::writeOneLogEntry(bool blockingRead) {
       // are cleared.
 
       auto now = time(nullptr);
+      int nowBucket = bucket(now, info.shardId);
       if (!onePreviousLogWriterCleared &&
           now - BucketUtils::floorTimestamp(now, windowSize_, info.shardId) >
               waitTimeBeforeClosing_ &&
-          shardWriter.logWriters.find(b - 1) != shardWriter.logWriters.end()) {
-        shardWriter.logWriters.erase(b - 1);
+          shardWriter.logWriters.find(nowBucket - 1) !=
+              shardWriter.logWriters.end()) {
+        shardWriter.logWriters.erase(nowBucket - 1);
         onePreviousLogWriterCleared = true;
       }
 
