@@ -220,7 +220,8 @@ class BucketMap {
       const TimeValuePair& value,
       uint16_t category);
 
-  void checkForMissingBlockFiles();
+  int checkForMissingBlockFiles();
+  void logMissingBlockFiles(int missingFiles);
 
   const uint8_t n_;
   const int64_t windowSize_;

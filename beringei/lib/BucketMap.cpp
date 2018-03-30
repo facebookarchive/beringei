@@ -473,10 +473,20 @@ void BucketMap::readData() {
   DataBlockReader reader(shardId_, dataDirectory_);
   {
     std::unique_lock<std::mutex> guard(unreadBlockFilesMutex_);
-    unreadBlockFiles_ = reader.findCompletedBlockFiles();
-    if (unreadBlockFiles_.size() > 0) {
-      checkForMissingBlockFiles();
-      lastFinalizedBucket_ = *unreadBlockFiles_.rbegin();
+    int missingFiles = 0;
+    try {
+      unreadBlockFiles_ = reader.findCompletedBlockFiles();
+      if (unreadBlockFiles_.size() > 0) {
+        missingFiles = checkForMissingBlockFiles();
+        lastFinalizedBucket_ = *unreadBlockFiles_.rbegin();
+      }
+    } catch (std::exception& e) {
+      LOG(ERROR) << "Failed listing completed block files for shard "
+                 << shardId_ << " : " << e.what();
+      missingFiles = n_;
+    }
+    if (missingFiles > 0) {
+      logMissingBlockFiles(missingFiles);
     }
   }
 
@@ -811,7 +821,7 @@ int64_t BucketMap::getReliableDataStartTime() {
   return reliableDataStartTime_;
 }
 
-void BucketMap::checkForMissingBlockFiles() {
+int BucketMap::checkForMissingBlockFiles() {
   // Just look for holes in the progression of files.
   // Gaps between log and block files will be checked elsewhere.
 
@@ -823,23 +833,23 @@ void BucketMap::checkForMissingBlockFiles() {
       missingFiles++;
     }
   }
+  return missingFiles;
+}
 
-  if (missingFiles > 0) {
-    uint32_t now = bucket(time(nullptr));
+void BucketMap::logMissingBlockFiles(int missingFiles) {
+  uint32_t now = bucket(time(nullptr));
 
-    std::stringstream error;
-    error << missingFiles << " completed block files are missing. Got blocks";
-    for (uint32_t id : unreadBlockFiles_) {
-      error << " " << id;
-    }
-    error << ". Expected blocks in range [" << now - n_ << ", " << now - 1
-          << "]"
-          << " for shard " << shardId_;
-
-    LOG(ERROR) << error.str();
-    GorillaStatsManager::addStatValue(kDataHoles, missingFiles);
-    reliableDataStartTime_ = time(nullptr);
+  std::stringstream error;
+  error << missingFiles << " completed block files are missing. Got blocks";
+  for (uint32_t id : unreadBlockFiles_) {
+    error << " " << id;
   }
+  error << ". Expected blocks in range [" << now - n_ << ", " << now - 1 << "]"
+        << " for shard " << shardId_;
+
+  LOG(ERROR) << error.str();
+  GorillaStatsManager::addStatValue(kDataHoles, missingFiles);
+  reliableDataStartTime_ = time(nullptr);
 }
 
 int BucketMap::indexDeviatingTimeSeries(
