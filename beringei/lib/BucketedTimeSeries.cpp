@@ -10,6 +10,8 @@
 #include "BucketedTimeSeries.h"
 #include "BucketMap.h"
 
+#include "beringei/lib/GorillaStatsManager.h"
+
 DEFINE_int32(
     mintimestampdelta,
     30,
@@ -19,8 +21,28 @@ namespace facebook {
 namespace gorilla {
 
 static const uint16_t kDefaultCategory = 0;
+// Number of buckets expired with data points
+static const std::string kBucketsExpiredTotal = "buckets_expired_total";
+// Subset which were never queried
+static const std::string kBucketsExpiredQueried = "buckets_expired_queried";
 
-BucketedTimeSeries::BucketedTimeSeries() {}
+// Number of time series streams committed to buckets
+static const std::string TimeSeriesStreamsTotal = "time_series_streams_total";
+// Subset which were never queried
+static const std::string TimeSeriesStreamsQueried =
+    "time_series_streams_queried";
+
+BucketedTimeSeries::BucketedTimeSeries() {
+  GorillaStatsManager::addStatExportType(kBucketsExpiredTotal, SUM);
+  GorillaStatsManager::addStatExportType(kBucketsExpiredTotal, AVG);
+  GorillaStatsManager::addStatExportType(kBucketsExpiredQueried, SUM);
+  GorillaStatsManager::addStatExportType(kBucketsExpiredQueried, AVG);
+
+  GorillaStatsManager::addStatExportType(TimeSeriesStreamsTotal, SUM);
+  GorillaStatsManager::addStatExportType(TimeSeriesStreamsTotal, AVG);
+  GorillaStatsManager::addStatExportType(TimeSeriesStreamsQueried, SUM);
+  GorillaStatsManager::addStatExportType(TimeSeriesStreamsQueried, AVG);
+}
 
 BucketedTimeSeries::~BucketedTimeSeries() {}
 
@@ -125,12 +147,28 @@ void BucketedTimeSeries::open(
     return;
   }
 
+  int bucketsExpired = 0;
+  int bucketsExpiredQueried = 0;
+
   // Wipe all the blocks in between.
   while (current_ != next) {
     // Reset the block we're about to replace.
     auto& block = blocks_[current_ % storage->numBuckets()];
 
+    if (block != BucketStorage::kInvalidId &&
+        block != BucketStorage::kDisabledId) {
+      ++bucketsExpired;
+      // Can't distinguish between queries for current_ and newer
+      if (queriedBucketsAgo_ <= storage->numBuckets()) {
+        ++bucketsExpiredQueried;
+      }
+    }
+
     if (count_ > 0) {
+      GorillaStatsManager::addStatValue(TimeSeriesStreamsTotal);
+      if (queriedBucketsAgo_ == 0) {
+        GorillaStatsManager::addStatValue(TimeSeriesStreamsQueried);
+      }
       // Copy out the active data.
       block = storage->store(
           current_, stream_.getDataPtr(), stream_.size(), count_, timeSeriesId);
@@ -147,6 +185,10 @@ void BucketedTimeSeries::open(
       queriedBucketsAgo_++;
     }
   }
+
+  GorillaStatsManager::addStatValue(kBucketsExpiredTotal, bucketsExpired);
+  GorillaStatsManager::addStatValue(
+      kBucketsExpiredQueried, bucketsExpiredQueried);
 }
 
 void BucketedTimeSeries::setQueried() {
@@ -255,5 +297,9 @@ uint32_t BucketedTimeSeries::getLastUpdateTime(
 
   return 0;
 }
+
+int32_t BucketedTimeSeries::getBucketAge(uint32_t bucket) const {
+  return current_ - bucket;
 }
-} // facebook::gorilla
+} // namespace gorilla
+} // namespace facebook

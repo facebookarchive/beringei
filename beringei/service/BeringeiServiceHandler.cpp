@@ -75,6 +75,26 @@ DEFINE_bool(
     "Disable shard refresh thread. Primarily used by tests, affects default "
     "shard map ownership assumptions.");
 
+DEFINE_int32(
+    cold_seconds_kneepoint,
+    1,
+    "Kneepoint past which no access implies cold data");
+
+DEFINE_int32(
+    cold_min_memory_buckets,
+    2,
+    "Number of cold data buckets to retain in memory");
+
+DEFINE_int32(
+    cold_min_stored_buckets,
+    13,
+    "Number of cold data buckets to store persistently");
+
+DEFINE_int32(
+    cold_read_bucket_cutoff,
+    -1,
+    "Only return cold data from the first N buckets when positive");
+
 namespace facebook {
 namespace gorilla {
 

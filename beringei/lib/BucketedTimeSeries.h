@@ -90,6 +90,9 @@ class BucketedTimeSeries {
   int32_t getFirstUpdateTime(BucketStorage* storage, const BucketMap& map);
   uint32_t getLastUpdateTime(BucketStorage* storage, const BucketMap& map);
 
+  // Return age of bucket relative to current
+  int32_t getBucketAge(uint32_t bucket) const;
+
  private:
   // Open the next bucket for writes.
   void open(uint32_t next, BucketStorage* storage, uint32_t timeSeriesId);
