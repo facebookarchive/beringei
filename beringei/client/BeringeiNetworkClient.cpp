@@ -104,7 +104,7 @@ vector<DataPoint> BeringeiNetworkClient::performPut(PutRequestMap& requests) {
       clients.push_back(client);
       std::unique_ptr<apache::thrift::RequestCallback> callback(
           new RequestHandler(
-              false, [&](bool success, ClientReceiveState& state) {
+              false, [&, client](bool success, ClientReceiveState& state) {
                 if (success) {
                   try {
                     PutDataResult putDataResult;
