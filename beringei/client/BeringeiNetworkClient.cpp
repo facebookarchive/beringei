@@ -13,6 +13,8 @@
 
 #include <folly/Conv.h>
 #include <folly/SocketAddress.h>
+#include <folly/executors/GlobalExecutor.h>
+#include <folly/futures/Future.h>
 #include <thrift/lib/cpp/async/TAsyncSocket.h>
 #include <thrift/lib/cpp2/async/HeaderClientChannel.h>
 
@@ -90,72 +92,42 @@ class RequestHandler : public apache::thrift::RequestCallback {
   std::function<void(bool, ClientReceiveState&)> callback_;
 };
 
+folly::Future<std::vector<DataPoint>> BeringeiNetworkClient::futurePerformPut(
+    PutDataRequest& request,
+    const std::pair<std::string, int>& hostInfo) {
+  auto client =
+      getBeringeiThriftClient(hostInfo, folly::getIOExecutor()->getEventBase());
+  return client->future_putDataPoints(request)
+      .then([](PutDataResult& result) { return std::move(result.data); })
+      .onError([dps = request.data](const std::exception& e) {
+        LOG(ERROR) << "putDataPoints failed. Reason: " << e.what();
+        return std::move(dps);
+      });
+}
+
 vector<DataPoint> BeringeiNetworkClient::performPut(PutRequestMap& requests) {
-  std::atomic<int> numActiveRequests(0);
-  std::vector<std::shared_ptr<BeringeiServiceAsyncClient>> clients;
-  std::vector<DataPoint> dropped;
-  std::mutex droppedMutex;
-
-  for (auto& request : requests) {
-    try {
-      auto client = getBeringeiThriftClient(request.first);
-
-      // Keep clients alive
-      clients.push_back(client);
-      std::unique_ptr<apache::thrift::RequestCallback> callback(
-          new RequestHandler(
-              false, [&, client](bool success, ClientReceiveState& state) {
-                if (success) {
-                  try {
-                    PutDataResult putDataResult;
-                    client->recv_putDataPoints(putDataResult, state);
-
-                    std::lock_guard<std::mutex> guard(droppedMutex);
-                    dropped.insert(
-                        dropped.end(),
-                        std::make_move_iterator(putDataResult.data.begin()),
-                        std::make_move_iterator(putDataResult.data.end()));
-                  } catch (const std::exception& e) {
-                    LOG(ERROR) << "Exception from recv_putData: " << e.what();
-                    std::lock_guard<std::mutex> guard(droppedMutex);
-                    dropped.insert(
-                        dropped.end(),
-                        std::make_move_iterator(request.second.data.begin()),
-                        std::make_move_iterator(request.second.data.end()));
-                  }
-                } else {
-                  auto exn = state.exception();
-                  auto error = exn.what().toStdString();
-                  LOG(ERROR) << "putDataPoints Failed. Reason: " << error;
-
-                  std::lock_guard<std::mutex> guard(droppedMutex);
-                  dropped.insert(
-                      dropped.end(),
-                      std::make_move_iterator(request.second.data.begin()),
-                      std::make_move_iterator(request.second.data.end()));
-                }
-
-                if (--numActiveRequests == 0) {
-                  getEventBase()->terminateLoopSoon();
-                }
-              }));
-
-      client->putDataPoints(std::move(callback), request.second);
-      numActiveRequests++;
-    } catch (std::exception& e) {
-      LOG(ERROR) << e.what();
-      std::lock_guard<std::mutex> guard(droppedMutex);
-      dropped.insert(
-          dropped.end(),
-          std::make_move_iterator(request.second.data.begin()),
-          std::make_move_iterator(request.second.data.end()));
-    }
+  std::vector<folly::Future<std::vector<DataPoint>>> pendingResponses;
+  pendingResponses.reserve(requests.size());
+  for (auto& mapEntry : requests) {
+    auto& hostInfo = mapEntry.first;
+    auto& request = mapEntry.second;
+    pendingResponses.push_back(futurePerformPut(request, hostInfo));
   }
 
-  if (numActiveRequests > 0) {
-    getEventBase()->loopForever();
-  }
-  return dropped;
+  std::vector<DataPoint> result;
+
+  folly::collectAll(pendingResponses)
+      .then([&](auto& responses) {
+        for (auto& maybeDropped : responses) {
+          auto& dps = maybeDropped.value();
+          result.insert(
+              result.end(),
+              std::make_move_iterator(dps.begin()),
+              std::make_move_iterator(dps.end()));
+        }
+      })
+      .get();
+  return result;
 }
 
 void markRequestResultFailed(const GetDataRequest& req, GetDataResult& res) {

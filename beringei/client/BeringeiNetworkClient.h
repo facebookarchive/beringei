@@ -57,6 +57,10 @@ class BeringeiNetworkClient {
   // points. Might move data points from the requests.
   virtual std::vector<DataPoint> performPut(PutRequestMap& requests);
 
+  virtual folly::Future<std::vector<DataPoint>> futurePerformPut(
+      PutDataRequest& request,
+      const std::pair<std::string, int>& hostInfo);
+
   // Fire off a getData request.
   virtual void performGet(GetRequestMap& requests);
 
