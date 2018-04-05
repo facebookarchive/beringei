@@ -333,18 +333,22 @@ void BucketStorage::finalizeBucket(uint32_t position) {
     const uint32_t pageIndex = data_[bucket].activePages - 1;
 
     if (data_[bucket].disabled) {
-      LOG(ERROR) << "Trying to finalize a disabled bucket:" << bucket
+      LOG(ERROR) << "Trying to finalize a disabled bucket: " << bucket
                  << " position:" << position;
       return;
     }
 
     if (data_[bucket].position != position) {
-      LOG(ERROR) << "Trying to finalize an expired bucket";
+      if (data_[bucket].activePages > 0) {
+        LOG(ERROR) << "Trying to finalize an expired bucket: " << bucket
+                   << " position:" << position;
+      }
       return;
     }
 
     if (data_[bucket].finalized) {
-      LOG(ERROR) << "This bucket has already been finalized " << position;
+      LOG(ERROR) << "This bucket has already been finalized: " << bucket
+                 << " position:" << position;
       return;
     }
 

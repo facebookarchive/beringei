@@ -563,9 +563,11 @@ void BeringeiServiceHandler::scanShard(
       if (blocks.size() > 0) {
         ret.keys.push_back(key.str());
         ret.data.push_back(std::move(blocks));
+        auto queriedBucketsAgo = row->second.getQueriedBucketsAgo();
         ret.queriedRecently.push_back(
-            row->second.getQueriedBucketsAgo() <=
-            map->buckets(kGorillaSecondsPerDay));
+            queriedBucketsAgo !=
+                std::numeric_limits<decltype(queriedBucketsAgo)>::max() &&
+            queriedBucketsAgo <= map->buckets(kGorillaSecondsPerDay));
       }
     }
   }
