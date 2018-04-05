@@ -21,7 +21,7 @@
 #include "beringei/client/BeringeiGetResult.h"
 #include "beringei/client/BeringeiNetworkClient.h"
 #include "beringei/client/BeringeiScanShardResult.h"
-#include "beringei/client/RequestBatchingQueue.h"
+#include "beringei/client/WriteClient.h"
 
 namespace facebook {
 namespace fb303 {
@@ -135,26 +135,6 @@ class BeringeiClientImpl {
       const std::string& serviceName,
       std::shared_ptr<BeringeiConfigurationAdapterIf> configurationAdapter,
       bool shadow);
-
-  struct WriteClient {
-    WriteClient(
-        std::unique_ptr<BeringeiNetworkClient> networkClient,
-        size_t queueCapacity,
-        size_t queueSize)
-        : queue(queueCapacity, queueSize), client(std::move(networkClient)) {}
-    WriteClient(
-        BeringeiNetworkClient* networkClient,
-        size_t queueCapacity,
-        size_t queueSize)
-        : queue(queueCapacity, queueSize), client(networkClient) {}
-
-    size_t getNumShards() const {
-      return client->getNumShards();
-    }
-
-    RequestBatchingQueue queue;
-    std::unique_ptr<BeringeiNetworkClient> client;
-  };
 
   void initialize(
       int queueCapacity,
