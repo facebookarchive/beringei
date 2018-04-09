@@ -217,21 +217,30 @@ void BucketMap::erase(int index, Item item) {
   folly::RWSpinLock::WriteHolder guard(lock_);
 
   if (rows_[index] != item || !item) {
+    guard.reset();
     // The arguments provided are no longer valid.
     GorillaStatsManager::addStatValue(kDeletionRaces);
     return;
   }
 
   auto it = map_.find(item->first.c_str());
-  if (it != map_.end() && it->second == index) {
+  bool race = it == map_.end() || it->second != index;
+  if (!race) {
     // The map still points to the right entry.
     map_.erase(it);
-  } else {
-    GorillaStatsManager::addStatValue(kDeletionRaces);
   }
 
+  auto row = rows_[index];
   rows_[index].reset();
   freeList_.push(index);
+
+  // Deallocation on reference count decrease to zero is unlocked
+  guard.reset();
+  row.reset();
+
+  if (race) {
+    GorillaStatsManager::addStatValue(kDeletionRaces);
+  }
 }
 
 uint32_t BucketMap::bucket(uint64_t unixTime) const {
@@ -819,6 +828,10 @@ bool BucketMap::putDataPointWithId(
 
 int64_t BucketMap::getReliableDataStartTime() {
   return reliableDataStartTime_;
+}
+
+int BucketMap::getShardId() const {
+  return shardId_;
 }
 
 int BucketMap::checkForMissingBlockFiles() {

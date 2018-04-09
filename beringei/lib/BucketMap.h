@@ -192,6 +192,8 @@ class BucketMap {
   // if a shard has no missing data
   int64_t getReliableDataStartTime();
 
+  int getShardId() const;
+
  private:
   // Load all the datapoints out of the logfiles for this shard that
   // are newer than what is covered by the lastBlock.
