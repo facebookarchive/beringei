@@ -284,11 +284,12 @@ bool BeringeiScanShardResultCollector::addResult(
   }
 
   // Favor success or more specific error message
-  if (status_ == StatusCode::RPC_FAIL) {
+  if (status_ == StatusCode::RPC_FAIL ||
+      (status_ != StatusCode::OK && resultStatus == StatusCode::OK)) {
     status_ = resultStatus;
   }
 
-  if (result.status != StatusCode::OK) {
+  if (allSuccess_ && resultStatus != StatusCode::OK) {
     allSuccess_ = false;
   }
 

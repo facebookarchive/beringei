@@ -1224,3 +1224,81 @@ TEST_F(BeringeiClientScanShardNwayTest, StatsMissingNumByServices) {
   EXPECT_EQ(gotData, expectData);
   expectEq(gotStats, expectStats);
 }
+
+TEST_F(BeringeiClientScanShardTest, BucketNotFinalized) {
+  FLAGS_gorilla_parallel_scan_shard = true;
+
+  const int services = 2;
+  const std::bitset<32> serviceDataValid = 0b10;
+
+  std::vector<std::string> keys = {k1_.key};
+  std::vector<TimeValuePair> data;
+  TimeSeriesBlock dataCompressed;
+
+  std::array<ScanShardResult, 2> networkResult;
+  BeringeiScanShardResult expectBeringei(
+      scanShardReq_, 1, std::vector<std::string>(2), serviceDataValid);
+
+  networkResult[0].status = StatusCode::BUCKET_NOT_FINALIZED;
+  networkResult[1].status = StatusCode::OK;
+  expectBeringei.keys = networkResult[1].keys = keys;
+
+  for (unsigned i = 0; i < 3; ++i) {
+    data.push_back(tvp(19 + i * FLAGS_mintimestampdelta, i));
+  }
+  TimeSeries::writeValues(data, dataCompressed);
+  std::map<std::string, std::vector<TimeValuePair>> expectData = {
+      {k1_.key, data}};
+
+  networkResult[1].data = {{dataCompressed}};
+  expectBeringei.data = {{{}, {networkResult[1].data[0]}}};
+  expectBeringei.queriedRecently = networkResult[1].queriedRecently = {false};
+  expectBeringei.keyStats = BeringeiScanStats(services, serviceDataValid);
+
+  expectBeringei.keyStats.setTotal(expectBeringei.keys.size());
+  expectBeringei.keyStats.setMissingByService({(int64_t)keys.size(), 0});
+
+  BeringeiScanStats expectStats(services, serviceDataValid);
+  expectStats.setTotal(expectData.size());
+  expectStats.setMissingByService(0, data.size());
+
+  std::vector<std::shared_ptr<BeringeiNetworkClient>> readers;
+
+  const int delay = 1000;
+  CHECK_LT(delay, BeringeiNetworkClient::getTimeoutMs());
+  std::function<void()> doSleep = [delay]() {
+    /* sleep override */ std::this_thread::sleep_for(
+        std::chrono::milliseconds(delay));
+  };
+  for (unsigned i = 0; i < 2; ++i) {
+    auto client = std::make_shared<StrictMock<BeringeiClientMock>>(8);
+    HostInfo hostInfo;
+    EXPECT_TRUE(client->getHostForShard(scanShardReq_.shardId, hostInfo));
+    if (i < 1) {
+      EXPECT_CALL(*client, mockPerformScanShard(hostInfo, scanShardReq_))
+          .WillOnce(Return(networkResult[i]));
+    } else {
+      EXPECT_CALL(*client, mockPerformScanShard(hostInfo, scanShardReq_))
+          .WillOnce(
+              DoAll(InvokeWithoutArgs(doSleep), Return(networkResult[i])));
+    }
+    readers.push_back(client);
+  }
+
+  auto adapterMock = std::make_shared<StrictMock<MockConfigurationAdapter>>();
+  auto beringeiClient = createBeringeiClient(adapterMock, 1, false, readers);
+
+  BeringeiScanShardResult result = beringeiClient->scanShard(scanShardReq_);
+
+  expectEq(result, expectBeringei);
+
+  for (const auto& key : folly::enumerate(result.keys)) {
+    auto const& expect = expectData[*key];
+
+    auto got = result.getUncompressedData(key.index);
+    EXPECT_EQ(got, expect);
+
+    got = result.takeUncompressedData(key.index);
+    EXPECT_EQ(got, expect);
+  }
+}
