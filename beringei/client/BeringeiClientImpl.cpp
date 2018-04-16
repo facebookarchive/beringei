@@ -84,21 +84,6 @@ DEFINE_int32(
     gorilla_sleep_per_put_us,
     100000,
     "sleep for this long between puts if the queue is near-empty");
-
-DEFINE_int32(
-    gorilla_retry_queue_capacity,
-    10000,
-    "The number of data points that will fit in the retry queue");
-DEFINE_int32(
-    gorilla_retry_delay_secs,
-    55,
-    "Retry delay for failed sends. Keeping this under one minute will "
-    "still allow data points to arrive in the correct order (assuming "
-    "one minute data)");
-DEFINE_int32(
-    gorilla_write_retry_threads,
-    4,
-    "Number of threads for retrying failed writes");
 DEFINE_int32(
     gorilla_queue_capacity_size_ratio,
     500,
@@ -112,11 +97,7 @@ const static std::string kPutDroppedKey = "gorilla_client.put_dropped.";
 const static std::string kPutKey = "gorilla_client.put.";
 const static std::string kQueueSizeKey = "gorilla_client.queue_size.";
 const static std::string kUsPerPut = "gorilla_client.us_per_put.";
-const static std::string kPutRetryKey = "gorilla_client.put_retry.";
 const static std::string kReadFailover = "gorilla_client.read_failover";
-const static std::string kRetryQueueWriteFailures =
-    "gorilla_client.retry_queue_write_failures";
-const static std::string kRetryQueueSizeKey = "gorilla_client.retry_queue_size";
 const static std::string kBadReadServices = "gorilla_client.bad_read_services";
 const static std::string kRedirectForMissingData =
     "gorilla_client.redirect_for_missing_data";
@@ -125,10 +106,6 @@ const int BeringeiClientImpl::kDefaultReadServicesUpdateInterval = 15;
 const int BeringeiClientImpl::kNoWriterThreads = -1;
 const int BeringeiClientImpl::kNoReadServicesUpdates = -1;
 
-const static int kRetryThresholdSecs = 30;
-
-// The vectors can be a lot smaller in the retry queue.
-const static int kRetryQueueCapacitySizeRatio = 100;
 const static int kMinQueueSize = 10;
 const static int kMaxRetryBatchSize = 10000;
 
@@ -137,12 +114,7 @@ BeringeiClientImpl::BeringeiClientImpl(
     bool throwExceptionOnTransientFailure)
     : maxNumShards_(0),
       configurationAdapter_(asyncClientAdapter),
-      throwExceptionOnTransientFailure_(throwExceptionOnTransientFailure),
-      retryQueue_(std::max(
-          (int)FLAGS_gorilla_retry_queue_capacity /
-              kRetryQueueCapacitySizeRatio,
-          kMinQueueSize)),
-      numRetryQueuedDataPoints_(0) {}
+      throwExceptionOnTransientFailure_(throwExceptionOnTransientFailure) {}
 
 void BeringeiClientImpl::initialize(
     int queueCapacity,
@@ -194,10 +166,7 @@ void BeringeiClientImpl::initialize(
   startWriterThreads(writerThreads);
 
   // Initialize counters.
-  GorillaStatsManager::addStatExportType(kRetryQueueSizeKey, AVG);
-  GorillaStatsManager::addStatValue(kRetryQueueSizeKey, 0);
   GorillaStatsManager::addStatExportType(kReadFailover, SUM);
-  GorillaStatsManager::addStatExportType(kRetryQueueWriteFailures, SUM);
   GorillaStatsManager::addStatExportType(kBadReadServices, SUM);
   GorillaStatsManager::addStatExportType(kRedirectForMissingData, SUM);
 
@@ -214,8 +183,6 @@ void BeringeiClientImpl::initialize(
     GorillaStatsManager::addStatExportType(kPutKey + service, SUM);
     GorillaStatsManager::addStatExportType(kPutKey + service, AVG);
     GorillaStatsManager::addStatExportType(kUsPerPut + service, AVG);
-    GorillaStatsManager::addStatExportType(kPutRetryKey + service, SUM);
-    GorillaStatsManager::addStatExportType(kPutRetryKey + service, COUNT);
   }
 }
 
@@ -236,8 +203,9 @@ void BeringeiClientImpl::initializeTestClients(
     readClients_.push_back(client);
   }
   for (auto client : writers) {
+    auto uc = std::unique_ptr<BeringeiNetworkClient>(client);
     writeClients_.emplace_back(
-        new WriteClient(client, queueCapacity, queueSize));
+        new WriteClient(std::move(uc), queueCapacity, queueSize));
   }
   maxNumShards_ = getMaxNumShards(writeClients_);
   startWriterThreads(writerThreads);
@@ -271,9 +239,8 @@ void BeringeiClientImpl::startWriterThreads(int numWriterThreads) {
             this,
             writeClient.get());
       }
-    }
-    for (int i = 0; i < FLAGS_gorilla_write_retry_threads; i++) {
-      retryWriters_.emplace_back(&BeringeiClientImpl::retryThread, this);
+
+      writeClient->start();
     }
   }
 }
@@ -284,6 +251,7 @@ void BeringeiClientImpl::stopWriterThreads() {
     int writerThreadsPerClient = writers_.size() / writeClients_.size();
     for (auto& writeClient : writeClients_) {
       writeClient->queue.flush(writerThreadsPerClient);
+      writeClient->stop();
     }
   }
 
@@ -291,17 +259,6 @@ void BeringeiClientImpl::stopWriterThreads() {
     thread.join();
   }
   writers_.clear();
-
-  for (auto& thread : retryWriters_) {
-    RetryOperation op;
-    // Empty data points vector will stop the thread.
-    retryQueue_.write(std::move(op));
-  }
-
-  for (auto& thread : retryWriters_) {
-    thread.join();
-  }
-  retryWriters_.clear();
 }
 
 void BeringeiClientImpl::flushQueue() {
@@ -726,7 +683,7 @@ void BeringeiClientImpl::writeDataPointsForever(WriteClient* writeClient) {
 
       // Send all the popped data points.
       std::vector<DataPoint> dropped =
-          putWithStats(writeClient->client.get(), points.second, requests);
+          writeClient->putWithStats(points.second, requests);
       if (dropped.size() > 0) {
         droppedDataPoints.insert(
             droppedDataPoints.end(),
@@ -735,28 +692,8 @@ void BeringeiClientImpl::writeDataPointsForever(WriteClient* writeClient) {
       }
 
       if (droppedDataPoints.size() > 0) {
-        // Retry and send the failed data points in another thread
-        // after a delay to allow the server to come back up if it's
-        // down.
-        size_t droppedCount = droppedDataPoints.size();
-        RetryOperation op;
-        op.client = writeClient->client.get();
-        op.dataPoints = std::move(droppedDataPoints);
-        op.retryTimeSecs = time(nullptr) + FLAGS_gorilla_retry_delay_secs;
-        if (numRetryQueuedDataPoints_ + droppedCount >=
-                FLAGS_gorilla_retry_queue_capacity ||
-            !retryQueue_.write(std::move(op))) {
-          logDroppedDataPoints(
-              writeClient->client.get(), droppedCount, "retry queue is full");
-          GorillaStatsManager::addStatValue(kRetryQueueWriteFailures);
-        } else {
-          numRetryQueuedDataPoints_ += droppedCount;
-          GorillaStatsManager::addStatValue(
-              kPutRetryKey + writeClient->client->getServiceName(),
-              droppedCount);
-          GorillaStatsManager::addStatValue(
-              kRetryQueueSizeKey, numRetryQueuedDataPoints_);
-        }
+        writeClient->retry(std::move(droppedDataPoints));
+        droppedDataPoints.clear();
       }
 
       size_t queueSize = writeClient->queue.size();
@@ -790,80 +727,6 @@ void BeringeiClientImpl::updateReadServices() {
     folly::RWSpinLock::WriteHolder guard(&readClientLock_);
     readClients_ = readClients;
   }
-}
-
-void BeringeiClientImpl::retryThread() {
-  while (true) {
-    try {
-      BeringeiNetworkClient::PutRequestMap requestMap;
-      RetryOperation op;
-      retryQueue_.blockingRead(op);
-      numRetryQueuedDataPoints_ -= op.dataPoints.size();
-      GorillaStatsManager::addStatValue(
-          kRetryQueueSizeKey, numRetryQueuedDataPoints_);
-
-      if (op.dataPoints.empty()) {
-        LOG(INFO) << "Shutting down retry thread";
-        break;
-      }
-
-      if (op.retryTimeSecs < time(nullptr) - kRetryThresholdSecs) {
-        logDroppedDataPoints(
-            op.client, op.dataPoints.size(), "data points are too old");
-        continue;
-      }
-
-      if (op.retryTimeSecs > time(nullptr)) {
-        // Sleeping is fine because it's a FIFO queue with a constant delay.
-        sleep(op.retryTimeSecs - time(nullptr));
-      }
-
-      // Build the request.
-      uint32_t totalDropped = 0;
-      for (auto& dp : op.dataPoints) {
-        bool dropped = false;
-        op.client->addDataPointToRequest(dp, requestMap, dropped);
-        if (dropped) {
-          totalDropped++;
-        }
-      }
-
-      // Send the data points.
-      std::vector<DataPoint> dropped = putWithStats(
-          op.client, op.dataPoints.size() - totalDropped, requestMap);
-      totalDropped += dropped.size();
-      if (totalDropped > 0) {
-        logDroppedDataPoints(op.client, totalDropped, "retry send failed");
-      }
-
-    } catch (std::exception& e) {
-      LOG(ERROR) << e.what();
-    }
-  }
-}
-
-void BeringeiClientImpl::logDroppedDataPoints(
-    BeringeiNetworkClient* client,
-    uint32_t dropped,
-    const std::string& msg) {
-  LOG(WARNING) << "Dropping " << dropped << " data points for service "
-               << client->getServiceName() << " because " << msg;
-  GorillaStatsManager::addStatValue(
-      kPutDroppedKey + client->getServiceName(), dropped);
-}
-
-std::vector<DataPoint> BeringeiClientImpl::putWithStats(
-    BeringeiNetworkClient* client,
-    int points,
-    BeringeiNetworkClient::PutRequestMap& requestMap) {
-  Timer timer(true);
-  std::vector<DataPoint> dropped = client->performPut(requestMap);
-  GorillaStatsManager::addStatValue(
-      kUsPerPut + client->getServiceName(), timer.get());
-  GorillaStatsManager::addStatValue(
-      kPutKey + client->getServiceName(), points - dropped.size());
-
-  return dropped;
 }
 
 void BeringeiClientImpl::stopRequests() {

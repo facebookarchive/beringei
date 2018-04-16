@@ -210,18 +210,6 @@ class BeringeiClientImpl {
 
   void updateReadServices();
 
-  void retryThread();
-
-  void logDroppedDataPoints(
-      BeringeiNetworkClient* client,
-      uint32_t dropped,
-      const std::string& msg);
-
-  std::vector<DataPoint> putWithStats(
-      BeringeiNetworkClient* client,
-      int points,
-      BeringeiNetworkClient::PutRequestMap& requestMap);
-
   void initBeringeiNetworkClients(
       std::vector<std::shared_ptr<BeringeiNetworkClient>>& clients,
       const std::vector<std::string>& readServices);
@@ -242,16 +230,7 @@ class BeringeiClientImpl {
   folly::FunctionScheduler readServicesUpdateScheduler_;
   folly::RWSpinLock readClientLock_;
 
-  struct RetryOperation {
-    BeringeiNetworkClient* client;
-    std::vector<DataPoint> dataPoints;
-    uint32_t retryTimeSecs;
-  };
-
   bool throwExceptionOnTransientFailure_;
-  folly::MPMCQueue<RetryOperation> retryQueue_;
-  std::atomic<int> numRetryQueuedDataPoints_;
-  std::vector<std::thread> retryWriters_;
 };
 } // namespace gorilla
 } // namespace facebook

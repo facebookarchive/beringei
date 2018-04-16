@@ -131,7 +131,6 @@ void expectEq(
 
 namespace facebook {
 namespace gorilla {
-DECLARE_int32(gorilla_retry_delay_secs);
 DECLARE_bool(gorilla_parallel_scan_shard);
 } // namespace gorilla
 } // namespace facebook
