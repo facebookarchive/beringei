@@ -18,6 +18,16 @@ DEFINE_int32(
     4,
     "Number of threads for retrying failed writes");
 
+DEFINE_int32(
+    gorilla_max_retry_batch_size,
+    10000,
+    "How much to batch before retrying failed datapoints.");
+
+DEFINE_int32(
+    gorilla_retry_batch_timeout_ms,
+    3000,
+    "Time to wait before retrying an incomplete batch.");
+
 namespace facebook {
 namespace gorilla {
 
