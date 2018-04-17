@@ -28,6 +28,11 @@ DEFINE_int32(
     3000,
     "Time to wait before retrying an incomplete batch.");
 
+DEFINE_int32(
+    gorilla_shard_update_interval_ms,
+    15,
+    "Interval to update shard map");
+
 namespace facebook {
 namespace gorilla {
 
@@ -53,6 +58,8 @@ WriteClient::WriteClient(
           (int)FLAGS_gorilla_retry_queue_capacity /
               kRetryQueueCapacitySizeRatio,
           kMinQueueSize)),
+      shardCache_(initShardCache()),
+      shardCacheObserver_(shardCache_.getObserver()),
       counterUsPerPut_(kUsPerPut + client->getServiceName()),
       counterPutKey_(kPutKey + client->getServiceName()),
       counterPutRetryKey_(kPutRetryKey + client->getServiceName()),
@@ -62,6 +69,54 @@ WriteClient::WriteClient(
   GorillaStatsManager::addStatExportType(kRetryQueueWriteFailures, SUM);
   GorillaStatsManager::addStatExportType(counterPutRetryKey_, SUM);
   GorillaStatsManager::addStatExportType(counterPutRetryKey_, COUNT);
+
+  shardUpdaterThread_.addFunction(
+      std::bind(&WriteClient::updateShardCache, this),
+      std::chrono::milliseconds(FLAGS_gorilla_shard_update_interval_ms),
+      client->getServiceName() + " ShardCache updater.");
+}
+
+std::shared_ptr<WriteClient::ShardCache> WriteClient::initShardCache() {
+  auto shardCache = std::make_shared<WriteClient::ShardCache>();
+  auto nShards = client->getNumShards();
+  shardCache->resize(nShards);
+  int64_t shardId = 0;
+  for (auto& shardCacheEntry : *shardCache) {
+    client->getHostForShard(shardId++, shardCacheEntry);
+  }
+  return shardCache;
+}
+
+void WriteClient::updateShardCache() {
+  auto& oldCache = *shardCacheObserver_;
+  int numShards = client->getNumShards();
+  auto shardCache = std::make_shared<WriteClient::ShardCache>();
+  shardCache->resize(numShards);
+
+  bool hasChanges = false;
+  int64_t shardId = 0;
+  for (auto& shardCacheEntry : *shardCache) {
+    std::pair<std::string, int> hostInfo;
+    client->getHostForShard(shardId, hostInfo);
+    if (shardId >= oldCache->size()) {
+      // number of shards increased
+      hasChanges = true;
+      shardCacheEntry = hostInfo;
+    } else if (hostInfo.second > 0) {
+      // owner possibly changed, check
+      shardCacheEntry = hostInfo;
+      if (oldCache->at(shardId) != hostInfo) {
+        hasChanges = true;
+      }
+    } else {
+      LOG(WARNING) << "Using possibly stale cache entry for shard" << shardId;
+      shardCacheEntry = oldCache->at(shardId);
+    }
+    ++shardId;
+  }
+  if (hasChanges) {
+    shardCache_.setValue(shardCache);
+  }
 }
 
 void WriteClient::retry(std::vector<DataPoint> dropped) {
@@ -153,12 +208,14 @@ void WriteClient::logDroppedDataPoints(
 }
 
 void WriteClient::start() {
+  shardUpdaterThread_.start();
   for (int i = 0; i < FLAGS_gorilla_write_retry_threads; i++) {
     retryWriters_.emplace_back(&WriteClient::retryThread, this);
   }
 }
 
 void WriteClient::stop() {
+  shardUpdaterThread_.shutdown();
   for (auto& thread : retryWriters_) {
     RetryOperation op;
     op.retryTimeSecs = 0;

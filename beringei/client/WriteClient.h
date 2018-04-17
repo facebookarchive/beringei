@@ -2,6 +2,9 @@
 
 #include <thread>
 
+#include <folly/experimental/FunctionScheduler.h>
+#include <folly/experimental/observer/Observer.h>
+#include <folly/experimental/observer/SimpleObservable.h>
 #include <folly/stop_watch.h>
 
 #include "beringei/client/BeringeiNetworkClient.h"
@@ -15,7 +18,6 @@ DECLARE_int32(gorilla_retry_batch_timeout_ms);
 
 namespace facebook {
 namespace gorilla {
-
 class WriteClient {
  public:
   WriteClient(
@@ -43,6 +45,9 @@ class WriteClient {
     uint32_t retryTimeSecs;
   };
 
+  using ShardCacheEntry = std::pair<std::string, int>;
+  using ShardCache = std::vector<ShardCacheEntry>;
+
   // Retry logic
   void retryThread();
   void logDroppedDataPoints(uint32_t dropped, const std::string& msg);
@@ -55,6 +60,16 @@ class WriteClient {
   std::atomic<int> numRetryQueuedDataPoints_{0};
   std::vector<std::thread> retryWriters_;
   // End Retry
+
+  // Shard Cache
+  folly::observer::SimpleObservable<ShardCache> shardCache_;
+  folly::observer::TLObserver<ShardCache> shardCacheObserver_;
+  folly::FunctionScheduler shardUpdaterThread_;
+
+  std::shared_ptr<ShardCache> initShardCache();
+  void updateShardCache();
+
+  // End Shard Cache
 
   std::string counterUsPerPut_;
   std::string counterPutKey_;

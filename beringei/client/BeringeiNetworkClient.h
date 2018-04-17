@@ -147,14 +147,14 @@ class BeringeiNetworkClient {
 
   bool isShadow() const;
 
+  virtual bool getHostForShard(
+      int64_t shardId,
+      std::pair<std::string, int>& hostInfo);
+
  protected:
   // Default constructor that doesn't do any initialization. Should be
   // only used from tests.
   BeringeiNetworkClient() {}
-
-  virtual bool getHostForShard(
-      int64_t shardId,
-      std::pair<std::string, int>& hostInfo);
 
   template <typename T>
   void addKeyToRequest(const Key& key, T& requests) {
