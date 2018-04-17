@@ -12,6 +12,8 @@
 namespace facebook {
 namespace gorilla {
 
+static const int kPopDelayMs = 2000;
+
 bool RequestBatchingQueue::push(std::vector<DataPoint>& points) {
   int numPoints = points.size();
 
@@ -37,6 +39,40 @@ bool RequestBatchingQueue::push(std::vector<DataPoint>& points) {
   }
 
   return true;
+}
+
+void RequestBatchingQueue::popForever(
+    std::function<bool(DataPoint& dp)> popCallback) {
+  std::vector<DataPoint> points;
+  queue_.blockingRead(points);
+  bool continuePopping = true;
+  bool popped = true;
+  do {
+    if (popped) {
+      if (points.size() == 0) {
+        // Signals shutdown.
+        return;
+      }
+      numQueuedDataPoints_ -= points.size();
+
+      for (auto& dp : points) {
+        if (!popCallback(dp)) {
+          // Callback has had enough, but still push all the points in this
+          // vector.
+          continuePopping = false;
+        }
+      }
+    }
+
+    if (!continuePopping) {
+      return;
+    }
+
+    popped = queue_.tryReadUntil(
+        std::chrono::steady_clock::now() +
+            std::chrono::milliseconds(kPopDelayMs),
+        points);
+  } while (true);
 }
 
 std::pair<bool, int> RequestBatchingQueue::pop(

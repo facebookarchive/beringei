@@ -7,6 +7,7 @@
 #include <folly/experimental/observer/SimpleObservable.h>
 #include <folly/stop_watch.h>
 
+#include "beringei/client/BeringeiHostWriter.h"
 #include "beringei/client/BeringeiNetworkClient.h"
 #include "beringei/client/RequestBatchingQueue.h"
 
@@ -29,6 +30,11 @@ class WriteClient {
   void start();
   void stop();
   void retry(std::vector<DataPoint> dropped);
+
+  void putWithRetry(
+      PutDataRequest& request,
+      std::shared_ptr<BeringeiHostWriter> hostWriter);
+
   std::vector<DataPoint> putWithStats(
       int points,
       BeringeiNetworkClient::PutRequestMap& requestMap);
@@ -36,10 +42,17 @@ class WriteClient {
   template <typename PointCollection>
   void drop(PointCollection points);
 
+  std::size_t getSnapshotVersion();
+  // Return the hostInfo for reach shard.
+  std::vector<std::pair<std::string, int>> getHostsSnapshot();
+
   RequestBatchingQueue queue;
   std::unique_ptr<BeringeiNetworkClient> client;
 
  private:
+  // Send data until reading an empty request.
+  void writeDataPointsForever();
+
   struct RetryOperation {
     std::vector<DataPoint> dataPoints;
     uint32_t retryTimeSecs;
@@ -75,6 +88,7 @@ class WriteClient {
   std::string counterPutKey_;
   std::string counterPutRetryKey_;
   std::string counterPutDroppedKey_;
+  std::string counterThrottle_;
 };
 
 template <typename PointCollection>

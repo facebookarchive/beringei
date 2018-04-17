@@ -363,6 +363,10 @@ void BeringeiNetworkClient::getLastUpdateTimes(
   }
 }
 
+int BeringeiNetworkClient::getShardForDataPoint(const DataPoint& dp) {
+  return dp.key.shardId;
+}
+
 bool BeringeiNetworkClient::addDataPointToRequest(
     DataPoint& dp,
     PutRequestMap& requests,

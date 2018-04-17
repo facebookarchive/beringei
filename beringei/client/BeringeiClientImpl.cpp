@@ -75,15 +75,6 @@ DEFINE_int32(
     1,
     "number of points to buffer in the Beringei write queue for each service");
 
-// Sleep for 100ms between puts if the queue contains <100 elements.
-DEFINE_int32(
-    gorilla_min_queue_size,
-    100,
-    "slow down writes if the queue contains fewer elements than this");
-DEFINE_int32(
-    gorilla_sleep_per_put_us,
-    100000,
-    "sleep for this long between puts if the queue is near-empty");
 DEFINE_int32(
     gorilla_queue_capacity_size_ratio,
     500,
@@ -107,7 +98,6 @@ const int BeringeiClientImpl::kNoWriterThreads = -1;
 const int BeringeiClientImpl::kNoReadServicesUpdates = -1;
 
 const static int kMinQueueSize = 10;
-const static int kMaxRetryBatchSize = 10000;
 
 BeringeiClientImpl::BeringeiClientImpl(
     std::shared_ptr<BeringeiConfigurationAdapterIf> asyncClientAdapter,
@@ -130,7 +120,7 @@ void BeringeiClientImpl::initialize(
 
   // In production clients are either readers or writers. Never
   // both.
-  if (writerThreads == 0) {
+  if (numWriterThreads_ == 0) {
     // If readServices fails, just assume there are no gorilla services.
     updateReadServices();
 
@@ -163,7 +153,7 @@ void BeringeiClientImpl::initialize(
     }
   }
 
-  startWriterThreads(writerThreads);
+  startWriterThreads();
 
   // Initialize counters.
   GorillaStatsManager::addStatExportType(kReadFailover, SUM);
@@ -208,7 +198,7 @@ void BeringeiClientImpl::initializeTestClients(
         new WriteClient(std::move(uc), queueCapacity, queueSize));
   }
   maxNumShards_ = getMaxNumShards(writeClients_);
-  startWriterThreads(writerThreads);
+  startWriterThreads();
 }
 
 BeringeiClientImpl::~BeringeiClientImpl() {
@@ -230,41 +220,36 @@ void BeringeiClientImpl::getLastUpdateTimes(
       minLastUpdateTime, maxKeysPerRequest, timeoutSeconds, callback);
 }
 
-void BeringeiClientImpl::startWriterThreads(int numWriterThreads) {
-  if (numWriterThreads > 0) {
-    for (auto& writeClient : writeClients_) {
-      for (int i = 0; i < numWriterThreads; i++) {
-        writers_.emplace_back(
-            &BeringeiClientImpl::writeDataPointsForever,
-            this,
-            writeClient.get());
-      }
-
+void BeringeiClientImpl::startWriterThreads() {
+  if (numWriterThreads_ > 0) {
+    for (auto writeClient : writeClients_) {
+      // Retry threads are in WriteClient
       writeClient->start();
+
+      // Regular writers are BeringeiWriter instances.
+      for (int i = 0; i < numWriterThreads_; i++) {
+        writers_.emplace_back(std::make_shared<BeringeiWriter>(writeClient));
+      }
     }
   }
 }
 
 void BeringeiClientImpl::stopWriterThreads() {
-  // Terminate all the writer threads.
-  if (writeClients_.size()) {
-    int writerThreadsPerClient = writers_.size() / writeClients_.size();
-    for (auto& writeClient : writeClients_) {
-      writeClient->queue.flush(writerThreadsPerClient);
-      writeClient->stop();
-    }
+  for (auto writeClient : writeClients_) {
+    writeClient->queue.flush(numWriterThreads_);
+    writeClient->stop();
   }
 
-  for (auto& thread : writers_) {
-    thread.join();
+  // Terminate all the writer threads.
+  for (auto& writer : writers_) {
+    writer->stop();
   }
   writers_.clear();
 }
 
 void BeringeiClientImpl::flushQueue() {
-  int writerThreadsPerClient = writers_.size() / writeClients_.size();
   stopWriterThreads();
-  startWriterThreads(writerThreadsPerClient);
+  startWriterThreads();
 }
 
 std::shared_ptr<BeringeiNetworkClient> BeringeiClientImpl::createNetworkClient(
@@ -651,65 +636,6 @@ BeringeiGetResult BeringeiClientImpl::get(
       .getVia(eb);
 }
 
-void BeringeiClientImpl::writeDataPointsForever(WriteClient* writeClient) {
-  bool keepWriting = true;
-  while (keepWriting) {
-    BeringeiNetworkClient::PutRequestMap requests;
-    std::vector<DataPoint> droppedDataPoints;
-    try {
-      auto points = writeClient->queue.pop([&](DataPoint& dp) {
-        // Add each popped data point to the right request.
-        bool addMorePoints = true;
-        bool dropped = false;
-
-        if (!writeClient->client->addDataPointToRequest(
-                dp, requests, dropped)) {
-          addMorePoints = false;
-        }
-        if (dropped) {
-          droppedDataPoints.push_back(dp);
-        }
-
-        return addMorePoints && droppedDataPoints.size() < kMaxRetryBatchSize;
-      });
-
-      if (!points.first) {
-        LOG(WARNING) << "Shutting down Beringei writer thread.";
-        keepWriting = false;
-      }
-      if (points.second == 0) {
-        continue;
-      }
-
-      // Send all the popped data points.
-      std::vector<DataPoint> dropped =
-          writeClient->putWithStats(points.second, requests);
-      if (dropped.size() > 0) {
-        droppedDataPoints.insert(
-            droppedDataPoints.end(),
-            std::make_move_iterator(dropped.begin()),
-            std::make_move_iterator(dropped.end()));
-      }
-
-      if (droppedDataPoints.size() > 0) {
-        writeClient->retry(std::move(droppedDataPoints));
-        droppedDataPoints.clear();
-      }
-
-      size_t queueSize = writeClient->queue.size();
-      GorillaStatsManager::addStatValue(
-          kQueueSizeKey + writeClient->client->getServiceName(), queueSize);
-
-      // Wait for a bit if there isn't much in the queue.
-      if (queueSize < FLAGS_gorilla_min_queue_size) {
-        usleep(FLAGS_gorilla_sleep_per_put_us);
-      }
-    } catch (std::exception& e) {
-      LOG(ERROR) << e.what();
-    }
-  }
-}
-
 std::vector<std::string> BeringeiClientImpl::selectReadServices() {
   return configurationAdapter_->getReadServices();
 }
@@ -861,13 +787,13 @@ void BeringeiClientImpl::setQueueCapacity(int& queueCapacity) {
   queueCapacity = queueCapacity ? queueCapacity : FLAGS_gorilla_queue_capacity;
 }
 
-void BeringeiClientImpl::setNumWriterThreads(int& writerThreads) {
+void BeringeiClientImpl::setNumWriterThreads(int writerThreads) {
   // Figure out the real number of writer threads.
   if (writerThreads != kNoWriterThreads) {
-    writerThreads =
+    numWriterThreads_ =
         writerThreads ? writerThreads : FLAGS_gorilla_client_writer_threads;
   } else {
-    writerThreads = 0;
+    numWriterThreads_ = 0;
   }
 }
 

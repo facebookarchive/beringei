@@ -32,7 +32,10 @@ DEFINE_int32(
     gorilla_shard_update_interval_ms,
     15,
     "Interval to update shard map");
-
+DEFINE_int32(
+    gorilla_max_requests_in_flight,
+    1000,
+    "Max number of incomplete Gorilla write requests before we drop data.");
 namespace facebook {
 namespace gorilla {
 
@@ -43,6 +46,8 @@ const static std::string kPutRetryKey = "gorilla_client.put_retry.";
 const static std::string kRetryQueueWriteFailures =
     "gorilla_client.retry_queue_write_failures";
 const static std::string kRetryQueueSizeKey = "gorilla_client.retry_queue_size";
+const static std::string kThrottleDroppedKey =
+    "gorilla_client.in_flight_dropped.";
 const static int kRetryThresholdSecs = 30;
 // The vectors can be a lot smaller in the retry queue.
 const static int kRetryQueueCapacitySizeRatio = 100;
@@ -63,12 +68,14 @@ WriteClient::WriteClient(
       counterUsPerPut_(kUsPerPut + client->getServiceName()),
       counterPutKey_(kPutKey + client->getServiceName()),
       counterPutRetryKey_(kPutRetryKey + client->getServiceName()),
-      counterPutDroppedKey_(kPutDroppedKey + client->getServiceName()) {
+      counterPutDroppedKey_(kPutDroppedKey + client->getServiceName()),
+      counterThrottle_(kThrottleDroppedKey + client->getServiceName()) {
   GorillaStatsManager::addStatExportType(kRetryQueueSizeKey, AVG);
   GorillaStatsManager::addStatValue(kRetryQueueSizeKey, 0);
   GorillaStatsManager::addStatExportType(kRetryQueueWriteFailures, SUM);
   GorillaStatsManager::addStatExportType(counterPutRetryKey_, SUM);
   GorillaStatsManager::addStatExportType(counterPutRetryKey_, COUNT);
+  GorillaStatsManager::addStatExportType(counterThrottle_, SUM);
 
   shardUpdaterThread_.addFunction(
       std::bind(&WriteClient::updateShardCache, this),
@@ -97,19 +104,19 @@ void WriteClient::updateShardCache() {
   int64_t shardId = 0;
   for (auto& shardCacheEntry : *shardCache) {
     std::pair<std::string, int> hostInfo;
-    client->getHostForShard(shardId, hostInfo);
+    auto shardFetchResult = client->getHostForShard(shardId, hostInfo);
     if (shardId >= oldCache->size()) {
       // number of shards increased
       hasChanges = true;
       shardCacheEntry = hostInfo;
-    } else if (hostInfo.second > 0) {
+    } else if (shardFetchResult) {
       // owner possibly changed, check
       shardCacheEntry = hostInfo;
       if (oldCache->at(shardId) != hostInfo) {
         hasChanges = true;
       }
     } else {
-      LOG(WARNING) << "Using possibly stale cache entry for shard" << shardId;
+      LOG(WARNING) << "Using possibly stale cache entry for shard: " << shardId;
       shardCacheEntry = oldCache->at(shardId);
     }
     ++shardId;
@@ -124,6 +131,9 @@ void WriteClient::retry(std::vector<DataPoint> dropped) {
   // after a delay to allow the server to come back up if it's
   // down.
   size_t droppedCount = dropped.size();
+  if (droppedCount == 0) {
+    return;
+  }
   RetryOperation op;
   op.dataPoints = std::move(dropped);
   op.retryTimeSecs = time(nullptr) + FLAGS_gorilla_retry_delay_secs;
@@ -189,6 +199,31 @@ void WriteClient::retryThread() {
   }
 }
 
+void WriteClient::putWithRetry(
+    PutDataRequest& request,
+    std::shared_ptr<BeringeiHostWriter> hostWriter) {
+  auto timer = std::make_shared<Timer>(true);
+
+  if (hostWriter->inFlightRequests++ >= FLAGS_gorilla_max_requests_in_flight) {
+    // We have too many requests in flight, have to drop :(
+    GorillaStatsManager::addStatValue(counterThrottle_, request.data.size());
+    hostWriter->inFlightRequests--;
+    return;
+  }
+
+  client->futurePerformPut(request, hostWriter->getHostInfo())
+      .then([this, timer, points = request.data.size()](
+                std::vector<DataPoint>& dropped) {
+        GorillaStatsManager::addStatValue(counterUsPerPut_, timer->get());
+        GorillaStatsManager::addStatValue(
+            counterPutKey_, points - dropped.size());
+        if (dropped.size() > 0) {
+          retry(std::move(dropped));
+        }
+      })
+      .ensure([hostWriter]() { hostWriter->inFlightRequests--; });
+}
+
 std::vector<DataPoint> WriteClient::putWithStats(
     int points,
     BeringeiNetworkClient::PutRequestMap& requestMap) {
@@ -197,6 +232,16 @@ std::vector<DataPoint> WriteClient::putWithStats(
   GorillaStatsManager::addStatValue(counterUsPerPut_, timer.get());
   GorillaStatsManager::addStatValue(counterPutKey_, points - dropped.size());
   return dropped;
+}
+
+std::size_t WriteClient::getSnapshotVersion() {
+  return shardCacheObserver_.getSnapshotRef().getVersion();
+}
+
+std::vector<std::pair<std::string, int>> WriteClient::getHostsSnapshot() {
+  auto& shardCache = *shardCacheObserver_;
+  return std::vector<std::pair<std::string, int>>(
+      shardCache->cbegin(), shardCache->cend());
 }
 
 void WriteClient::logDroppedDataPoints(
@@ -215,14 +260,16 @@ void WriteClient::start() {
 }
 
 void WriteClient::stop() {
+  // Stop updating shard map.
   shardUpdaterThread_.shutdown();
-  for (auto& thread : retryWriters_) {
+
+  // Stop retry threads
+  for (auto& retryThread : retryWriters_) {
     RetryOperation op;
     op.retryTimeSecs = 0;
     // Empty data points vector will stop the thread.
     retryQueue_.write(std::move(op));
   }
-
   for (auto& thread : retryWriters_) {
     thread.join();
   }

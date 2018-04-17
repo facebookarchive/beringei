@@ -127,6 +127,8 @@ class BeringeiNetworkClient {
       const std::pair<std::string, int>& hostInfo,
       folly::EventBase* eb = getEventBase());
 
+  virtual int getShardForDataPoint(const DataPoint& dp);
+
   // Gets keys stored in specified shard. Returns true if there are more keys
   // to be fetched.
   virtual bool getShardKeys(

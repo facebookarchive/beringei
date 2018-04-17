@@ -148,15 +148,14 @@ class BeringeiClientMock : public BeringeiNetworkClient {
       performPut,
       vector<DataPoint>(BeringeiNetworkClient::PutRequestMap& requests));
 
-  bool addDataPointToRequest(
-      DataPoint& dp,
-      BeringeiNetworkClient::PutRequestMap& requests,
-      bool& /*dropped*/) override {
-    auto& request = requests[make_pair("", dp.key.shardId)];
-    request.data.push_back(dp);
-    return true;
+  Future<std::vector<DataPoint>> futurePerformPut(
+      PutDataRequest& request,
+      const std::pair<std::string, int>& hostInfo) override {
+    BeringeiNetworkClient::PutRequestMap requests;
+    requests[hostInfo] = request;
+    LOG(INFO) << "################ host info: " << hostInfo.second;
+    return makeFuture(performPut(requests));
   }
-
   void addKeyToGetRequest(
       const facebook::gorilla::Key& key,
       BeringeiNetworkClient::GetRequestMap& requests) override {
@@ -389,18 +388,24 @@ TEST_F(BeringeiClientTest, Put) {
   req2.data.push_back(dps[1]);
   vector<DataPoint> dps2 = dps;
 
-  BeringeiNetworkClient::PutRequestMap expected;
-  expected[make_pair("", 1)] = req1;
-  expected[make_pair("", 2)] = req2;
+  BeringeiNetworkClient::PutRequestMap expected1;
+  expected1[make_pair("some_host", 1)] = req1;
 
-  EXPECT_CALL(*client, performPut(expected))
+  EXPECT_CALL(*client, performPut(expected1))
+      .WillOnce(Return(std::vector<DataPoint>{}));
+
+  BeringeiNetworkClient::PutRequestMap expected2;
+  expected2[make_pair("some_host", 2)] = req2;
+  EXPECT_CALL(*client, performPut(expected2))
       .WillOnce(Return(std::vector<DataPoint>{}));
 
   EXPECT_TRUE(beringeiClient->putDataPoints(dps));
 
   beringeiClient->flushQueue();
 
-  EXPECT_CALL(*client, performPut(expected))
+  EXPECT_CALL(*client, performPut(expected1))
+      .WillOnce(Return(std::vector<DataPoint>{}));
+  EXPECT_CALL(*client, performPut(expected2))
       .WillOnce(Return(std::vector<DataPoint>{}));
   EXPECT_TRUE(beringeiClient->putDataPoints(dps2));
 }
@@ -417,7 +422,7 @@ TEST_F(BeringeiClientTest, PutRetryAll) {
     ::testing::InSequence dummy;
     EXPECT_CALL(*client, performPut(_)).WillOnce(Return(dps));
     EXPECT_CALL(*client, performPut(_))
-        .WillOnce(Return(std::vector<DataPoint>{}));
+        .WillRepeatedly(Return(std::vector<DataPoint>{}));
   }
 
   EXPECT_TRUE(beringeiClient->putDataPoints(dps));
@@ -435,12 +440,17 @@ TEST_F(BeringeiClientTest, PutRetryOne) {
   PutDataRequest req1;
   req1.data.push_back(dps[0]);
   BeringeiNetworkClient::PutRequestMap retryExpected;
-  retryExpected[make_pair("", 1)] = req1;
+  retryExpected[make_pair("some_host", 1)] = req1;
 
   {
     ::testing::InSequence dummy;
     EXPECT_CALL(*client, performPut(_))
-        .WillOnce(Return(std::vector<DataPoint>{dps[0]}));
+        .WillOnce(Return(std::vector<DataPoint>{dps[0]}))
+        .RetiresOnSaturation();
+    EXPECT_CALL(*client, performPut(_))
+        .WillOnce(Return(std::vector<DataPoint>{}))
+        .RetiresOnSaturation();
+
     EXPECT_CALL(*client, performPut(retryExpected))
         .WillOnce(Return(std::vector<DataPoint>{}));
   }
@@ -459,13 +469,16 @@ TEST_F(BeringeiClientTest, PutRetryShadow) {
       createBeringeiClient(adapterMock, 7, false, {}, {client, shadowClient});
 
   EXPECT_CALL(*client, performPut(_))
-      .WillOnce(Return(std::vector<DataPoint>{}));
+      .Times(2)
+      .WillRepeatedly(Return(std::vector<DataPoint>{}));
 
   {
     ::testing::InSequence dummy;
-    EXPECT_CALL(*shadowClient, performPut(_)).WillOnce(Return(dps));
     EXPECT_CALL(*shadowClient, performPut(_))
-        .WillOnce(Return(std::vector<DataPoint>{}));
+        .WillOnce(Return(dps))
+        .RetiresOnSaturation();
+    EXPECT_CALL(*shadowClient, performPut(_))
+        .WillRepeatedly(Return(std::vector<DataPoint>{}));
   }
 
   EXPECT_TRUE(beringeiClient->putDataPoints(dps));

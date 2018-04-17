@@ -21,6 +21,7 @@
 #include "beringei/client/BeringeiGetResult.h"
 #include "beringei/client/BeringeiNetworkClient.h"
 #include "beringei/client/BeringeiScanShardResult.h"
+#include "beringei/client/BeringeiWriter.h"
 #include "beringei/client/WriteClient.h"
 
 namespace facebook {
@@ -179,7 +180,7 @@ class BeringeiClientImpl {
     return result;
   }
 
-  std::vector<std::unique_ptr<WriteClient>> writeClients_;
+  std::vector<std::shared_ptr<WriteClient>> writeClients_;
 
   // Max number of shards between regions. Since each BeringeiClient can
   // only be read or write, this corresponds to max number of shards of read
@@ -203,9 +204,6 @@ class BeringeiClientImpl {
       std::vector<Key>* inProgressKeys,
       std::vector<Key>* partialDataKeys);
 
-  // Send data until reading an empty request.
-  void writeDataPointsForever(WriteClient* writeClient);
-
   std::vector<std::string> selectReadServices();
 
   void updateReadServices();
@@ -214,17 +212,18 @@ class BeringeiClientImpl {
       std::vector<std::shared_ptr<BeringeiNetworkClient>>& clients,
       const std::vector<std::string>& readServices);
 
-  void startWriterThreads(int numWriterThreads);
+  void startWriterThreads();
   void stopWriterThreads();
 
   void setQueueCapacity(int& capacity);
-  void setNumWriterThreads(int& writerThreads);
+  void setNumWriterThreads(int writerThreads);
 
   std::shared_ptr<BeringeiConfigurationAdapterIf> configurationAdapter_;
 
   std::vector<std::shared_ptr<BeringeiNetworkClient>> readClients_;
 
-  std::vector<std::thread> writers_;
+  int numWriterThreads_;
+  std::vector<std::shared_ptr<BeringeiWriter>> writers_;
 
   std::vector<std::string> currentReadServices_;
   folly::FunctionScheduler readServicesUpdateScheduler_;
