@@ -87,6 +87,7 @@ class WriteClient {
   std::string counterUsPerPut_;
   std::string counterPutKey_;
   std::string counterPutRetryKey_;
+  std::string counterPutRejected_;
   std::string counterPutDroppedKey_;
   std::string counterThrottle_;
 };

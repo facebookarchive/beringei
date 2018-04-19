@@ -126,7 +126,9 @@ void BeringeiWriter::writeDataPointsForever() {
 
     if (dp.key.shardId >= hostWriters_.size() ||
         hostWriters_[dp.key.shardId] == nullptr) {
-      droppedDataPoints.push_back(dp);
+      if (!networkClient->isShadow()) {
+        droppedDataPoints.push_back(dp);
+      }
     } else {
       auto& hostWriter = hostWriters_[dp.key.shardId];
       if (hostWriter->addDataPoint(dp)) {

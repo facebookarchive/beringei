@@ -43,6 +43,7 @@ const static std::string kPutKey = "gorilla_client.put.";
 const static std::string kUsPerPut = "gorilla_client.us_per_put.";
 const static std::string kPutDroppedKey = "gorilla_client.put_dropped.";
 const static std::string kPutRetryKey = "gorilla_client.put_retry.";
+const static std::string kPutRejected = "gorilla_client.put_rejected.";
 const static std::string kRetryQueueWriteFailures =
     "gorilla_client.retry_queue_write_failures";
 const static std::string kRetryQueueSizeKey = "gorilla_client.retry_queue_size";
@@ -68,12 +69,16 @@ WriteClient::WriteClient(
       counterUsPerPut_(kUsPerPut + client->getServiceName()),
       counterPutKey_(kPutKey + client->getServiceName()),
       counterPutRetryKey_(kPutRetryKey + client->getServiceName()),
+      counterPutRejected_(kPutRejected + client->getServiceName()),
       counterPutDroppedKey_(kPutDroppedKey + client->getServiceName()),
       counterThrottle_(kThrottleDroppedKey + client->getServiceName()) {
   GorillaStatsManager::addStatExportType(kRetryQueueSizeKey, AVG);
   GorillaStatsManager::addStatValue(kRetryQueueSizeKey, 0);
   GorillaStatsManager::addStatExportType(kRetryQueueWriteFailures, SUM);
+  GorillaStatsManager::addStatExportType(counterPutKey_, SUM);
+  GorillaStatsManager::addStatExportType(counterPutKey_, COUNT);
   GorillaStatsManager::addStatExportType(counterPutRetryKey_, SUM);
+  GorillaStatsManager::addStatExportType(counterPutRejected_, SUM);
   GorillaStatsManager::addStatExportType(counterPutRetryKey_, COUNT);
   GorillaStatsManager::addStatExportType(counterThrottle_, SUM);
 
@@ -116,8 +121,13 @@ void WriteClient::updateShardCache() {
         hasChanges = true;
       }
     } else {
-      LOG(WARNING) << "Using possibly stale cache entry for shard: " << shardId;
-      shardCacheEntry = oldCache->at(shardId);
+      if (client->isShadow()) {
+        shardCacheEntry = {"", 0};
+      } else {
+        LOG(WARNING) << "Using possibly stale cache entry for shard: "
+                     << shardId;
+        shardCacheEntry = oldCache->at(shardId);
+      }
     }
     ++shardId;
   }
@@ -218,6 +228,8 @@ void WriteClient::putWithRetry(
         GorillaStatsManager::addStatValue(
             counterPutKey_, points - dropped.size());
         if (dropped.size() > 0) {
+          GorillaStatsManager::addStatValue(
+              counterPutRejected_, dropped.size());
           retry(std::move(dropped));
         }
       })

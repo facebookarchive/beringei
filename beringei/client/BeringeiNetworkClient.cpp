@@ -97,12 +97,19 @@ folly::Future<std::vector<DataPoint>> BeringeiNetworkClient::futurePerformPut(
     const std::pair<std::string, int>& hostInfo) {
   auto client =
       getBeringeiThriftClient(hostInfo, folly::getIOExecutor()->getEventBase());
-  return client->future_putDataPoints(request)
-      .then([](PutDataResult& result) { return std::move(result.data); })
-      .onError([dps = request.data](const std::exception& e) {
-        LOG(ERROR) << "putDataPoints failed. Reason: " << e.what();
-        return std::move(dps);
-      });
+  if (isShadow()) {
+    client->future_putDataPoints(request);
+    return folly::makeFuture(std::vector<DataPoint>({}));
+  } else {
+    return client->future_putDataPoints(request)
+        .then([](PutDataResult& result) { return std::move(result.data); })
+        .onError(
+            [hostInfo, dps = request.data](const std::exception& e) mutable {
+              LOG(ERROR) << "putDataPoints failed to host: " << hostInfo.first
+                         << ":" << hostInfo.second << "Reason: " << e.what();
+              return std::move(dps);
+            });
+  }
 }
 
 vector<DataPoint> BeringeiNetworkClient::performPut(PutRequestMap& requests) {
