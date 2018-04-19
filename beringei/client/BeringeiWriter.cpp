@@ -17,13 +17,18 @@ DEFINE_int32(
 namespace facebook {
 namespace gorilla {
 
+constexpr static char kBeringeiWriterThreadName[] = "BeringeiWriter";
 const static int kMaxRetryBatchSize = 10000;
+const static std::chrono::milliseconds kQueueStatExportIntervalMs(10000);
 const static std::string kQueueSizeKey = "gorilla_client.queue_size.";
 
 BeringeiWriter::BeringeiWriter(std::shared_ptr<WriteClient> writeClient)
     : writeClient_(writeClient),
-      worker_(&BeringeiWriter::writeDataPointsForever, this) {
+      worker_(&BeringeiWriter::writeDataPointsForever, this),
+      counterQueueSize_(
+          kQueueSizeKey + writeClient_->client->getServiceName()) {
   VLOG(2) << "Creating BeringeiWriter";
+  pthread_setname_np(worker_.native_handle(), kBeringeiWriterThreadName);
 }
 
 BeringeiWriter::~BeringeiWriter() {
@@ -117,6 +122,7 @@ void BeringeiWriter::writeDataPointsForever() {
   auto& writeQueue = writeClient_->queue;
 
   std::vector<DataPoint> droppedDataPoints;
+  folly::stop_watch<> queueStatWatch;
   writeQueue.popForever([&](DataPoint& dp) {
     updateShardWriterMap();
 
@@ -141,9 +147,9 @@ void BeringeiWriter::writeDataPointsForever() {
       droppedDataPoints.clear();
     }
 
-    // TODO(firatb): Remove this from the hot path.
-    GorillaStatsManager::addStatValue(
-        kQueueSizeKey + networkClient->getServiceName(), writeQueue.size());
+    if (queueStatWatch.lap(kQueueStatExportIntervalMs)) {
+      GorillaStatsManager::addStatValue(counterQueueSize_, writeQueue.size());
+    }
 
     return keepWriting_.load();
   });

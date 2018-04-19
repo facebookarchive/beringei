@@ -30,6 +30,8 @@ class BeringeiWriter {
       std::pair<std::string, int>,
       std::shared_ptr<BeringeiHostWriter>>
       destinationToWriterMap_;
+
+  std::string counterQueueSize_;
 };
 } // namespace gorilla
 } // namespace facebook
