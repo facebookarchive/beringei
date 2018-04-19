@@ -7,9 +7,11 @@
  * of patent rights can be found in the PATENTS file in the same directory.
  */
 
-#include "BucketedTimeSeries.h"
-#include "BucketMap.h"
+#include "beringei/lib/BucketedTimeSeries.h"
 
+#include <folly/synchronization/CallOnce.h>
+
+#include "beringei/lib/BucketMap.h"
 #include "beringei/lib/GorillaStatsManager.h"
 
 DEFINE_int32(
@@ -33,15 +35,18 @@ static const std::string TimeSeriesStreamsQueried =
     "time_series_streams_queried";
 
 BucketedTimeSeries::BucketedTimeSeries() {
-  GorillaStatsManager::addStatExportType(kBucketsExpiredTotal, SUM);
-  GorillaStatsManager::addStatExportType(kBucketsExpiredTotal, AVG);
-  GorillaStatsManager::addStatExportType(kBucketsExpiredQueried, SUM);
-  GorillaStatsManager::addStatExportType(kBucketsExpiredQueried, AVG);
+  static folly::once_flag flag;
+  folly::call_once(flag, [&]() {
+    GorillaStatsManager::addStatExportType(kBucketsExpiredTotal, SUM);
+    GorillaStatsManager::addStatExportType(kBucketsExpiredTotal, AVG);
+    GorillaStatsManager::addStatExportType(kBucketsExpiredQueried, SUM);
+    GorillaStatsManager::addStatExportType(kBucketsExpiredQueried, AVG);
 
-  GorillaStatsManager::addStatExportType(TimeSeriesStreamsTotal, SUM);
-  GorillaStatsManager::addStatExportType(TimeSeriesStreamsTotal, AVG);
-  GorillaStatsManager::addStatExportType(TimeSeriesStreamsQueried, SUM);
-  GorillaStatsManager::addStatExportType(TimeSeriesStreamsQueried, AVG);
+    GorillaStatsManager::addStatExportType(TimeSeriesStreamsTotal, SUM);
+    GorillaStatsManager::addStatExportType(TimeSeriesStreamsTotal, AVG);
+    GorillaStatsManager::addStatExportType(TimeSeriesStreamsQueried, SUM);
+    GorillaStatsManager::addStatExportType(TimeSeriesStreamsQueried, AVG);
+  });
 }
 
 BucketedTimeSeries::~BucketedTimeSeries() {}
