@@ -45,7 +45,9 @@ class RequestBatchingQueue {
 
   // Same as pop but it doesn't return anything and keeps popping until the
   // popCallback returns false, even if the queue is empty.
-  void popForever(std::function<bool(DataPoint& dp)> popCallback);
+  void popForever(
+      std::function<bool(DataPoint& dp)> popCallback,
+      std::function<bool()> timeoutCallback);
 
   // Causes n future calls to pop() to return false once everything currently in
   // the queue has been processed.

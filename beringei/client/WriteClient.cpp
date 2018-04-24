@@ -77,6 +77,7 @@ WriteClient::WriteClient(
   GorillaStatsManager::addStatExportType(kRetryQueueWriteFailures, SUM);
   GorillaStatsManager::addStatExportType(counterPutKey_, SUM);
   GorillaStatsManager::addStatExportType(counterPutKey_, COUNT);
+  GorillaStatsManager::addStatExportType(counterPutKey_, AVG);
   GorillaStatsManager::addStatExportType(counterPutRetryKey_, SUM);
   GorillaStatsManager::addStatExportType(counterPutRejected_, SUM);
   GorillaStatsManager::addStatExportType(counterPutRetryKey_, COUNT);

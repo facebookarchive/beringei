@@ -4,16 +4,6 @@
 
 #include "beringei/client/BeringeiWriter.h"
 
-DEFINE_int32(
-    gorilla_min_queue_size,
-    100,
-    "slow down writes if the queue contains fewer elements than this");
-// Sleep for 100ms between puts if the queue contains <100 elements.
-DEFINE_int32(
-    gorilla_sleep_per_put_us,
-    100000,
-    "sleep for this long between puts if the queue is near-empty");
-
 namespace facebook {
 namespace gorilla {
 
@@ -42,6 +32,15 @@ void BeringeiWriter::stop() {
   }
 }
 
+void BeringeiWriter::flushAll(bool force) {
+  for (auto& writer : hostWriters_) {
+    if (force || writer->isReady()) {
+      flush(writer);
+    }
+  }
+}
+
+// TODO(firatb): Move this method to BeringeiHostWriter
 void BeringeiWriter::flush(std::shared_ptr<BeringeiHostWriter>& hostWriter) {
   auto& networkClient = writeClient_->client;
 
@@ -123,45 +122,46 @@ void BeringeiWriter::writeDataPointsForever() {
 
   std::vector<DataPoint> droppedDataPoints;
   folly::stop_watch<> queueStatWatch;
-  writeQueue.popForever([&](DataPoint& dp) {
-    updateShardWriterMap();
+  writeQueue.popForever(
+      [&](DataPoint& dp) {
+        updateShardWriterMap();
 
-    // Each Beringei instance might have different shard counts. Let's ask the
-    // network client.
-    dp.key.shardId = networkClient->getShardForDataPoint(dp);
+        // Each Beringei instance might have different shard counts. Let's ask
+        // the network client.
+        dp.key.shardId = networkClient->getShardForDataPoint(dp);
 
-    if (dp.key.shardId >= hostWriters_.size() ||
-        hostWriters_[dp.key.shardId] == nullptr) {
-      if (!networkClient->isShadow()) {
-        droppedDataPoints.push_back(dp);
-      }
-    } else {
-      auto& hostWriter = hostWriters_[dp.key.shardId];
-      if (hostWriter->addDataPoint(dp)) {
-        flush(hostWriter);
-      }
-    }
+        if (dp.key.shardId >= hostWriters_.size() ||
+            hostWriters_[dp.key.shardId] == nullptr) {
+          if (!networkClient->isShadow()) {
+            droppedDataPoints.push_back(dp);
+          }
+        } else {
+          auto& hostWriter = hostWriters_[dp.key.shardId];
+          hostWriter->addDataPoint(dp);
+          if (hostWriter->isReady()) {
+            flush(hostWriter);
+          }
+        }
 
-    if (droppedDataPoints.size() >= kMaxRetryBatchSize) {
-      writeClient_->retry(std::move(droppedDataPoints));
-      droppedDataPoints.clear();
-    }
+        if (droppedDataPoints.size() >= kMaxRetryBatchSize) {
+          writeClient_->retry(std::move(droppedDataPoints));
+          droppedDataPoints.clear();
+        }
 
-    if (queueStatWatch.lap(kQueueStatExportIntervalMs)) {
-      GorillaStatsManager::addStatValue(counterQueueSize_, writeQueue.size());
-    }
+        if (queueStatWatch.lap(kQueueStatExportIntervalMs)) {
+          GorillaStatsManager::addStatValue(
+              counterQueueSize_, writeQueue.size());
+        }
 
-    return keepWriting_.load();
-  });
+        return keepWriting_.load();
+      },
+      [&]() {
+        flushAll();
+        return keepWriting_.load();
+      });
 
   LOG(WARNING) << "Shutting down BeringeiWriter";
-
-  // Let's flush all the data we have first.
-  for (auto& writer : hostWriters_) {
-    if (writer != nullptr) {
-      flush(writer);
-    }
-  }
+  flushAll(true);
 }
 
 } // namespace gorilla

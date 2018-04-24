@@ -16,6 +16,7 @@ class BeringeiWriter {
 
  private:
   void writeDataPointsForever();
+  void flushAll(bool force = false);
   void flush(std::shared_ptr<BeringeiHostWriter>& hostWriter);
   void updateShardWriterMap();
 

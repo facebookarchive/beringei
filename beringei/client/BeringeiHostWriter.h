@@ -9,7 +9,8 @@ namespace gorilla {
 class BeringeiHostWriter {
  public:
   BeringeiHostWriter(const std::pair<std::string, int>& hostInfo);
-  bool addDataPoint(DataPoint& dp);
+  void addDataPoint(DataPoint& dp);
+  bool isReady();
   void collectBatch(std::vector<DataPoint>& datapoints);
   std::pair<std::string, int>& getHostInfo();
   std::atomic<int> inFlightRequests{0};

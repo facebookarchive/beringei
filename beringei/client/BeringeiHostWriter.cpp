@@ -7,7 +7,7 @@ DEFINE_int32(
 
 DEFINE_int32(
     gorilla_batch_delay_ms,
-    2000,
+    1000,
     "How long to wait before sending an incomplete batch. Milliseconds.");
 
 namespace facebook {
@@ -17,13 +17,15 @@ BeringeiHostWriter::BeringeiHostWriter(
     const std::pair<std::string, int>& hostInfo)
     : hostInfo_(hostInfo) {}
 
-bool BeringeiHostWriter::addDataPoint(DataPoint& dp) {
+void BeringeiHostWriter::addDataPoint(DataPoint& dp) {
   if (batch_.size() == 0) {
     watch_.reset();
   }
 
   batch_.push_back(std::move(dp));
+}
 
+bool BeringeiHostWriter::isReady() {
   return batch_.size() >= FLAGS_gorilla_host_batch_size ||
       watch_.elapsed().count() >= FLAGS_gorilla_batch_delay_ms;
 }
