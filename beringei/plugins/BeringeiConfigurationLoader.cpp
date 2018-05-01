@@ -10,7 +10,6 @@
 #include "BeringeiConfigurationLoader.h"
 
 #include <folly/FileUtil.h>
-#include <thrift/lib/cpp/util/ThriftSerializer.h>
 #include <thrift/lib/cpp2/protocol/Serializer.h>
 
 using apache::thrift::SimpleJSONSerializer;
