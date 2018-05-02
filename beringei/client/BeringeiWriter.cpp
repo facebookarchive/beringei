@@ -33,7 +33,7 @@ void BeringeiWriter::stop() {
 }
 
 void BeringeiWriter::flushAll(bool force) {
-  for (auto& writer : hostWriters_) {
+  for (auto writer : hostWriters_) {
     if (force || writer->isReady()) {
       flush(writer);
     }
