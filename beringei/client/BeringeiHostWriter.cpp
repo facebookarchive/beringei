@@ -25,7 +25,7 @@ void BeringeiHostWriter::addDataPoint(DataPoint& dp) {
   batch_.push_back(std::move(dp));
 }
 
-bool BeringeiHostWriter::isReady() {
+bool BeringeiHostWriter::isReady() const {
   return batch_.size() >= FLAGS_gorilla_host_batch_size ||
       watch_.elapsed().count() >= FLAGS_gorilla_batch_delay_ms;
 }

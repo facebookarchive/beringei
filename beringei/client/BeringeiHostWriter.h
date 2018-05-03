@@ -10,7 +10,7 @@ class BeringeiHostWriter {
  public:
   BeringeiHostWriter(const std::pair<std::string, int>& hostInfo);
   void addDataPoint(DataPoint& dp);
-  bool isReady();
+  bool isReady() const;
   void collectBatch(std::vector<DataPoint>& datapoints);
   std::pair<std::string, int>& getHostInfo();
   std::atomic<int> inFlightRequests{0};

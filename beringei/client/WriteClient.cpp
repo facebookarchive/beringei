@@ -125,8 +125,8 @@ void WriteClient::updateShardCache() {
       if (client->isShadow()) {
         shardCacheEntry = {"", 0};
       } else {
-        LOG(WARNING) << "Using possibly stale cache entry for shard: "
-                     << shardId;
+        LOG(WARNING) << "Using possibly stale cache entry for "
+                     << client->getServiceName() << ", shard: " << shardId;
         shardCacheEntry = oldCache->at(shardId);
       }
     }
