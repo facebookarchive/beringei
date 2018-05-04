@@ -39,7 +39,7 @@ void BeringeiHostWriter::collectBatch(std::vector<DataPoint>& datapoints) {
       datapoints.end(),
       std::make_move_iterator(batch_.begin()),
       std::make_move_iterator(batch_.end()));
-  batch_.clear();
+  batch_ = std::vector<DataPoint>();
 }
 
 std::pair<std::string, int>& BeringeiHostWriter::getHostInfo() {
