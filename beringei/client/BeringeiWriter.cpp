@@ -33,7 +33,10 @@ void BeringeiWriter::stop() {
 }
 
 void BeringeiWriter::flushAll(bool force) {
-  for (auto writer : hostWriters_) {
+  for (auto& writer : hostWriters_) {
+    if (writer == nullptr) {
+      continue;
+    }
     if (force || writer->isReady()) {
       flush(writer);
     }
@@ -137,9 +140,11 @@ void BeringeiWriter::writeDataPointsForever() {
           }
         } else {
           auto& hostWriter = hostWriters_[dp.key.shardId];
-          hostWriter->addDataPoint(dp);
-          if (hostWriter->isReady()) {
-            flush(hostWriter);
+          if (hostWriter != nullptr) {
+            hostWriter->addDataPoint(dp);
+            if (hostWriter->isReady()) {
+              flush(hostWriter);
+            }
           }
         }
 
