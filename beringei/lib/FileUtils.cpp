@@ -94,7 +94,7 @@ std::vector<int64_t> FileUtils::ls() {
   for (boost::filesystem::directory_iterator it(directory_); it != end; it++) {
     if (it->path().stem().native() == prefix_) {
       try {
-        int id = std::stoll(it->path().extension().native().substr(1));
+        int64_t id = std::stoll(it->path().extension().native().substr(1));
         files.push_back(id);
       } catch (...) {
         LOG(ERROR) << "Couldn't parse filename " << it->path();

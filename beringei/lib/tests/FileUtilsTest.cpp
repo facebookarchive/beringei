@@ -71,3 +71,17 @@ TEST(FileUtilsTest, MultiWriter) {
 
   files2.clearTo(1000);
 }
+
+TEST(FileUtilsTest, BigIntTest) {
+  TemporaryDirectory dir("gorilla_data_block");
+  boost::filesystem::create_directories(
+      FileUtils::joinPaths(dir.dirname(), "6"));
+
+  FileUtils files1(6, "test123", dir.dirname());
+  fclose(files1.open(206158474775, "w", 0).file);
+
+  FileUtils files2(6, "test123", dir.dirname());
+  auto ids = files2.ls();
+  ASSERT_EQ(1, ids.size());
+  ASSERT_EQ(206158474775, ids[0]);
+}
