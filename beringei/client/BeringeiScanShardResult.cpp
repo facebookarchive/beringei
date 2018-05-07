@@ -186,21 +186,37 @@ std::vector<TimeValuePair> BeringeiScanShardResult::getUncompressedData(
         std::make_unique<BeringeiScanStats>(numServices, serviceDataValid);
   }
 
+  int64_t lastService = -1;
+  int64_t lastMismatches = -1;
+  int64_t lastInSize = -1;
   for (unsigned service = 0; service < data[key].size(); ++service) {
     int64_t oldSize = ret.size();
     int64_t inSize;
     int64_t mismatches = 0;
 
-    TimeSeries::mergeValues(
-        data[key][service],
-        ret,
-        beginTime,
-        endTime,
-        FLAGS_mintimestampdelta,
-        FLAGS_gorilla_compare_reads,
-        FLAGS_gorilla_compare_epsilon,
-        &inSize,
-        &mismatches);
+    if (lastService != -1 && data[key][service] == data[key][lastService]) {
+      // Merge is a no-op. Mismatches is the same since the original values are
+      // preferred over new values when timestamps are the same.
+      inSize = lastInSize;
+      mismatches = lastMismatches;
+    } else {
+      TimeSeries::mergeValues(
+          data[key][service],
+          ret,
+          beginTime,
+          endTime,
+          FLAGS_mintimestampdelta,
+          FLAGS_gorilla_compare_reads,
+          FLAGS_gorilla_compare_epsilon,
+          &inSize,
+          &mismatches);
+    }
+
+    if (inSize > 0) {
+      lastService = service;
+      lastMismatches = mismatches;
+      lastInSize = inSize;
+    }
 
     if (newStats) {
       const int64_t added = ret.size() - oldSize;

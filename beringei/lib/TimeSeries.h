@@ -47,10 +47,11 @@ class TimeSeries {
     }
   }
 
-  // Merge all uncompressed data points that fall between begin and
-  // end inclusive to the given datastructure.  When non-null, inSize
-  // becomes number of entries from in, and mismatches the number of
-  // data points from in which did not match out.
+  // Merge all uncompressed data points that fall between begin and end
+  // inclusive to the given datastructure.  When non-null, inSize becomes number
+  // of entries from in, and mismatches the number of data points from in which
+  // did not match out. The merge is stable, as in it prefers datapoints from
+  // out over datapoints from in when they have the same timestamp.
   //
   // @param[in] minTimestampDelta ignore new input values not at
   // least this much newer than the last output added
@@ -77,5 +78,5 @@ class TimeSeries {
       double mismatchEpsilon,
       int64_t* mismatches);
 };
-}
-} // facebook::gorilla
+} // namespace gorilla
+} // namespace facebook
