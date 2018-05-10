@@ -9,6 +9,8 @@
 
 #include "beringei/lib/BucketMap.h"
 
+#include <folly/Format.h>
+
 #include "beringei/lib/BucketLogWriter.h"
 #include "beringei/lib/BucketUtils.h"
 #include "beringei/lib/DataBlockReader.h"
@@ -667,21 +669,26 @@ void BucketMap::readLogFiles(uint32_t lastBlock) {
                         double value,
                         uint32_t& unknownKeys,
                         int64_t& lastTimestamp) {
-    folly::RWSpinLock::ReadHolder guard(lock_);
-    if (key < rows_.size() && rows_[key].get()) {
-      TimeValuePair tv;
-      tv.unixTime = unixTime;
-      tv.value = value;
-      rows_[key]->second.put(bucket(unixTime), tv, &storage_, key, nullptr);
-    } else {
-      unknownKeys++;
+    {
+      folly::RWSpinLock::ReadHolder guard(lock_);
+      if (key < rows_.size() && rows_[key].get()) {
+        TimeValuePair tv;
+        tv.unixTime = unixTime;
+        tv.value = value;
+        rows_[key]->second.put(bucket(unixTime), tv, &storage_, key, nullptr);
+      } else {
+        unknownKeys++;
+      }
     }
 
     int64_t gap = unixTime - lastTimestamp;
     if (gap > FLAGS_missing_logs_threshold_secs &&
         lastTimestamp > timestamp(1)) {
-      LOG(ERROR) << gap << " seconds of missing logs from " << lastTimestamp
-                 << " to " << unixTime << " for shard " << shardId_;
+      LOG(ERROR) << folly::sformat(
+          "Shard: {}. {} seconds of missing logs from {} to {}.",
+          shardId_,
+          lastTimestamp,
+          unixTime);
       GorillaStatsManager::addStatValue(kDataHoles, 1);
       GorillaStatsManager::addStatValue(kMissingLogs, gap);
       reliableDataStartTime_ = unixTime;
@@ -698,8 +705,12 @@ void BucketMap::readLogFiles(uint32_t lastBlock) {
   int64_t now = time(nullptr);
   int64_t gap = now - lastTimestamp;
   if (gap > FLAGS_missing_logs_threshold_secs && lastTimestamp > timestamp(1)) {
-    LOG(ERROR) << gap << " seconds of missing logs from " << lastTimestamp
-               << " to now (" << now << ") for shard " << shardId_;
+    LOG(ERROR) << folly::sformat(
+        "Shard: {}. {} seconds of missing logs from {} to now ({}).",
+        shardId_,
+        gap,
+        lastTimestamp,
+        now);
     GorillaStatsManager::addStatValue(kDataHoles, 1);
     GorillaStatsManager::addStatValue(kMissingLogs, gap);
     reliableDataStartTime_ = now;
