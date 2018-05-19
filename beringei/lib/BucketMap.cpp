@@ -238,6 +238,10 @@ void BucketMap::erase(int index, Item item) {
   rows_[index].reset();
   freeList_.push(index);
 
+  // Delete key from the persistent key list.
+  keyWriter_->deleteKey(
+      shardId_, index, item->first, item->second.getCategory());
+
   // Deallocation on reference count decrease to zero is unlocked
   guard.reset();
   row.reset();

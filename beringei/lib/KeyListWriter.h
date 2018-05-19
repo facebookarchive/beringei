@@ -13,9 +13,9 @@
 #include <thread>
 #include <unordered_map>
 
-#include "PersistentKeyList.h"
-
 #include <folly/MPMCQueue.h>
+
+#include "beringei/lib/PersistentKeyList.h"
 
 namespace facebook {
 namespace gorilla {
@@ -36,6 +36,12 @@ class KeyListWriter {
       uint16_t category,
       int32_t timestamp);
 
+  void deleteKey(
+      int64_t shardId,
+      uint32_t id,
+      const std::string& key,
+      uint16_t category);
+
   // Pass a compaction call down to the appropriate PersistentKeyList.
   void compact(
       int64_t shardId,
@@ -49,8 +55,10 @@ class KeyListWriter {
 
   void flushQueue();
 
+  void setKeyListFactory(std::shared_ptr<PersistentKeyListFactory> factory);
+
  private:
-  std::shared_ptr<PersistentKeyList> get(int64_t shardId);
+  std::shared_ptr<PersistentKeyListIf> get(int64_t shardId);
   void enable(int64_t shardId);
   void disable(int64_t shardId);
 
@@ -64,7 +72,7 @@ class KeyListWriter {
     int64_t shardId;
     std::string key;
     int32_t keyId;
-    enum { STOP_THREAD, START_SHARD, STOP_SHARD, WRITE_KEY } type;
+    enum { STOP_THREAD, START_SHARD, STOP_SHARD, WRITE_KEY, DELETE_KEY } type;
     uint16_t category;
     int32_t timestamp;
   };
@@ -74,7 +82,9 @@ class KeyListWriter {
   const std::string dataDirectory_;
 
   std::mutex lock_;
-  std::unordered_map<int64_t, std::shared_ptr<PersistentKeyList>> keyWriters_;
+  std::unordered_map<int64_t, std::shared_ptr<PersistentKeyListIf>> keyWriters_;
+  std::shared_ptr<PersistentKeyListFactory> persistentKeyListFactory_;
 };
-}
-} // facebook:gorilla
+
+} // namespace gorilla
+} // namespace facebook

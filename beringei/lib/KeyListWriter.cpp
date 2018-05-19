@@ -7,11 +7,12 @@
  * of patent rights can be found in the PATENTS file in the same directory.
  */
 
-#include "KeyListWriter.h"
+#include "beringei/lib/KeyListWriter.h"
 
-#include "GorillaStatsManager.h"
+#include <folly/Format.h>
+#include <glog/logging.h>
 
-#include "glog/logging.h"
+#include "beringei/lib/GorillaStatsManager.h"
 
 namespace facebook {
 namespace gorilla {
@@ -43,6 +44,22 @@ void KeyListWriter::addKey(
   info.type = KeyInfo::WRITE_KEY;
   info.category = category;
   info.timestamp = timestamp;
+
+  // It's better to delay the thrift handler than to completely lose a key.
+  keyInfoQueue_.blockingWrite(std::move(info));
+}
+
+void KeyListWriter::deleteKey(
+    int64_t shardId,
+    uint32_t id,
+    const std::string& key,
+    uint16_t category) {
+  KeyInfo info;
+  info.shardId = shardId;
+  info.keyId = id;
+  info.type = KeyInfo::DELETE_KEY;
+  info.key = key;
+  info.category = category;
 
   // It's better to delay the thrift handler than to completely lose a key.
   keyInfoQueue_.blockingWrite(std::move(info));
@@ -80,7 +97,7 @@ void KeyListWriter::startMonitoring() {
   GorillaStatsManager::addStatExportType(kKeysPopped, SUM);
 }
 
-std::shared_ptr<PersistentKeyList> KeyListWriter::get(int64_t shardId) {
+std::shared_ptr<PersistentKeyListIf> KeyListWriter::get(int64_t shardId) {
   std::unique_lock<std::mutex> guard(lock_);
   auto iter = keyWriters_.find(shardId);
   if (iter == keyWriters_.end()) {
@@ -91,7 +108,12 @@ std::shared_ptr<PersistentKeyList> KeyListWriter::get(int64_t shardId) {
 
 void KeyListWriter::enable(int64_t shardId) {
   std::unique_lock<std::mutex> guard(lock_);
-  keyWriters_[shardId].reset(new PersistentKeyList(shardId, dataDirectory_));
+  if (persistentKeyListFactory_) {
+    keyWriters_[shardId] = persistentKeyListFactory_->getPersistentKeyList(
+        shardId, dataDirectory_);
+  } else {
+    keyWriters_[shardId].reset(new PersistentKeyList(shardId, dataDirectory_));
+  }
 }
 
 void KeyListWriter::disable(int64_t shardId) {
@@ -157,7 +179,7 @@ bool KeyListWriter::writeOneKey() {
       case KeyInfo::STOP_SHARD:
         disable(info.shardId);
         break;
-      case KeyInfo::WRITE_KEY:
+      case KeyInfo::WRITE_KEY: {
         auto writer = get(info.shardId);
         if (!writer) {
           LOG(ERROR) << "Trying to write key to non-enabled shard "
@@ -174,10 +196,35 @@ bool KeyListWriter::writeOneKey() {
           keyInfoQueue_.write(std::move(info));
         }
         break;
+      }
+      case KeyInfo::DELETE_KEY: {
+        auto writer = get(info.shardId);
+        if (!writer) {
+          LOG(ERROR) << "Trying to delete key for non-enabled shard "
+                     << info.shardId;
+          continue;
+        }
+        if (!writer->deleteKey(info.keyId, info.key.c_str(), info.category)) {
+          LOG(ERROR) << folly::sformat(
+              "Shard: {}. Failed to delete id: {}.", info.shardId, info.keyId);
+          GorillaStatsManager::addStatValue(kKeyListFailures);
+
+          // Try to put it back in the queue for later.
+          keyInfoQueue_.write(std::move(info));
+        }
+        break;
+      }
     }
   }
 
   return true;
 }
+
+void KeyListWriter::setKeyListFactory(
+    std::shared_ptr<PersistentKeyListFactory> factory) {
+  std::unique_lock<std::mutex> guard(lock_);
+  persistentKeyListFactory_ = factory;
 }
-} // facebook:gorilla
+
+} // namespace gorilla
+} // namespace facebook

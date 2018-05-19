@@ -208,7 +208,7 @@ void PersistentKeyList::appendBuffer(
     uint32_t id,
     const char* key,
     uint16_t category,
-    int32_t timestamp) const {
+    int32_t timestamp) {
   const char* bytes = (const char*)&id;
   for (int i = 0; i < sizeof(id); i++) {
     buffer += bytes[i];
@@ -242,6 +242,13 @@ void PersistentKeyList::writeKey(
   if (buffer_.length() >= kSmallBufferSize || flushHard) {
     flush(flushHard);
   }
+}
+
+std::unique_ptr<PersistentKeyListIf>
+LocalPersistentKeyListFactory::getPersistentKeyList(
+    int64_t shardId,
+    const std::string& dir) const {
+  return std::make_unique<PersistentKeyList>(shardId, dir);
 }
 
 } // namespace gorilla
