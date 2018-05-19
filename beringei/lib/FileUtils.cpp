@@ -49,8 +49,8 @@ FileUtils::FileUtils(
   directory_ /= std::to_string(shardId);
 }
 
-FileUtils::File
-FileUtils::open(int64_t id, const char* mode, size_t bufferSize) {
+FileUtils::File FileUtils::open(int64_t id, const char* mode, size_t bufferSize)
+    const {
   boost::filesystem::path path = filePath(id);
   LOG(INFO) << "Opening file: " << path.c_str();
 
@@ -86,7 +86,7 @@ void FileUtils::clearAll() {
   clearTo(std::numeric_limits<int64_t>::max());
 }
 
-std::vector<int64_t> FileUtils::ls() {
+std::vector<int64_t> FileUtils::ls() const {
   Timer lsTimer(true);
   std::vector<int64_t> files;
 
@@ -166,13 +166,13 @@ TemporaryDirectory::~TemporaryDirectory() {
   boost::filesystem::remove_all(dirname_);
 }
 
-boost::filesystem::path FileUtils::filePath(int64_t id) {
+boost::filesystem::path FileUtils::filePath(int64_t id) const {
   return filePath(id, prefix_);
 }
 
 boost::filesystem::path FileUtils::filePath(
     int64_t id,
-    const std::string& prefix) {
+    const std::string& prefix) const {
   return directory_ / (prefix + "." + std::to_string(id));
 }
 

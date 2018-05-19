@@ -107,6 +107,7 @@ class BucketMap {
   bool getSome(std::vector<Item>& out, int offset, int count);
 
   void erase(int index, Item item);
+  void eraseBasedOnKeyList(uint32_t id, const char* key);
 
   uint32_t bucket(uint64_t unixTime) const;
   uint64_t timestamp(uint32_t bucket) const;

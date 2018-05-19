@@ -593,6 +593,39 @@ bool BucketMap::readBlockFiles() {
 
   return true;
 }
+void BucketMap::eraseBasedOnKeyList(uint32_t id, const char* key) {
+  if (!rows_[id]) {
+    LOG(ERROR) << folly::sformat(
+        "Shard: {}. Trying to delete non-existing row: {}, with key: {}",
+        shardId_,
+        id,
+        key);
+    return;
+  }
+
+  auto& currentKey = rows_[id]->first;
+  if (!CaseEq()(currentKey.c_str(), key)) {
+    // For some reason, trying to delete a different key that is supposed to
+    // be in this slot.
+    LOG(ERROR) << folly::sformat(
+        "Shard: {}. Trying to delete a different key in row: {},"
+        " current key: {}, deleting key: {}",
+        shardId_,
+        id,
+        currentKey,
+        key);
+    return;
+  }
+
+  // We're safe to delete key at this point.
+  rows_[id].reset();
+
+  // Delete the key from the map also.
+  auto it = map_.find(key);
+  if (it != map_.end()) {
+    map_.erase(it);
+  }
+}
 
 void BucketMap::readKeyList() {
   LOG(INFO) << "Reading keys for shard " << shardId_;
@@ -606,39 +639,49 @@ void BucketMap::readKeyList() {
 
   // Read all the keys from disk into the vector.
   auto keyReader = keyReaderFactory_->getKeyReader(shardId_, dataDirectory_);
-  keyReader->readKeys(
-      [&](uint32_t id, const char* key, uint16_t category, int32_t timestamp) {
-        if (strlen(key) >= kMaxAllowedKeyLength) {
-          LOG(ERROR) << "Key too long. Key file is corrupt for shard "
-                     << shardId_;
-          GorillaStatsManager::addStatValue(kCorruptKeyFiles);
+  keyReader->readKeys([&](uint32_t id,
+                          const char* key,
+                          uint16_t category,
+                          int32_t timestamp,
+                          bool isAppend,
+                          uint64_t) {
+    if (strlen(key) >= kMaxAllowedKeyLength) {
+      LOG(ERROR) << "Key too long. Key file is corrupt for shard " << shardId_;
+      GorillaStatsManager::addStatValue(kCorruptKeyFiles);
 
-          // Don't continue reading from this file anymore.
-          return false;
-        }
+      // Don't continue reading from this file anymore.
+      return false;
+    }
 
-        if (id > FLAGS_max_allowed_timeseries_id) {
-          LOG(ERROR) << "ID is too large. Key file is corrupt for shard "
-                     << shardId_;
-          GorillaStatsManager::addStatValue(kCorruptKeyFiles);
+    if (id > FLAGS_max_allowed_timeseries_id) {
+      LOG(ERROR) << "ID is too large. Key file is corrupt for shard "
+                 << shardId_;
+      GorillaStatsManager::addStatValue(kCorruptKeyFiles);
 
-          // Don't continue reading from this file anymore.
-          return false;
-        }
+      // Don't continue reading from this file anymore.
+      return false;
+    }
 
-        if (id >= rows_.size()) {
-          rows_.resize(id + kRowsAtATime);
-        }
+    if (id >= rows_.size()) {
+      rows_.resize(id + kRowsAtATime);
+    }
 
-        // Initialize the row, configuring it to throw away any data
-        // that predates `timestamp`.
-        rows_[id].reset(new std::pair<std::string, BucketedTimeSeries>());
-        rows_[id]->first = key;
-        rows_[id]->second.reset(
-            n_, (timestamp > 0 ? bucket(timestamp) : 0), timestamp);
-        rows_[id]->second.setCategory(category);
-        return true;
-      });
+    if (isAppend) {
+      // Initialize the row, configuring it to throw away any data
+      // that predates `timestamp`.
+      rows_[id].reset(new std::pair<std::string, BucketedTimeSeries>());
+      rows_[id]->first = key;
+      rows_[id]->second.reset(
+          n_, (timestamp > 0 ? bucket(timestamp) : 0), timestamp);
+      rows_[id]->second.setCategory(category);
+    } else {
+      // Delete row from the map. Don't do anything if the row isn't existed, or
+      // the key in that row is different from the one we're supposed to delete.
+      eraseBasedOnKeyList(id, key);
+    }
+
+    return true;
+  });
 
   tableSize_ = rows_.size();
   map_.reserve(rows_.size());

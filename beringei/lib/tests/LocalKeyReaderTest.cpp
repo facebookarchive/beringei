@@ -30,7 +30,9 @@ TEST(LocalKeyReaderTest, writeAndRead) {
   reader.readKeys([&](uint32_t /*id*/,
                       const char* /*key*/,
                       uint16_t /*category*/,
-                      int32_t /*timestamp*/) {
+                      int32_t /*timestamp*/,
+                      bool /* isAppend */,
+                      uint64_t) {
     called = true;
     return true;
   });
@@ -44,7 +46,13 @@ TEST(LocalKeyReaderTest, writeAndRead) {
 
   vector<tuple<uint32_t, string, uint16_t, int32_t>> out;
   reader.readKeys(
-      [&](uint32_t id, const char* key, uint16_t category, int32_t timestamp) {
+      [&](uint32_t id,
+          const char* key,
+          uint16_t category,
+          int32_t timestamp,
+          bool isAppend,
+          uint64_t) -> bool {
+        EXPECT_TRUE(isAppend);
         out.push_back(make_tuple(id, key, category, timestamp));
         return true;
       });
@@ -71,11 +79,16 @@ TEST(LocalKeyReaderTest, writeAndRead) {
 
   // Should get 3 keys.
   out.clear();
-  reader.readKeys(
-      [&](uint32_t id, const char* key, uint16_t category, int32_t timestamp) {
-        out.push_back(make_tuple(id, key, category, timestamp));
-        return true;
-      });
+  reader.readKeys([&](uint32_t id,
+                      const char* key,
+                      uint16_t category,
+                      int32_t timestamp,
+                      bool isAppend,
+                      uint64_t) {
+    EXPECT_TRUE(isAppend);
+    out.push_back(make_tuple(id, key, category, timestamp));
+    return true;
+  });
 
   ASSERT_EQ(3, out.size());
   EXPECT_EQ(make_tuple(1, "test2", 15, 20), out[0]);
@@ -107,7 +120,9 @@ TEST(LocalKeyReaderTest, partialData) {
   reader.readKeys([&](uint32_t id,
                       const char* /*key*/,
                       uint16_t /*category*/,
-                      int32_t /*timestamp*/) {
+                      int32_t /*timestamp*/,
+                      bool /* isAppend */,
+                      uint64_t) {
     results.at(id)++;
     return true;
   });
@@ -138,7 +153,9 @@ TEST(LocalKeyReaderTest, NoTimestampFiles) {
   reader.readKeys([&](uint32_t id,
                       const char* /*key*/,
                       uint16_t category,
-                      int32_t /*timestamp*/) {
+                      int32_t /*timestamp*/,
+                      bool /* isAppend */,
+                      uint64_t) {
     categories.at(id) = category;
     total++;
     return true;

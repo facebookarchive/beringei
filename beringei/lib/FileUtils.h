@@ -42,7 +42,7 @@ class FileUtils {
   // Does fully-buffered IO with a buffer of the given size or unbuffered
   // (direct) IO if bufferSize is 0.
   // Returns nullptr on failure.
-  File open(int64_t id, const char* mode, size_t bufferSize);
+  File open(int64_t id, const char* mode, size_t bufferSize) const;
 
   // Remove all files with id less than this.
   void clearTo(int64_t id);
@@ -50,7 +50,7 @@ class FileUtils {
   void clearAll();
 
   // Get the sorted list of valid ids for this prefix.
-  std::vector<int64_t> ls();
+  std::vector<int64_t> ls() const;
 
   // Replace a file with another.
   void rename(int64_t from, int64_t to);
@@ -85,8 +85,8 @@ class FileUtils {
   static void closeFile(File& file, bool asyncClose);
 
  private:
-  boost::filesystem::path filePath(int64_t id);
-  boost::filesystem::path filePath(int64_t id, const std::string& prefix);
+  boost::filesystem::path filePath(int64_t id) const;
+  boost::filesystem::path filePath(int64_t id, const std::string& prefix) const;
 
   boost::filesystem::path directory_;
   std::string prefix_;

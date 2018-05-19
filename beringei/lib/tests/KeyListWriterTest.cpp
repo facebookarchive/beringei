@@ -49,7 +49,9 @@ TEST_F(KeyListWriterTest, writeAndRead) {
   int keys = reader.readKeys([&](uint32_t _id,
                                  const char* _key,
                                  uint16_t _category,
-                                 int32_t _timestamp) {
+                                 int32_t _timestamp,
+                                 bool,
+                                 uint64_t) {
     id = _id;
     key = _key;
     category = _category;
@@ -85,7 +87,9 @@ TEST_F(KeyListWriterTest, compactAndRead) {
   int keys = reader.readKeys([&](uint32_t _id,
                                  const char* _key,
                                  uint16_t _category,
-                                 int32_t _timestamp) {
+                                 int32_t _timestamp,
+                                 bool,
+                                 uint64_t) {
     id = _id;
     key2 = _key;
     category = _category;
@@ -128,11 +132,15 @@ TEST_F(KeyListWriterTest, CompactMore) {
 
   vector<std::tuple<uint32_t, string, uint16_t, int32_t>> keys2;
   LocalKeyReader reader(321, dir_->dirname());
-  int numKeys = reader.readKeys(
-      [&](uint32_t id, const char* key, uint16_t category, int32_t timestamp) {
-        keys2.push_back(make_tuple(id, key, category, timestamp));
-        return true;
-      });
+  int numKeys = reader.readKeys([&](uint32_t id,
+                                    const char* key,
+                                    uint16_t category,
+                                    int32_t timestamp,
+                                    bool,
+                                    uint64_t) {
+    keys2.push_back(make_tuple(id, key, category, timestamp));
+    return true;
+  });
   ASSERT_EQ(keys.size(), numKeys);
 
   ASSERT_EQ(keys, keys2);
