@@ -1419,5 +1419,13 @@ void BucketMap::resizeRows(size_t size) {
   }
 }
 
+bool BucketMap::isDrained() const {
+  return keyWriter_->isDrained(shardId_);
+}
+
+uint64_t BucketMap::getSequence() const {
+  return sequence_;
+}
+
 } // namespace gorilla
 } // namespace facebook

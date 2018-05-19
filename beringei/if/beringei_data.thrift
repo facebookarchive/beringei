@@ -221,3 +221,20 @@ struct DataPointWithID {
 struct LogDataPointsRequest {
   1: list<DataPointWithID> points,
 }
+
+enum CheckShardDrainCode {
+  SUCCESS = 0,
+  NOT_OWN_SHARD = 1,
+  INVALID_REQUEST = 2,
+}
+
+struct ShardDrainResponse {
+  1: CheckShardDrainCode status,
+  2: bool isDrained,
+  3: i32 shardId,
+  4: i64 sequence,
+}
+
+struct CheckShardDrainResponse {
+  1: list<ShardDrainResponse> shards,
+}

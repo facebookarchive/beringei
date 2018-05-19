@@ -57,6 +57,8 @@ class KeyListWriter {
 
   void setKeyListFactory(std::shared_ptr<PersistentKeyListFactory> factory);
 
+  bool isDrained(size_t shardId) const;
+
  private:
   std::shared_ptr<PersistentKeyListIf> get(int64_t shardId);
   void enable(int64_t shardId);
@@ -81,7 +83,7 @@ class KeyListWriter {
   std::unique_ptr<std::thread> writerThread_;
   const std::string dataDirectory_;
 
-  std::mutex lock_;
+  mutable std::mutex lock_;
   std::unordered_map<int64_t, std::shared_ptr<PersistentKeyListIf>> keyWriters_;
   std::shared_ptr<PersistentKeyListFactory> persistentKeyListFactory_;
 };

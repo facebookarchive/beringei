@@ -202,6 +202,7 @@ class BucketMap {
   // if a shard has no missing data
   int64_t getReliableDataStartTime();
 
+  // @return get shard number for this shard.
   int getShardId() const;
 
   // Mark timeseries ready for logging.
@@ -209,6 +210,11 @@ class BucketMap {
 
   // Check for consistency for keys map.
   bool consistencyCheck() const;
+  // @return whether this replica is primary replica anymore.
+  bool isDrained() const;
+
+  // @return Current sequence number for this shard.
+  uint64_t getSequence() const;
 
  private:
   // Load all the datapoints out of the logfiles for this shard that

@@ -231,5 +231,10 @@ void KeyListWriter::setKeyListFactory(
   persistentKeyListFactory_ = factory;
 }
 
+bool KeyListWriter::isDrained(size_t shardId) const {
+  std::unique_lock<std::mutex> guard(lock_);
+  return keyWriters_.find(shardId) == keyWriters_.end();
+}
+
 } // namespace gorilla
 } // namespace facebook
