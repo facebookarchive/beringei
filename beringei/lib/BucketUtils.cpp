@@ -8,6 +8,8 @@
  */
 
 #include "BucketUtils.h"
+
+#include <folly/Format.h>
 #include <glog/logging.h>
 
 DEFINE_int32(gorilla_shards, 100, "Number of maps for gorilla to use");
@@ -18,7 +20,11 @@ namespace gorilla {
 uint32_t
 BucketUtils::bucket(uint64_t unixTime, uint64_t windowSize, int shardId) {
   if (unixTime < shardId * windowSize / FLAGS_gorilla_shards) {
-    LOG(ERROR) << "Timestamp " << unixTime << " falls into a negative bucket";
+    LOG(ERROR) << folly::sformat(
+        "Shard: {}. Window size: {}. TS {} falls into a negative bucket",
+        shardId,
+        windowSize,
+        unixTime);
     return 0;
   }
   return (uint32_t)(
@@ -78,5 +84,5 @@ bool BucketUtils::isAlignedBucketTimestamp(
     uint64_t windowSize) {
   return unixTime % windowSize == 0;
 }
-}
-} // facebook::gorilla
+} // namespace gorilla
+} // namespace facebook

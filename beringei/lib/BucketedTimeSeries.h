@@ -93,6 +93,14 @@ class BucketedTimeSeries {
   // Return age of bucket relative to current
   int32_t getBucketAge(uint32_t bucket) const;
 
+  bool ready() const {
+    return ready_;
+  }
+
+  void setReady() {
+    ready_ = true;
+  }
+
  private:
   // Open the next bucket for writes.
   void open(uint32_t next, BucketStorage* storage, uint32_t timeSeriesId);
@@ -112,6 +120,9 @@ class BucketedTimeSeries {
 
   // Current stream of data.
   TimeSeriesStream stream_;
+
+  // Whether this timeseries is ready for logging.
+  bool ready_;
 };
 }
 } // facebook::gorilla

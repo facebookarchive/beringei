@@ -131,7 +131,9 @@ void ShardData::processOneShardAddition(int64_t shardId) {
   auto map = getShardMap(shardId);
   if (map) {
     BucketMap::State state = map->getState();
-    if (state == BucketMap::PRE_OWNED) {
+    if (state == BucketMap::PRE_OWNED || state == BucketMap::READING_KEYS) {
+      // Attempt to read key list again when it's in READING_KEYS state. Being
+      // in this state means previous attempt to read keys failed.
       map->readKeyList();
 
       // Put this shard back in the queue to read data.

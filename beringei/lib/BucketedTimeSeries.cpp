@@ -34,7 +34,7 @@ static const std::string TimeSeriesStreamsTotal = "time_series_streams_total";
 static const std::string TimeSeriesStreamsQueried =
     "time_series_streams_queried";
 
-BucketedTimeSeries::BucketedTimeSeries() {
+BucketedTimeSeries::BucketedTimeSeries() : ready_(false) {
   static folly::once_flag flag;
   folly::call_once(flag, [&]() {
     GorillaStatsManager::addStatExportType(kBucketsExpiredTotal, SUM);

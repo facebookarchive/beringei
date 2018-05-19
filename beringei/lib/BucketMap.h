@@ -14,6 +14,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include <folly/Synchronized.h>
+#include <folly/experimental/FunctionScheduler.h>
 #include <folly/synchronization/RWSpinLock.h>
 
 #include "beringei/lib/BucketLogWriter.h"
@@ -83,13 +85,14 @@ class BucketMap {
       std::shared_ptr<BucketLogWriterIf> logWriter,
       State state,
       std::shared_ptr<LogReaderFactory> logReaderFactory,
-      std::shared_ptr<KeyListReaderFactory> keyReaderFactory);
-  virtual ~BucketMap() {}
+      std::shared_ptr<KeyListReaderFactory> keyReaderFactory,
+      bool usePrimaryArchitecture = false);
+  virtual ~BucketMap();
+
   // Insert the given data point, creating a new row if necessary.
   // Returns the number of new rows created (0 or 1) and the number of
   // data points successfully inserted (0 or 1) as a pair of ints.
   // Returns {kNotOwned,kNotOwned} if this map is currenly not owned.
-
   virtual std::pair<int, int> put(
       const std::string& key,
       const TimeValuePair& value,
@@ -106,8 +109,7 @@ class BucketMap {
   // of `getEverything`. Returns true if there is more data left.
   bool getSome(std::vector<Item>& out, int offset, int count);
 
-  void erase(int index, Item item);
-  void eraseBasedOnKeyList(uint32_t id, const char* key);
+  void erase(uint32_t index, const char* key, uint16_t category);
 
   uint32_t bucket(uint64_t unixTime) const;
   uint64_t timestamp(uint32_t bucket) const;
@@ -116,7 +118,7 @@ class BucketMap {
 
   BucketStorage* getStorage();
 
-  void compactKeyList();
+  void compactKeyList(bool force = false);
 
   void deleteOldBlockFiles();
 
@@ -202,6 +204,12 @@ class BucketMap {
 
   int getShardId() const;
 
+  // Mark timeseries ready for logging.
+  void markTimeSeriesReady(uint32_t id, const char* key, uint64_t seq);
+
+  // Check for consistency for keys map.
+  bool consistencyCheck() const;
+
  private:
   // Load all the datapoints out of the logfiles for this shard that
   // are newer than what is covered by the lastBlock.
@@ -232,6 +240,35 @@ class BucketMap {
 
   int checkForMissingBlockFiles();
   void logMissingBlockFiles(int missingFiles);
+  bool shouldUseKeyWriter() const;
+  void startStreamKeys();
+  void stopStreamKeys();
+
+  // NOT thread-safe.
+  // Remove a key from keylist.
+  // @param[in] id index into rows_.
+  // @param[in] key timeseries.
+  // @return true if a key is successfully removed from keylist.
+  bool eraseBasedOnKeyList(uint32_t id, const char* key);
+
+  // NOT thread-safe.
+  void insertBasedOnKeyList(
+      uint32_t id,
+      const char* key,
+      uint16_t category,
+      int32_t unixTime);
+
+  // NOT thread-safe
+  void resizeRows(size_t size);
+
+  Item createNewRow(const char* key, uint16_t category, int64_t unixTime) const;
+  bool keyStreamCallback(
+      uint32_t id,
+      const char* key,
+      uint16_t category,
+      int32_t unixTime,
+      bool isAppend,
+      uint64_t sequence);
 
   const uint8_t n_;
   const int64_t windowSize_;
@@ -246,7 +283,8 @@ class BucketMap {
   std::atomic<int> tableSize_;
 
   std::vector<Item> rows_;
-  std::priority_queue<int, std::vector<int>, std::less<int>> freeList_;
+  //  std::priority_queue<int, std::vector<int>, std::less<int>> freeList_;
+  std::set<size_t> freeList_;
   BucketStorage storage_;
   State state_;
   int shardId_;
@@ -284,7 +322,24 @@ class BucketMap {
   std::shared_ptr<KeyListReaderFactory> keyReaderFactory_;
 
   // Whether this shard is the primary or secondary.
-  bool primary_;
+  std::atomic<bool> primary_;
+  const bool usePrimaryTopology_;
+
+  // Key streaming mechanism, used for secondary region in primary-secondary
+  // topology.
+  struct KeyStreamer {
+    KeyStreamer() : marker(false), started(false) {}
+    std::atomic<bool> marker;
+    std::thread readingThread;
+    bool started;
+  };
+  folly::Synchronized<KeyStreamer> streamer_;
+
+  // Sequence number that keys are read up to.
+  uint64_t sequence_;
+
+  // For diagnostics. Don't turn on in production, since it's slow.
+  folly::FunctionScheduler consistencyCheck_;
 };
 
 } // namespace gorilla

@@ -675,7 +675,10 @@ int BeringeiServiceHandler::purgeTimeSeries(uint8_t numBuckets) {
         if (timeSeriesData[i].get()) {
           uint16_t category = timeSeriesData[i]->second.getCategory();
           if (!timeSeriesData[i]->second.hasDataPoints(numBuckets)) {
-            bucketMap->erase(i, timeSeriesData[i]);
+            bucketMap->erase(
+                i,
+                timeSeriesData[i]->first.c_str(),
+                timeSeriesData[i]->second.getCategory());
             ++purgedTimeSeries;
             ++purgedTSPerCategory[category];
           }

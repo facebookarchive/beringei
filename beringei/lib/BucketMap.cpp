@@ -10,6 +10,7 @@
 #include "beringei/lib/BucketMap.h"
 
 #include <folly/Format.h>
+#include <folly/MapUtil.h>
 
 #include "beringei/lib/BucketLogWriter.h"
 #include "beringei/lib/BucketUtils.h"
@@ -30,6 +31,12 @@ DEFINE_int64(
     missing_logs_threshold_secs,
     600, // 10 minute default
     "Count gaps longer than this as holes in the log files.");
+
+DEFINE_bool(check_keys_consistency, false, "Check of consistency in key maps");
+DEFINE_int64(
+    consistency_check_interval_s,
+    120,
+    "Interval to check for row consistency");
 
 namespace facebook {
 namespace gorilla {
@@ -52,6 +59,15 @@ static const std::string kDataHoles = "missing_blocks_and_logs";
 static const std::string kMissingLogs = "missing_seconds_of_log_data";
 static const std::string kDeletionRaces = "key_deletion_failures";
 static const std::string kDuplicateKeys = "duplicate_keys_in_key_list";
+static const std::string kDropMissingKeys = "drop_missing_keys";
+static const std::string kNumStreamMessages = "num_stream_msg";
+static const std::string kNumRowsAddedFromStreaming = "num_rows_from_stream";
+static const std::string kNumEvictedKeys = "num_evicted_keys";
+static const std::string kNumDeleteMsg = "num_delete_msg";
+static const std::string kNumNotReadyDataPoint = "num_not_ready_dp";
+static const std::string kNumDuplicateWhileReset = "num_duplicate_while_reset";
+static const std::string kInvalidDelete = "num_invalid_delete";
+static const std::string kFailedDeleteOldKey = "num_failed_delete_old_key";
 
 static const size_t kMaxAllowedKeyLength = 400;
 
@@ -70,7 +86,8 @@ BucketMap::BucketMap(
     std::shared_ptr<BucketLogWriterIf> logWriter,
     BucketMap::State state,
     std::shared_ptr<LogReaderFactory> logReaderFactory,
-    std::shared_ptr<KeyListReaderFactory> keyReaderFactory)
+    std::shared_ptr<KeyListReaderFactory> keyReaderFactory,
+    bool usePrimaryTopology)
     : n_(buckets),
       windowSize_(windowSize),
       reliableDataStartTime_(0),
@@ -85,7 +102,28 @@ BucketMap::BucketMap(
       lastFinalizedBucket_(0),
       logReaderFactory_(logReaderFactory),
       keyReaderFactory_(keyReaderFactory),
-      primary_(false) {}
+      primary_(!usePrimaryTopology),
+      usePrimaryTopology_(usePrimaryTopology),
+      sequence_(0) {
+  if (FLAGS_check_keys_consistency) {
+    // Periodically check for consistency.
+    consistencyCheck_.addFunction(
+        [this]() {
+          // Only run when it's owned.
+          if (state_ == OWNED) {
+            CHECK(consistencyCheck());
+          }
+        },
+        std::chrono::seconds(FLAGS_consistency_check_interval_s));
+    consistencyCheck_.start();
+  }
+}
+
+BucketMap::~BucketMap() {
+  if (usePrimaryTopology_) {
+    stopStreamKeys();
+  }
+}
 
 // Insert the given data point, creating a new row if necessary.
 // Returns the number of new rows created (0 or 1) and the number of
@@ -99,6 +137,12 @@ std::pair<int, int> BucketMap::put(
   State state;
   uint32_t id;
   auto existingItem = getInternal(key, state, id);
+
+  if (!existingItem && !primary_.load()) {
+    // Drop early if we're not allowed to create new timeseries.
+    GorillaStatsManager::addStatValue(kDropMissingKeys);
+    return {0, 0};
+  }
 
   // State check can only skipped when processing data points from the
   // queue. Data points that come in externally during processing will
@@ -152,40 +196,59 @@ std::pair<int, int> BucketMap::put(
   newRow->second.put(b, value, &storage_, -1, &category);
 
   int index = 0;
+  bool keyAdded = false;
   {
     // Lock the map again.
     folly::RWSpinLock::WriteHolder writeGuard(lock_);
 
     // The value here doesn't matter because it will be replaced later.
     auto ret = map_.insert(std::make_pair(newRow->first.c_str(), -1));
-    if (!ret.second) {
-      // Nothing was inserted, just update the existing one.
-      bool added = putDataPointWithId(
-          &rows_[ret.first->second]->second,
-          ret.first->second,
-          value,
-          category);
-      return {0, added ? 1 : 0};
-    }
+    keyAdded = ret.second;
 
-    // Find a row in the vector.
-    if (freeList_.size()) {
-      index = freeList_.top();
-      freeList_.pop();
-    } else {
-      tableSize_++;
-      rows_.emplace_back();
-      index = rows_.size() - 1;
-    }
+    if (keyAdded) {
+      // Find a row in the vector.
+      if (freeList_.size()) {
+        index = *freeList_.rbegin();
+        freeList_.erase(index);
+      } else {
+        tableSize_++;
+        rows_.emplace_back();
+        index = rows_.size() - 1;
+      }
 
-    rows_[index] = newRow;
-    ret.first->second = index;
+      // If we don't use primary-secondary, the key is always ready for write,
+      // since we don't have to sync it with anyone else.
+      if (!usePrimaryTopology_) {
+        newRow->second.setReady();
+      }
+
+      // If we failed to enqueue to the key writer, remove the key from the map
+      // and drop the data point.
+      if (!keyWriter_->addKey(
+              shardId_, index, newRow->first, category, value.unixTime)) {
+        CHECK_GT(map_.erase(newRow->first.c_str()), 0);
+        CHECK(freeList_.insert(index).second);
+        return {0, 0};
+      }
+
+      rows_[index] = newRow;
+      ret.first->second = index;
+    }
   }
 
-  // Write the new key out to disk.
-  keyWriter_->addKey(shardId_, index, newRow->first, category, value.unixTime);
-  logWriter_->logData(shardId_, index, value.unixTime, value.value);
+  // The key was just added right before this by other request. It's fine. Retry
+  // this request again.
+  if (!keyAdded) {
+    // Run this call again. This time the key should have been created.
+    return put(key, value, category, skipStateCheck);
+  }
 
+  // Only log if the timeseries is ready.
+  if (rows_[index]->second.ready()) {
+    logWriter_->logData(shardId_, index, value.unixTime, value.value);
+  } else {
+    GorillaStatsManager::addStatValue(kNumNotReadyDataPoint);
+  }
   return {1, 1};
 }
 
@@ -218,37 +281,19 @@ bool BucketMap::getSome(std::vector<Item>& out, int offset, int count) {
   }
 }
 
-void BucketMap::erase(int index, Item item) {
-  folly::RWSpinLock::WriteHolder guard(lock_);
-
-  if (rows_[index] != item || !item) {
-    guard.reset();
-    // The arguments provided are no longer valid.
-    GorillaStatsManager::addStatValue(kDeletionRaces);
+void BucketMap::erase(uint32_t index, const char* key, uint16_t category) {
+  if (!primary_.load()) {
     return;
   }
 
-  auto it = map_.find(item->first.c_str());
-  bool race = it == map_.end() || it->second != index;
-  if (!race) {
-    // The map still points to the right entry.
-    map_.erase(it);
+  bool success = false;
+  {
+    folly::RWSpinLock::WriteHolder guard(lock_);
+    success = eraseBasedOnKeyList(index, key);
   }
 
-  auto row = rows_[index];
-  rows_[index].reset();
-  freeList_.push(index);
-
-  // Delete key from the persistent key list.
-  keyWriter_->deleteKey(
-      shardId_, index, item->first, item->second.getCategory());
-
-  // Deallocation on reference count decrease to zero is unlocked
-  guard.reset();
-  row.reset();
-
-  if (race) {
-    GorillaStatsManager::addStatValue(kDeletionRaces);
+  if (success) {
+    keyWriter_->deleteKey(shardId_, index, key, category);
   }
 }
 
@@ -278,7 +323,7 @@ bool BucketMap::setState(BucketMap::State state) {
   // If we have to drop a shard, move the data here, then free all the memory
   // outside of any locks, as this can take a long time.
   std::unordered_map<const char*, int, CaseHash, CaseEq> tmpMap;
-  std::priority_queue<int, std::vector<int>, std::less<int>> tmpQueue;
+  std::set<size_t> tmpQueue;
   std::vector<Item> tmpVec;
   std::vector<std::vector<uint32_t>> tmpDeviations;
 
@@ -291,8 +336,12 @@ bool BucketMap::setState(BucketMap::State state) {
 
   if (state == PRE_OWNED) {
     addTimer_.start();
+
+    // Start keywriter and log writer for this shard. Note that even though key
+    // writer is started, keys won't be logged unless this replica is primary.
     keyWriter_->startShard(shardId_);
     logWriter_->startShard(shardId_);
+
     dataPointQueue_ = std::make_shared<folly::MPMCQueue<QueuedDataPoint>>(
         FLAGS_data_point_queue_size);
 
@@ -312,6 +361,10 @@ bool BucketMap::setState(BucketMap::State state) {
   } else if (state == OWNED) {
     // Calling this won't hurt even if the timer isn't running.
     addTimer_.stop();
+
+    if (!primary_.load()) {
+      startStreamKeys();
+    }
   }
 
   BucketMap::State oldState = state_;
@@ -418,14 +471,21 @@ void BucketMap::shutdown() {
   }
 }
 
-void BucketMap::compactKeyList() {
+void BucketMap::compactKeyList(bool force) {
+  if (usePrimaryTopology_ && !force) {
+    // If we use primary secondary architecture, there should be a separate
+    // service that does the compacting the keylist based on synchronized key
+    // log.
+    return;
+  }
   std::vector<Item> items;
   getEverything(items);
 
   uint32_t i = -1;
   keyWriter_->compact(shardId_, [&]() {
     for (i++; i < items.size(); i++) {
-      if (items[i].get()) {
+      // Only checkpoint keys that are ready.
+      if (items[i].get() && items[i]->second.ready()) {
         return std::make_tuple(
             i,
             items[i]->first.c_str(),
@@ -460,6 +520,15 @@ void BucketMap::startMonitoring() {
   GorillaStatsManager::addStatExportType(kMissingLogs, COUNT);
   GorillaStatsManager::addStatExportType(kDeletionRaces, SUM);
   GorillaStatsManager::addStatExportType(kDuplicateKeys, SUM);
+  GorillaStatsManager::addStatExportType(kDropMissingKeys, COUNT);
+  GorillaStatsManager::addStatExportType(kNumStreamMessages, COUNT);
+  GorillaStatsManager::addStatExportType(kNumRowsAddedFromStreaming, COUNT);
+  GorillaStatsManager::addStatExportType(kNumEvictedKeys, COUNT);
+  GorillaStatsManager::addStatExportType(kNumDeleteMsg, COUNT);
+  GorillaStatsManager::addStatExportType(kNumNotReadyDataPoint, COUNT);
+  GorillaStatsManager::addStatExportType(kNumDuplicateWhileReset, COUNT);
+  GorillaStatsManager::addStatExportType(kInvalidDelete, COUNT);
+  GorillaStatsManager::addStatExportType(kFailedDeleteOldKey, COUNT);
 }
 
 BucketMap::Item
@@ -594,18 +663,24 @@ bool BucketMap::readBlockFiles() {
 
   return true;
 }
-void BucketMap::eraseBasedOnKeyList(uint32_t id, const char* key) {
+bool BucketMap::eraseBasedOnKeyList(uint32_t id, const char* key) {
   if (!rows_[id]) {
+    GorillaStatsManager::addStatValue(kInvalidDelete);
+
+    // Trying to delete an non-existing row. This row is probably already
+    // deleted earlier.
     LOG(ERROR) << folly::sformat(
         "Shard: {}. Trying to delete non-existing row: {}, with key: {}",
         shardId_,
         id,
         key);
-    return;
+    return false;
   }
 
   auto& currentKey = rows_[id]->first;
   if (!CaseEq()(currentKey.c_str(), key)) {
+    GorillaStatsManager::addStatValue(kInvalidDelete);
+
     // For some reason, trying to delete a different key that is supposed to
     // be in this slot.
     LOG(ERROR) << folly::sformat(
@@ -615,37 +690,47 @@ void BucketMap::eraseBasedOnKeyList(uint32_t id, const char* key) {
         id,
         currentKey,
         key);
-    return;
+    return false;
   }
 
-  // We're safe to delete key at this point.
-  rows_[id].reset();
-
   // Delete the key from the map also.
+  // Note: since the key to {map_} is a pointer to the string in {rows_}, we
+  // **need** to remove from the map first before attemping to deallocate from
+  // rows_.
   auto it = map_.find(key);
   if (it != map_.end()) {
     map_.erase(it);
   }
+
+  // We're safe to delete key at this point.
+  rows_[id].reset();
+  freeList_.insert(id);
+
+  GorillaStatsManager::addStatValue(kNumDeleteMsg);
+  return true;
 }
 
 void BucketMap::readKeyList() {
   LOG(INFO) << "Reading keys for shard " << shardId_;
   Timer timer(true);
 
-  bool success = setState(READING_KEYS);
-  CHECK(success) << "Setting state failed";
+  if (state_ == PRE_OWNED) {
+    bool success = setState(READING_KEYS);
+    CHECK(success) << "Setting state failed";
+  }
 
   // No reason to lock because nothing is touching the rows_ or map_
   // while this is running.
 
   // Read all the keys from disk into the vector.
   auto keyReader = keyReaderFactory_->getKeyReader(shardId_, dataDirectory_);
-  keyReader->readKeys([&](uint32_t id,
-                          const char* key,
-                          uint16_t category,
-                          int32_t timestamp,
-                          bool isAppend,
-                          uint64_t) {
+  ssize_t numKeys = keyReader->readKeys([&](uint32_t id,
+                                            const char* key,
+                                            uint16_t category,
+                                            int32_t timestamp,
+                                            bool isAppend,
+                                            uint64_t seq) {
+    sequence_ = std::max(sequence_, seq);
     if (strlen(key) >= kMaxAllowedKeyLength) {
       LOG(ERROR) << "Key too long. Key file is corrupt for shard " << shardId_;
       GorillaStatsManager::addStatValue(kCorruptKeyFiles);
@@ -664,49 +749,33 @@ void BucketMap::readKeyList() {
     }
 
     if (id >= rows_.size()) {
-      rows_.resize(id + kRowsAtATime);
+      resizeRows(id + kRowsAtATime);
     }
 
     if (isAppend) {
-      // Initialize the row, configuring it to throw away any data
-      // that predates `timestamp`.
-      rows_[id].reset(new std::pair<std::string, BucketedTimeSeries>());
-      rows_[id]->first = key;
-      rows_[id]->second.reset(
-          n_, (timestamp > 0 ? bucket(timestamp) : 0), timestamp);
-      rows_[id]->second.setCategory(category);
+      insertBasedOnKeyList(id, key, category, timestamp);
     } else {
-      // Delete row from the map. Don't do anything if the row isn't existed, or
-      // the key in that row is different from the one we're supposed to delete.
       eraseBasedOnKeyList(id, key);
     }
-
     return true;
   });
 
-  tableSize_ = rows_.size();
-  map_.reserve(rows_.size());
-
-  // Put all the rows in either the map or the free list.
-  for (int i = 0; i < rows_.size(); i++) {
-    if (rows_[i].get()) {
-      auto result = map_.insert({rows_[i]->first.c_str(), i});
-
-      // Ignore keys that already exist.
-      if (!result.second) {
-        GorillaStatsManager::addStatValue(kDuplicateKeys);
-        rows_[i].reset();
-        freeList_.push(i);
-      }
-    } else {
-      freeList_.push(i);
-    }
+  if (numKeys < 0) {
+    // Don't change the state if we failed to read key list. This would force to
+    // try reading key list again.
+    map_.clear();
+    rows_.clear();
+    freeList_.clear();
+    tableSize_ = rows_.size();
+    return;
   }
 
-  LOG(INFO) << "Done reading keys for shard " << shardId_;
+  tableSize_ = rows_.size();
+  LOG(INFO) << folly::sformat("Shard: {}. Done reading keys!", shardId_);
   GorillaStatsManager::addStatValue(
       kMsPerKeyListRead, timer.reset() / kGorillaUsecPerMs);
-  success = setState(READING_KEYS_DONE);
+
+  bool success = setState(READING_KEYS_DONE);
   CHECK(success) << "Setting state failed";
 }
 
@@ -736,6 +805,7 @@ void BucketMap::readLogFiles(uint32_t lastBlock) {
       LOG(ERROR) << folly::sformat(
           "Shard: {}. {} seconds of missing logs from {} to {}.",
           shardId_,
+          gap,
           lastTimestamp,
           unixTime);
       GorillaStatsManager::addStatValue(kDataHoles, 1);
@@ -765,8 +835,9 @@ void BucketMap::readLogFiles(uint32_t lastBlock) {
     reliableDataStartTime_ = now;
   }
 
-  LOG(INFO) << "Done reading logs for shard " << shardId_;
-  LOG(INFO) << unknownKeys << " unknown keys found";
+  LOG(INFO) << folly::sformat("Shard: {}. Done reading logs.", shardId_);
+  LOG(INFO) << folly::sformat(
+      "Shard: {}. {} unknown keys found.", shardId_, unknownKeys);
   GorillaStatsManager::addStatValue(kUnknownKeysInLogFiles, unknownKeys);
 }
 
@@ -880,7 +951,7 @@ bool BucketMap::putDataPointWithId(
     uint16_t category) {
   uint32_t b = bucket(value.unixTime);
   bool added = timeSeries->put(b, value, &storage_, timeSeriesId, &category);
-  if (added) {
+  if (added && timeSeries->ready()) {
     logWriter_->logData(shardId_, timeSeriesId, value.unixTime, value.value);
   }
   return added;
@@ -1040,16 +1111,312 @@ std::vector<BucketMap::Item> BucketMap::getDeviatingTimeSeries(
 }
 
 bool BucketMap::setRole(bool primary) {
-  if (primary_ == primary) {
-    return false;
+  if (!usePrimaryTopology_) {
+    VLOG(1) << folly::sformat(
+        "Shard: {}: Not using primary topology, always primary", shardId_);
+    // If not using primary-secondary topology, all regions are primary.
+    CHECK(primary_);
+    return true;
+  }
+
+  bool changed = primary_ != primary;
+
+  if (state_ == OWNED) {
+    if (primary) {
+      keyWriter_->startShard(shardId_);
+      stopStreamKeys();
+    } else {
+      keyWriter_->stopShard(shardId_);
+      startStreamKeys();
+    }
   }
 
   primary_ = primary;
-  return true;
+  LOG_IF(INFO, changed && state_ == OWNED) << folly::sformat(
+      "Shard: {}: Setting role from {} to {}", shardId_, !primary, primary);
+
+  return changed;
 }
 
 bool BucketMap::getRole() const {
-  return primary_;
+  return primary_.load();
+}
+
+bool BucketMap::shouldUseKeyWriter() const {
+  return primary_.load();
+}
+
+BucketMap::Item BucketMap::createNewRow(
+    const char* key,
+    uint16_t category,
+    int64_t unixTime) const {
+  auto b = bucket(unixTime);
+  auto newRow = std::make_shared<std::pair<std::string, BucketedTimeSeries>>();
+  newRow->first = key;
+  newRow->second.reset(n_, b, unixTime);
+  newRow->second.setCategory(category);
+  return newRow;
+}
+
+void BucketMap::startStreamKeys() {
+  CHECK(usePrimaryTopology_)
+      << "Non-primary topology shouldn't use key streaming";
+  SYNCHRONIZED(streamer_) {
+    if (streamer_.started) {
+      CHECK(streamer_.marker.load());
+      return;
+    }
+
+    streamer_.marker.store(true);
+    streamer_.readingThread = std::thread([&]() {
+      if (FLAGS_check_keys_consistency) {
+        CHECK(consistencyCheck());
+      }
+
+      auto reader = keyReaderFactory_->getKeyReader(shardId_, dataDirectory_);
+      auto cb = [&](uint32_t id,
+                    const char* key,
+                    uint16_t category,
+                    int32_t unixTime,
+                    bool isAppend,
+                    uint64_t sequence) -> bool {
+        VLOG(2) << folly::sformat(
+            "Shard: {}. Streaming key: {}", shardId_, key);
+        return keyStreamCallback(
+            id, key, category, unixTime, isAppend, sequence);
+      };
+
+      // Start streaming keys.
+      LOG(INFO) << folly::sformat(
+          "Shard: {}. Start streaming keys from sequence number: {}",
+          shardId_,
+          sequence_);
+      reader->streamKeys(cb, streamer_.marker, sequence_);
+    });
+
+    streamer_.started = true;
+  }
+}
+
+void BucketMap::stopStreamKeys() {
+  CHECK(usePrimaryTopology_)
+      << "Non-primary topology shouldn't use key streaming";
+
+  VLOG(1) << folly::sformat("Shard: {}. Stop streaming keys.", shardId_);
+
+  SYNCHRONIZED(streamer_) {
+    if (!streamer_.started) {
+      CHECK(!streamer_.marker.load());
+      return;
+    }
+    streamer_.marker.store(false);
+    if (streamer_.readingThread.joinable()) {
+      streamer_.readingThread.join();
+    }
+    streamer_.started = false;
+    LOG(INFO) << folly::sformat(
+        "Shard: {}. End streaming keys from sequence number: {}",
+        shardId_,
+        sequence_);
+  }
+
+  if (FLAGS_check_keys_consistency) {
+    CHECK(consistencyCheck());
+  }
+}
+
+void BucketMap::markTimeSeriesReady(
+    uint32_t id,
+    const char* key,
+    uint64_t seq) {
+  sequence_ = seq;
+
+  folly::RWSpinLock::ReadHolder readGuard(lock_);
+  auto row = rows_[id];
+  if (!row) {
+    return;
+  }
+
+  if (!CaseEq()(key, row->first.c_str())) {
+    return;
+  }
+
+  row->second.setReady();
+}
+
+bool BucketMap::keyStreamCallback(
+    uint32_t id,
+    const char* key,
+    uint16_t category,
+    int32_t unixTime,
+    bool isAppend,
+    uint64_t sequence) {
+  sequence_ = std::max(sequence_, sequence);
+  folly::RWSpinLock::WriteHolder writeGuard(lock_);
+  if (isAppend) {
+    insertBasedOnKeyList(id, key, category, unixTime);
+  } else {
+    eraseBasedOnKeyList(id, key);
+  }
+  return true;
+}
+
+void BucketMap::insertBasedOnKeyList(
+    uint32_t id,
+    const char* key,
+    uint16_t category,
+    int32_t unixTime) {
+  GorillaStatsManager::addStatValue(kNumStreamMessages);
+  if (id >= rows_.size()) {
+    resizeRows(id + kRowsAtATime);
+  }
+
+  auto row = rows_[id];
+  if (row) {
+    if (!CaseEq()(key, row->first.c_str())) {
+      // Eviction. Must delete from the map first!
+      auto it = map_.find(row->first.c_str());
+      CHECK(it != map_.end());
+      CHECK_EQ(it->second, id);
+
+      // Only mark evicted if this TS is ready.
+      if (row->second.ready()) {
+        LOG(ERROR) << folly::sformat(
+            "Shard: {}. Evicting key: {} at id: {}, for new key: {}",
+            shardId_,
+            row->first,
+            id,
+            key);
+        GorillaStatsManager::addStatValue(kNumEvictedKeys);
+      }
+
+      map_.erase(it);
+      rows_[id].reset();
+      freeList_.insert(id);
+    } else {
+      VLOG(1) << folly::sformat(
+          "Shard: {}. Key {} already exists!", shardId_, key);
+      // Received this key from streaming means it's ready.
+      row->second.setReady();
+      return;
+    }
+  }
+
+  // rows_[id] is null, which is good. check for if the key already exists in
+  // the map.
+  auto it = map_.find(key);
+  if (it != map_.end()) {
+    // This TS existed somewhere else. We just need to move the row to the
+    // right slot.
+    auto prevId = it->second;
+    CHECK(CaseEq()(rows_[prevId]->first.c_str(), key));
+
+    // Update the map.
+    it->second = id;
+
+    // Move the row.
+    rows_[id] = rows_[prevId];
+    rows_[prevId].reset();
+
+    // Update the freelist accordingly.
+    freeList_.insert(prevId);
+    freeList_.erase(id);
+
+    // Set ready.
+    rows_[id]->second.setReady();
+    return;
+  }
+
+  // Now rows_[id] is free AND there is no key in the map.
+  CHECK(rows_[id] == nullptr);
+  CHECK(map_.find(key) == map_.end());
+
+  auto newRow = createNewRow(key, category, unixTime);
+  newRow->second.setReady();
+  rows_[id] = newRow;
+  freeList_.erase(id);
+
+  // This call should succeed.
+  CHECK(map_.emplace(newRow->first.c_str(), id).second);
+}
+
+bool BucketMap::consistencyCheck() const {
+  folly::RWSpinLock::ReadHolder lock(lock_);
+  for (size_t i = 0; i < rows_.size(); ++i) {
+    auto row = rows_[i];
+    if (row) {
+      auto it = map_.find(row->first.c_str());
+      if (it == map_.end()) {
+        LOG(ERROR) << folly::sformat(
+            "Shard: {}. Can't find key {} in map", shardId_, row->first);
+        return false;
+      } else if (it->second != i) {
+        LOG(ERROR) << folly::sformat(
+            "Shard: {}. Index in map is different: {} vs {}",
+            shardId_,
+            it->second,
+            i);
+        return false;
+      } else if (freeList_.count(i) > 0) {
+        LOG(ERROR) << folly::sformat(
+            "Shard: {}. Free list has {}, even though it's not free",
+            shardId_,
+            i);
+        return false;
+      }
+    } else {
+      if (freeList_.count(i) == 0) {
+        LOG(ERROR) << folly::sformat(
+            "Shard: {}. Free list doesn't have {}, even though it's free",
+            shardId_,
+            i);
+        return false;
+      }
+    }
+  }
+
+  for (const auto& kv : map_) {
+    auto key = kv.first;
+    auto id = kv.second;
+    if (id >= rows_.size()) {
+      LOG(ERROR) << folly::sformat(
+          "Shard: {}. ID is too large: {}", shardId_, id);
+      return false;
+    } else if (!rows_[id]) {
+      LOG(ERROR) << folly::sformat(
+          "Shard: {}. ID is not in rows: {}", shardId_, id);
+      return false;
+    } else if (!CaseEq()(key, rows_[id]->first.c_str())) {
+      LOG(ERROR) << folly::sformat(
+          "Shard: {}. Keys are different: {} vs {}",
+          shardId_,
+          key,
+          rows_[id]->first);
+      return false;
+    } else if (freeList_.count(id) > 0) {
+      LOG(ERROR) << folly::sformat(
+          "Shard: {}. Freelist has {}, even though it's in the map",
+          shardId_,
+          id);
+      return false;
+    }
+  }
+
+  return true;
+}
+
+void BucketMap::resizeRows(size_t size) {
+  size_t prev = rows_.size();
+  if (size <= prev) {
+    return;
+  }
+
+  rows_.resize(size);
+  tableSize_.store(size);
+
+  for (size_t i = prev; i < size; ++i) {
+    freeList_.insert(i);
+  }
 }
 
 } // namespace gorilla

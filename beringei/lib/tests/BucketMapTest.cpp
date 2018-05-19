@@ -177,6 +177,9 @@ TEST_F(BucketMapTest, Reload) {
 
   auto keyWriter = std::make_shared<KeyListWriter>(dir.dirname(), 100);
   keyWriter->startShard(10);
+  /* sleep override */
+  std::this_thread::sleep_for(std::chrono::seconds(2));
+
   {
     // Create a new one, reading the keys from disk.
     BucketMap map(
@@ -217,6 +220,9 @@ TEST_F(BucketMapTest, Reload) {
 
     testReads(map);
   }
+
+  // We need to enable it again.
+  keyWriter->startShard(10);
 
   // Now wipe the key_list file and reload the data yet again.
   // Create a key with a timestamp that post-dates the data on disk so we can
@@ -589,7 +595,10 @@ TEST_F(BucketMapTest, DuplicateKeys) {
 
 static std::unique_ptr<BucketMap> buildBucketMap(
     const char* tempDir,
-    uint32_t bucketSize = 4 * kGorillaSecondsPerHour) {
+    uint32_t bucketSize = 4 * kGorillaSecondsPerHour,
+    bool usePrimaryTopology = false) {
+  VLOG(1) << "Building bucketmap with usePrimaryTopology="
+          << usePrimaryTopology;
   auto bucketLogWriter =
       std::make_shared<BucketLogWriter>(bucketSize, tempDir, 100, 0);
   auto keyWriter = std::make_shared<KeyListWriter>(tempDir, 100);
@@ -604,7 +613,8 @@ static std::unique_ptr<BucketMap> buildBucketMap(
       bucketLogWriter,
       BucketMap::UNOWNED,
       std::make_shared<LocalLogReaderFactory>(tempDir),
-      keyReaderFactory));
+      keyReaderFactory,
+      usePrimaryTopology));
 
   map->setState(BucketMap::PRE_OWNED);
   map->setState(BucketMap::OWNED);
@@ -722,20 +732,37 @@ TEST_F(BucketMapTest, DoubleErase) {
   ASSERT_EQ(1, everything.size());
 
   // Remove.
-  map->erase(0, everything.front());
+  map->erase(
+      0,
+      everything.front()->first.c_str(),
+      everything.front()->second.getCategory());
   ASSERT_EQ(nullptr, map->get(kDefaultKey));
 
   // Insert again, then remove the old reference a second time.
   map->put(kDefaultKey, value, 0);
-  map->erase(0, everything.front());
+  everything.clear();
+  map->getEverything(everything);
+  size_t idx = 0;
+  for (size_t i = 0; i < everything.size(); ++i) {
+    if (everything[i]) {
+      idx = i;
+      break;
+    }
+  }
 
-  // The new entry is still present, even after removal.
-  ASSERT_NE(nullptr, map->get(kDefaultKey));
+  map->erase(
+      idx,
+      everything[idx]->first.c_str(),
+      everything[idx]->second.getCategory());
+
+  ASSERT_EQ(nullptr, map->get(kDefaultKey));
 
   everything.clear();
   map->getEverything(everything);
-  ASSERT_EQ(1, everything.size());
-  ASSERT_EQ(map->get(kDefaultKey), everything.front());
+  for (auto row : everything) {
+    ASSERT_EQ(nullptr, row);
+  }
+  ASSERT_TRUE(map->consistencyCheck());
 }
 
 TEST_F(BucketMapTest, RoleTest) {
@@ -743,8 +770,9 @@ TEST_F(BucketMapTest, RoleTest) {
   boost::filesystem::create_directories(
       FileUtils::joinPaths(dir.dirname(), "10"));
 
-  auto map = buildBucketMap(dir.dirname().c_str());
-  map->setRole(true);
+  auto map =
+      buildBucketMap(dir.dirname().c_str(), 4 * kGorillaSecondsPerHour, true);
+  ASSERT_TRUE(map->setRole(true));
   ASSERT_FALSE(map->setRole(true));
   ASSERT_TRUE(map->setRole(false));
 }
