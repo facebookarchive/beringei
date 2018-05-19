@@ -89,5 +89,5 @@ class ShardData {
   folly::MPMCQueue<std::pair<uint32_t, int64_t>> dropShardQueue_;
   std::thread dropShardThread_;
 };
-}
-} // facebook::gorilla
+} // namespace gorilla
+} // namespace facebook

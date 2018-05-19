@@ -84,7 +84,8 @@ BucketMap::BucketMap(
       logWriter_(logWriter),
       lastFinalizedBucket_(0),
       logReaderFactory_(logReaderFactory),
-      keyReaderFactory_(keyReaderFactory) {}
+      keyReaderFactory_(keyReaderFactory),
+      primary_(false) {}
 
 // Insert the given data point, creating a new row if necessary.
 // Returns the number of new rows created (0 or 1) and the number of
@@ -1036,6 +1037,19 @@ std::vector<BucketMap::Item> BucketMap::getDeviatingTimeSeries(
   }
 
   return deviations;
+}
+
+bool BucketMap::setRole(bool primary) {
+  if (primary_ == primary) {
+    return false;
+  }
+
+  primary_ = primary;
+  return true;
+}
+
+bool BucketMap::getRole() const {
+  return primary_;
 }
 
 } // namespace gorilla

@@ -313,5 +313,6 @@ void ShardData::setShardsForTests(const std::set<int64_t>& shards) {
     }
   }
 }
-}
-}
+
+} // namespace gorilla
+} // namespace facebook

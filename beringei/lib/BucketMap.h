@@ -139,8 +139,13 @@ class BucketMap {
   // Sets the state. Returns true if state was set, false if the state
   // transition is not allowed or already in that state.
   bool setState(State state);
-
   State getState() const;
+
+  // Set the role for this shard.
+  // @param[in] primary Whether this shard shold be primary or secondary.
+  // @return true if the role changes.
+  bool setRole(bool primary);
+  bool getRole() const;
 
   // Returns the time in milliseconds it took to add this shard from
   // PRE_OWNED state to OWNED state. If called before the shard is
@@ -277,6 +282,9 @@ class BucketMap {
   std::vector<std::vector<uint32_t>> deviations_;
   std::shared_ptr<LogReaderFactory> logReaderFactory_;
   std::shared_ptr<KeyListReaderFactory> keyReaderFactory_;
+
+  // Whether this shard is the primary or secondary.
+  bool primary_;
 };
 
 } // namespace gorilla

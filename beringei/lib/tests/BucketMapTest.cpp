@@ -737,3 +737,14 @@ TEST_F(BucketMapTest, DoubleErase) {
   ASSERT_EQ(1, everything.size());
   ASSERT_EQ(map->get(kDefaultKey), everything.front());
 }
+
+TEST_F(BucketMapTest, RoleTest) {
+  TemporaryDirectory dir("gorilla_test");
+  boost::filesystem::create_directories(
+      FileUtils::joinPaths(dir.dirname(), "10"));
+
+  auto map = buildBucketMap(dir.dirname().c_str());
+  map->setRole(true);
+  ASSERT_FALSE(map->setRole(true));
+  ASSERT_TRUE(map->setRole(false));
+}
