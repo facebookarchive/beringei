@@ -98,6 +98,7 @@ class BeringeiServiceHandler : virtual public BeringeiServiceSvIf {
   folly::FunctionScheduler bucketFinalizerThread_;
   folly::FunctionScheduler refreshShardConfigThread_;
   std::shared_ptr<LogReaderFactory> logReaderFactory_;
+  std::shared_ptr<KeyListReaderFactory> keyReaderFactory_;
 };
 
 } // namespace gorilla

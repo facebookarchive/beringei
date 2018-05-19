@@ -40,6 +40,7 @@ class BucketMapTest : public testing::Test {
  protected:
   void SetUp() override {
     FLAGS_gorilla_async_file_close = false;
+    keyReaderFactory_ = std::make_shared<LocalKeyListReaderFactory>();
   }
 
   void test(BucketMap& map) {
@@ -116,6 +117,7 @@ class BucketMapTest : public testing::Test {
   }
 
   TestKeyList keyList_;
+  std::shared_ptr<KeyListReaderFactory> keyReaderFactory_;
 };
 
 TEST_F(BucketMapTest, TimeSeries) {
@@ -137,7 +139,8 @@ TEST_F(BucketMapTest, TimeSeries) {
       keyWriter,
       bucketLogWriter,
       BucketMap::OWNED,
-      std::make_shared<LocalLogReaderFactory>(dir.dirname()));
+      std::make_shared<LocalLogReaderFactory>(dir.dirname()),
+      keyReaderFactory_);
   test(map);
 }
 
@@ -164,7 +167,8 @@ TEST_F(BucketMapTest, Reload) {
         keyWriter,
         bucketLogWriter,
         BucketMap::OWNED,
-        std::make_shared<LocalLogReaderFactory>(dir.dirname()));
+        std::make_shared<LocalLogReaderFactory>(dir.dirname()),
+        keyReaderFactory_);
     test(map);
 
     ts2 = map.timestamp(2);
@@ -183,7 +187,8 @@ TEST_F(BucketMapTest, Reload) {
         keyWriter,
         bucketLogWriter,
         BucketMap::OWNED,
-        std::make_shared<LocalLogReaderFactory>(dir.dirname()));
+        std::make_shared<LocalLogReaderFactory>(dir.dirname()),
+        keyReaderFactory_);
     map.setState(BucketMap::PRE_UNOWNED);
     map.setState(BucketMap::UNOWNED);
 
@@ -238,7 +243,8 @@ TEST_F(BucketMapTest, Reload) {
       keyWriter,
       bucketLogWriter,
       BucketMap::OWNED,
-      std::make_shared<LocalLogReaderFactory>(dir.dirname()));
+      std::make_shared<LocalLogReaderFactory>(dir.dirname()),
+      keyReaderFactory_);
   map.setState(BucketMap::PRE_UNOWNED);
   map.setState(BucketMap::UNOWNED);
 
@@ -302,7 +308,8 @@ TEST_F(BucketMapTest, Load) {
       keyWriter,
       bucketLogWriter,
       BucketMap::OWNED,
-      std::make_shared<LocalLogReaderFactory>(dir.dirname()));
+      std::make_shared<LocalLogReaderFactory>(dir.dirname()),
+      keyReaderFactory_);
   vector<vector<TimeValuePair>> samples;
   for (int i = 0; i < kLoadTestRuns; i++) {
     loadData(samples);
@@ -368,7 +375,8 @@ TEST_F(BucketMapTest, QueuedPutNewKey) {
       keyWriter,
       bucketLogWriter,
       BucketMap::UNOWNED,
-      std::make_shared<LocalLogReaderFactory>(dir.dirname()));
+      std::make_shared<LocalLogReaderFactory>(dir.dirname()),
+      keyReaderFactory_);
 
   TimeValuePair value;
   value.unixTime = time(nullptr);
@@ -431,7 +439,8 @@ TEST_F(BucketMapTest, QueuedPutExistingKey) {
         keyWriter,
         bucketLogWriter,
         BucketMap::OWNED,
-        std::make_shared<LocalLogReaderFactory>(dir.dirname()));
+        std::make_shared<LocalLogReaderFactory>(dir.dirname()),
+        keyReaderFactory_);
 
     map.put(kDefaultKey, dp1, 0);
     auto item = map.get(kDefaultKey);
@@ -456,7 +465,8 @@ TEST_F(BucketMapTest, QueuedPutExistingKey) {
       keyWriter,
       bucketLogWriter,
       BucketMap::UNOWNED,
-      std::make_shared<LocalLogReaderFactory>(dir.dirname()));
+      std::make_shared<LocalLogReaderFactory>(dir.dirname()),
+      keyReaderFactory_);
 
   map.setState(BucketMap::PRE_OWNED);
 
@@ -510,7 +520,8 @@ TEST_F(BucketMapTest, CorruptKeys) {
       keyWriter,
       bucketLogWriter,
       BucketMap::UNOWNED,
-      std::make_shared<LocalLogReaderFactory>(dir.dirname()));
+      std::make_shared<LocalLogReaderFactory>(dir.dirname()),
+      keyReaderFactory_);
 
   map.setState(BucketMap::PRE_OWNED);
 
@@ -548,7 +559,8 @@ TEST_F(BucketMapTest, DuplicateKeys) {
       keyWriter,
       bucketLogWriter,
       BucketMap::UNOWNED,
-      std::make_shared<LocalLogReaderFactory>(dir.dirname()));
+      std::make_shared<LocalLogReaderFactory>(dir.dirname()),
+      keyReaderFactory_);
 
   map.setState(BucketMap::PRE_OWNED);
 
@@ -581,6 +593,7 @@ static std::unique_ptr<BucketMap> buildBucketMap(
   auto bucketLogWriter =
       std::make_shared<BucketLogWriter>(bucketSize, tempDir, 100, 0);
   auto keyWriter = std::make_shared<KeyListWriter>(tempDir, 100);
+  auto keyReaderFactory = std::make_shared<LocalKeyListReaderFactory>();
 
   std::unique_ptr<BucketMap> map(new BucketMap(
       6,
@@ -590,7 +603,8 @@ static std::unique_ptr<BucketMap> buildBucketMap(
       keyWriter,
       bucketLogWriter,
       BucketMap::UNOWNED,
-      std::make_shared<LocalLogReaderFactory>(tempDir)));
+      std::make_shared<LocalLogReaderFactory>(tempDir),
+      keyReaderFactory));
 
   map->setState(BucketMap::PRE_OWNED);
   map->setState(BucketMap::OWNED);

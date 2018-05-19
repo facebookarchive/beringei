@@ -10,6 +10,7 @@
 #include <gtest/gtest.h>
 #include <string>
 
+#include "beringei/lib/KeyListReader.h"
 #include "beringei/lib/KeyListWriter.h"
 #include "beringei/lib/PersistentKeyList.h"
 
@@ -44,19 +45,17 @@ TEST_F(KeyListWriterTest, writeAndRead) {
   string key;
   uint16_t category;
   int32_t timestamp;
-  int keys = PersistentKeyList::readKeys(
-      321,
-      dir_->dirname(),
-      [&](uint32_t _id,
-          const char* _key,
-          uint16_t _category,
-          int32_t _timestamp) {
-        id = _id;
-        key = _key;
-        category = _category;
-        timestamp = _timestamp;
-        return true;
-      });
+  LocalKeyReader reader(321, dir_->dirname());
+  int keys = reader.readKeys([&](uint32_t _id,
+                                 const char* _key,
+                                 uint16_t _category,
+                                 int32_t _timestamp) {
+    id = _id;
+    key = _key;
+    category = _category;
+    timestamp = _timestamp;
+    return true;
+  });
 
   ASSERT_EQ(6, id);
   ASSERT_EQ("hi", key);
@@ -82,19 +81,17 @@ TEST_F(KeyListWriterTest, compactAndRead) {
   string key2;
   uint16_t category;
   int32_t timestamp;
-  int keys = PersistentKeyList::readKeys(
-      321,
-      dir_->dirname(),
-      [&](uint32_t _id,
-          const char* _key,
-          uint16_t _category,
-          int32_t _timestamp) {
-        id = _id;
-        key2 = _key;
-        category = _category;
-        timestamp = _timestamp;
-        return true;
-      });
+  LocalKeyReader reader(321, dir_->dirname());
+  int keys = reader.readKeys([&](uint32_t _id,
+                                 const char* _key,
+                                 uint16_t _category,
+                                 int32_t _timestamp) {
+    id = _id;
+    key2 = _key;
+    category = _category;
+    timestamp = _timestamp;
+    return true;
+  });
 
   ASSERT_EQ(6, id);
   ASSERT_EQ("hi", key2);
@@ -130,9 +127,8 @@ TEST_F(KeyListWriterTest, CompactMore) {
   });
 
   vector<std::tuple<uint32_t, string, uint16_t, int32_t>> keys2;
-  int numKeys = PersistentKeyList::readKeys(
-      321,
-      dir_->dirname(),
+  LocalKeyReader reader(321, dir_->dirname());
+  int numKeys = reader.readKeys(
       [&](uint32_t id, const char* key, uint16_t category, int32_t timestamp) {
         keys2.push_back(make_tuple(id, key, category, timestamp));
         return true;

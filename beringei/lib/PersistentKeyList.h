@@ -13,9 +13,9 @@
 #include <mutex>
 #include <vector>
 
-#include "FileUtils.h"
-
 #include <folly/FBString.h>
+
+#include "beringei/lib/FileUtils.h"
 
 namespace facebook {
 namespace gorilla {
@@ -34,13 +34,6 @@ class PersistentKeyList {
       fclose(activeList_.file);
     }
   }
-
-  // Call f on each key in the list.
-  // The callback should return false if reading should be stopped.
-  static int readKeys(
-      int64_t shardId,
-      const std::string& dataDirectory,
-      std::function<bool(uint32_t, const char*, uint16_t, int32_t)> f);
 
   // Must not be called until after a call to readKeys().
   // Returns false on failure.
@@ -86,13 +79,6 @@ class PersistentKeyList {
   void
   writeKey(uint32_t id, const char* key, uint16_t category, int32_t timestamp);
 
-  static int readKeysFromBuffer(
-      const char* buffer,
-      size_t len,
-      bool categoryPresent,
-      bool timestampPresent,
-      std::function<bool(uint32_t, const char*, uint16_t, int32_t)> f);
-
   FileUtils::File activeList_;
 
   FileUtils files_;
@@ -102,5 +88,6 @@ class PersistentKeyList {
   folly::fbstring buffer_;
   uint32_t nextHardFlushTimeSecs_;
 };
-}
-} // facebook:gorilla
+
+} // namespace gorilla
+} // namespace facebook

@@ -189,6 +189,7 @@ BeringeiServiceHandler::BeringeiServiceHandler(
         FLAGS_allowed_timestamp_behind));
   }
 
+  keyReaderFactory_ = std::make_shared<LocalKeyListReaderFactory>();
   srandom(folly::randomNumberSeed());
   for (int i = 0; i < FLAGS_gorilla_shards; i++) {
     // Select the bucket log writer and block writer for each shard by
@@ -206,7 +207,8 @@ BeringeiServiceHandler::BeringeiServiceHandler(
         keyWriter,
         bucketLogWriter,
         BucketMap::UNOWNED,
-        logReaderFactory_);
+        logReaderFactory_,
+        keyReaderFactory_);
 
     if (FLAGS_create_directories) {
       FileUtils utils(i, "", FLAGS_data_directory);

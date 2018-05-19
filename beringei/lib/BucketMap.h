@@ -20,6 +20,7 @@
 #include "beringei/lib/BucketStorage.h"
 #include "beringei/lib/BucketedTimeSeries.h"
 #include "beringei/lib/CaseUtils.h"
+#include "beringei/lib/KeyListReader.h"
 #include "beringei/lib/KeyListWriter.h"
 #include "beringei/lib/LogReader.h"
 #include "beringei/lib/PersistentKeyList.h"
@@ -81,7 +82,8 @@ class BucketMap {
       std::shared_ptr<KeyListWriter> keyWriter,
       std::shared_ptr<BucketLogWriterIf> logWriter,
       State state,
-      std::shared_ptr<LogReaderFactory> logReaderFactory);
+      std::shared_ptr<LogReaderFactory> logReaderFactory,
+      std::shared_ptr<KeyListReaderFactory> keyReaderFactory);
   virtual ~BucketMap() {}
   // Insert the given data point, creating a new row if necessary.
   // Returns the number of new rows created (0 or 1) and the number of
@@ -273,6 +275,7 @@ class BucketMap {
   // Circular vector for the deviations.
   std::vector<std::vector<uint32_t>> deviations_;
   std::shared_ptr<LogReaderFactory> logReaderFactory_;
+  std::shared_ptr<KeyListReaderFactory> keyReaderFactory_;
 };
 
 } // namespace gorilla

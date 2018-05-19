@@ -69,7 +69,8 @@ BucketMap::BucketMap(
     std::shared_ptr<KeyListWriter> keyWriter,
     std::shared_ptr<BucketLogWriterIf> logWriter,
     BucketMap::State state,
-    std::shared_ptr<LogReaderFactory> logReaderFactory)
+    std::shared_ptr<LogReaderFactory> logReaderFactory,
+    std::shared_ptr<KeyListReaderFactory> keyReaderFactory)
     : n_(buckets),
       windowSize_(windowSize),
       reliableDataStartTime_(0),
@@ -82,7 +83,8 @@ BucketMap::BucketMap(
       keyWriter_(keyWriter),
       logWriter_(logWriter),
       lastFinalizedBucket_(0),
-      logReaderFactory_(logReaderFactory) {}
+      logReaderFactory_(logReaderFactory),
+      keyReaderFactory_(keyReaderFactory) {}
 
 // Insert the given data point, creating a new row if necessary.
 // Returns the number of new rows created (0 or 1) and the number of
@@ -599,9 +601,8 @@ void BucketMap::readKeyList() {
   // while this is running.
 
   // Read all the keys from disk into the vector.
-  PersistentKeyList::readKeys(
-      shardId_,
-      dataDirectory_,
+  auto keyReader = keyReaderFactory_->getKeyReader(shardId_, dataDirectory_);
+  keyReader->readKeys(
       [&](uint32_t id, const char* key, uint16_t category, int32_t timestamp) {
         if (strlen(key) >= kMaxAllowedKeyLength) {
           LOG(ERROR) << "Key too long. Key file is corrupt for shard "

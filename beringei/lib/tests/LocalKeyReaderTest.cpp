@@ -9,6 +9,8 @@
 
 #include <gtest/gtest.h>
 
+#include "beringei/lib/FileUtils.h"
+#include "beringei/lib/KeyListReader.h"
 #include "beringei/lib/PersistentKeyList.h"
 
 using namespace ::testing;
@@ -16,7 +18,7 @@ using namespace facebook;
 using namespace facebook::gorilla;
 using namespace std;
 
-TEST(PersistentKeyListTest, writeAndRead) {
+TEST(LocalKeyReaderTest, writeAndRead) {
   TemporaryDirectory dir("gorilla_test");
   boost::filesystem::create_directories(
       FileUtils::joinPaths(dir.dirname(), "7"));
@@ -24,16 +26,14 @@ TEST(PersistentKeyListTest, writeAndRead) {
 
   bool called = false;
   keys.clearEntireListForTests();
-  PersistentKeyList::readKeys(
-      7,
-      dir.dirname(),
-      [&](uint32_t /*id*/,
-          const char* /*key*/,
-          uint16_t /*category*/,
-          int32_t /*timestamp*/) {
-        called = true;
-        return true;
-      });
+  LocalKeyReader reader(7, dir.dirname());
+  reader.readKeys([&](uint32_t /*id*/,
+                      const char* /*key*/,
+                      uint16_t /*category*/,
+                      int32_t /*timestamp*/) {
+    called = true;
+    return true;
+  });
   ASSERT_FALSE(called);
 
   // Write some keys and read them out.
@@ -43,9 +43,7 @@ TEST(PersistentKeyListTest, writeAndRead) {
   keys.flush(true);
 
   vector<tuple<uint32_t, string, uint16_t, int32_t>> out;
-  PersistentKeyList::readKeys(
-      7,
-      dir.dirname(),
+  reader.readKeys(
       [&](uint32_t id, const char* key, uint16_t category, int32_t timestamp) {
         out.push_back(make_tuple(id, key, category, timestamp));
         return true;
@@ -73,9 +71,7 @@ TEST(PersistentKeyListTest, writeAndRead) {
 
   // Should get 3 keys.
   out.clear();
-  PersistentKeyList::readKeys(
-      7,
-      dir.dirname(),
+  reader.readKeys(
       [&](uint32_t id, const char* key, uint16_t category, int32_t timestamp) {
         out.push_back(make_tuple(id, key, category, timestamp));
         return true;
@@ -89,7 +85,7 @@ TEST(PersistentKeyListTest, writeAndRead) {
   keys.clearEntireListForTests();
 }
 
-TEST(PersistentKeyListTest, partialData) {
+TEST(LocalKeyReaderTest, partialData) {
   TemporaryDirectory dir("gorilla_test");
   boost::filesystem::create_directories(
       FileUtils::joinPaths(dir.dirname(), "8"));
@@ -107,16 +103,14 @@ TEST(PersistentKeyListTest, partialData) {
   }
 
   vector<int> results = {0, 0};
-  PersistentKeyList::readKeys(
-      8,
-      dir.dirname(),
-      [&](uint32_t id,
-          const char* /*key*/,
-          uint16_t /*category*/,
-          int32_t /*timestamp*/) {
-        results.at(id)++;
-        return true;
-      });
+  LocalKeyReader reader(8, dir.dirname());
+  reader.readKeys([&](uint32_t id,
+                      const char* /*key*/,
+                      uint16_t /*category*/,
+                      int32_t /*timestamp*/) {
+    results.at(id)++;
+    return true;
+  });
 
   // First 12 files contain no valid data.
   // The rest contain the first key, and the last contains the second.
@@ -124,7 +118,7 @@ TEST(PersistentKeyListTest, partialData) {
   EXPECT_EQ(1, results[1]);
 }
 
-TEST(PersistentKeyListTest, NoTimestampFiles) {
+TEST(LocalKeyReaderTest, NoTimestampFiles) {
   TemporaryDirectory dir("gorilla_test");
   boost::filesystem::create_directories(
       FileUtils::joinPaths(dir.dirname(), "8"));
@@ -140,17 +134,15 @@ TEST(PersistentKeyListTest, NoTimestampFiles) {
 
   vector<int> categories = {0, 0};
   int total = 0;
-  PersistentKeyList::readKeys(
-      8,
-      dir.dirname(),
-      [&](uint32_t id,
-          const char* /*key*/,
-          uint16_t category,
-          int32_t /*timestamp*/) {
-        categories.at(id) = category;
-        total++;
-        return true;
-      });
+  LocalKeyReader reader(8, dir.dirname());
+  reader.readKeys([&](uint32_t id,
+                      const char* /*key*/,
+                      uint16_t category,
+                      int32_t /*timestamp*/) {
+    categories.at(id) = category;
+    total++;
+    return true;
+  });
 
   EXPECT_EQ(1, categories[0]);
   EXPECT_EQ(2, categories[1]);
