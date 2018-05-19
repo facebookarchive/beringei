@@ -28,8 +28,10 @@ const static size_t kSmallBufferSize = 1 << 12;
 const static int kTempFileId = 0;
 const int KRetryFileOpen = 3;
 
-const static char kCompressedFileWithTimestampsMarker = '2';
-const static char kUncompressedFileWithTimestampsMarker = '3';
+constexpr static char kCompressedFileWithTimestampsMarker = '2';
+constexpr static char kUncompressedFileWithTimestampsMarker = '3';
+constexpr static char kAppendMarker = 'a';
+constexpr static char kDeleteMarker = 'd';
 
 const static std::string kFileType = "key_list";
 const static std::string kFailedCounter = "failed_writes." + kFileType;
@@ -68,6 +70,55 @@ bool PersistentKeyList::appendKey(
   return true;
 }
 
+bool PersistentKeyList::compactToFile(
+    FILE* f,
+    const std::string& fileName,
+    std::function<std::tuple<uint32_t, const char*, uint16_t, int32_t>()>
+        generator) {
+  folly::fbstring buffer;
+  for (auto key = generator(); std::get<1>(key) != nullptr; key = generator()) {
+    appendBuffer(
+        buffer,
+        std::get<0>(key),
+        std::get<1>(key),
+        std::get<2>(key),
+        std::get<3>(key));
+  }
+
+  if (buffer.length() == 0) {
+    fclose(f);
+    return false;
+  }
+
+  try {
+    auto ioBuffer = folly::IOBuf::wrapBuffer(buffer.data(), buffer.length());
+    auto codec = folly::io::getCodec(
+        folly::io::CodecType::ZLIB, folly::io::COMPRESSION_LEVEL_BEST);
+    auto compressed = codec->compress(ioBuffer.get());
+    compressed->coalesce();
+
+    if (fwrite(&kCompressedFileWithTimestampsMarker, sizeof(char), 1, f) != 1 ||
+        fwrite(compressed->data(), sizeof(char), compressed->length(), f) !=
+            compressed->length()) {
+      PLOG(ERROR) << "Could not write to the temporary key file " << fileName;
+      GorillaStatsManager::addStatValue(kFailedCounter, 1);
+      fclose(f);
+      return false;
+    }
+
+    LOG(INFO) << "Compressed key list from " << buffer.length() << " bytes to "
+              << compressed->length();
+  } catch (std::exception& e) {
+    LOG(ERROR) << "Compression failed:" << e.what();
+    fclose(f);
+    return false;
+  }
+
+  // Swap the new data in for the old.
+  fclose(f);
+  return true;
+}
+
 void PersistentKeyList::compact(
     std::function<std::tuple<uint32_t, const char*, uint16_t, int32_t>()>
         generator) {
@@ -83,57 +134,10 @@ void PersistentKeyList::compact(
     return;
   }
 
-  folly::fbstring buffer;
-  for (auto key = generator(); std::get<1>(key) != nullptr; key = generator()) {
-    appendBuffer(
-        buffer,
-        std::get<0>(key),
-        std::get<1>(key),
-        std::get<2>(key),
-        std::get<3>(key));
-  }
-
-  if (buffer.length() == 0) {
-    fclose(tempFile.file);
+  if (!compactToFile(tempFile.file, tempFile.name, generator)) {
     return;
   }
-
-  try {
-    auto ioBuffer = folly::IOBuf::wrapBuffer(buffer.data(), buffer.length());
-    auto codec = folly::io::getCodec(
-        folly::io::CodecType::ZLIB, folly::io::COMPRESSION_LEVEL_BEST);
-    auto compressed = codec->compress(ioBuffer.get());
-    compressed->coalesce();
-
-    if (fwrite(
-            &kCompressedFileWithTimestampsMarker,
-            sizeof(char),
-            1,
-            tempFile.file) != 1 ||
-        fwrite(
-            compressed->data(),
-            sizeof(char),
-            compressed->length(),
-            tempFile.file) != compressed->length()) {
-      PLOG(ERROR) << "Could not write to the temporary key file "
-                  << tempFile.name;
-      GorillaStatsManager::addStatValue(kFailedCounter, 1);
-      fclose(tempFile.file);
-      return;
-    }
-
-    LOG(INFO) << "Compressed key list from " << buffer.length() << " bytes to "
-              << compressed->length();
-  } catch (std::exception& e) {
-    LOG(ERROR) << "Compression failed:" << e.what();
-    fclose(tempFile.file);
-    return;
-  }
-
-  // Swap the new data in for the old.
-  fclose(tempFile.file);
   files_.rename(kTempFileId, prev);
-
   // Clean up remaining files.
   files_.clearTo(prev);
 }
@@ -249,6 +253,22 @@ LocalPersistentKeyListFactory::getPersistentKeyList(
     int64_t shardId,
     const std::string& dir) const {
   return std::make_unique<PersistentKeyList>(shardId, dir);
+}
+
+void PersistentKeyList::appendMarker(folly::fbstring& buffer, bool compressed) {
+  if (compressed) {
+    buffer += kCompressedFileWithTimestampsMarker;
+  } else {
+    buffer += kUncompressedFileWithTimestampsMarker;
+  }
+}
+
+void PersistentKeyList::appendOpMarker(folly::fbstring& buffer, bool append) {
+  if (append) {
+    buffer += kAppendMarker;
+  } else {
+    buffer += kDeleteMarker;
+  }
 }
 
 } // namespace gorilla

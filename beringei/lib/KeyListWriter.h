@@ -29,7 +29,7 @@ class KeyListWriter {
   ~KeyListWriter();
 
   // Copy a new key onto the queue for writing.
-  void addKey(
+  bool addKey(
       int64_t shardId,
       uint32_t id,
       const std::string& key,

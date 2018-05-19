@@ -10,6 +10,7 @@
 #include "beringei/lib/KeyListWriter.h"
 
 #include <folly/Format.h>
+#include <folly/MapUtil.h>
 #include <glog/logging.h>
 
 #include "beringei/lib/GorillaStatsManager.h"
@@ -31,7 +32,7 @@ KeyListWriter::~KeyListWriter() {
   stopWriterThread();
 }
 
-void KeyListWriter::addKey(
+bool KeyListWriter::addKey(
     int64_t shardId,
     uint32_t id,
     const std::string& key,
@@ -44,9 +45,7 @@ void KeyListWriter::addKey(
   info.type = KeyInfo::WRITE_KEY;
   info.category = category;
   info.timestamp = timestamp;
-
-  // It's better to delay the thrift handler than to completely lose a key.
-  keyInfoQueue_.blockingWrite(std::move(info));
+  return keyInfoQueue_.write(std::move(info));
 }
 
 void KeyListWriter::deleteKey(
@@ -78,10 +77,7 @@ void KeyListWriter::compact(
 }
 
 void KeyListWriter::startShard(int64_t shardId) {
-  KeyInfo info;
-  info.shardId = shardId;
-  info.type = KeyInfo::START_SHARD;
-  keyInfoQueue_.blockingWrite(std::move(info));
+  enable(shardId);
 }
 
 void KeyListWriter::stopShard(int64_t shardId) {
@@ -108,6 +104,15 @@ std::shared_ptr<PersistentKeyListIf> KeyListWriter::get(int64_t shardId) {
 
 void KeyListWriter::enable(int64_t shardId) {
   std::unique_lock<std::mutex> guard(lock_);
+
+  // Check if this shard has been started.
+  auto it = keyWriters_.find(shardId);
+  if (it != keyWriters_.end() && it->second != nullptr) {
+    return;
+  }
+
+  // This shard has never been stared. Start now.
+  LOG(INFO) << folly::sformat("Shard: {}. Enabling key list writer", shardId);
   if (persistentKeyListFactory_) {
     keyWriters_[shardId] = persistentKeyListFactory_->getPersistentKeyList(
         shardId, dataDirectory_);

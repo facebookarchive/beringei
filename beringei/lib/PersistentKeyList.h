@@ -99,6 +99,17 @@ class PersistentKeyList : public PersistentKeyListIf {
       uint16_t category,
       int32_t timestamp);
 
+  static void appendMarker(folly::fbstring& buffer, bool compressed);
+
+  // Append operation marker to the buffer, whether it's append or delete.
+  static void appendOpMarker(folly::fbstring& buffer, bool append);
+
+  static bool compactToFile(
+      FILE* f,
+      const std::string& name,
+      std::function<std::tuple<uint32_t, const char*, uint16_t, int32_t>()>
+          generator);
+
  private:
   // Prepare a new file for writes. Returns the id of the previous one.
   int64_t openNext();
