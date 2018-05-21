@@ -1,3 +1,5 @@
+** THIS REPO HAS BEEN ARCHIVED AND IS NO LONGER BEING ACTIVELY MAINTAINED **
+
 # Beringei [![CircleCI](https://circleci.com/gh/facebookincubator/beringei/tree/master.svg?style=svg)](https://circleci.com/gh/facebookincubator/beringei/tree/master)
 A high performance, in memory time series storage engine
 
