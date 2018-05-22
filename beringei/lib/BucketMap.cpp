@@ -1232,6 +1232,10 @@ void BucketMap::markTimeSeriesReady(
   sequence_ = seq;
 
   folly::RWSpinLock::ReadHolder readGuard(lock_);
+  if (id >= rows_.size()) {
+    return;
+  }
+
   auto row = rows_[id];
   if (!row) {
     return;
