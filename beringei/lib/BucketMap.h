@@ -264,8 +264,12 @@ class BucketMap {
       uint16_t category,
       int32_t unixTime);
 
-  // NOT thread-safe
+  // NOT thread-safe.
   void resizeRows(size_t size);
+
+  // Thread-safe. This will `getEverything` with a ReadLock, and then remove
+  // ones that are not ready with a WriteLock.
+  void clearNotReadyRows();
 
   Item createNewRow(const char* key, uint16_t category, int64_t unixTime) const;
   bool keyStreamCallback(

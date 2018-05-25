@@ -339,7 +339,7 @@ bool BucketMap::setState(BucketMap::State state) {
 
     // Start keywriter and log writer for this shard. Note that even though key
     // writer is started, keys won't be logged unless this replica is primary.
-    keyWriter_->startShard(shardId_);
+    keyWriter_->startShard(shardId_, true);
     logWriter_->startShard(shardId_);
 
     dataPointQueue_ = std::make_shared<folly::MPMCQueue<QueuedDataPoint>>(
@@ -461,7 +461,7 @@ bool BucketMap::isBehind(uint32_t bucketToFinalize) const {
 void BucketMap::shutdown() {
   if (getState() == OWNED) {
     logWriter_->stopShard(shardId_);
-    keyWriter_->stopShard(shardId_);
+    keyWriter_->stopShard(shardId_, true);
 
     // Set the state directly without calling setState which would try
     // to deallocate memory.
@@ -664,6 +664,10 @@ bool BucketMap::readBlockFiles() {
   return true;
 }
 bool BucketMap::eraseBasedOnKeyList(uint32_t id, const char* key) {
+  if (id >= rows_.size()) {
+    return false;
+  }
+
   if (!rows_[id]) {
     GorillaStatsManager::addStatValue(kInvalidDelete);
 
@@ -1123,10 +1127,19 @@ bool BucketMap::setRole(bool primary) {
 
   if (state_ == OWNED) {
     if (primary) {
-      keyWriter_->startShard(shardId_);
+      keyWriter_->startShard(shardId_, true);
       stopStreamKeys();
     } else {
-      keyWriter_->stopShard(shardId_);
+      keyWriter_->stopShard(shardId_, true);
+      if (changed) {
+        Timer timer(true);
+        clearNotReadyRows();
+        auto duration = timer.get();
+        LOG(INFO) << folly::sformat(
+            "Shard: {}. Clearing not ready row takes {} us",
+            shardId_,
+            duration);
+      }
       startStreamKeys();
     }
   }
@@ -1429,6 +1442,18 @@ bool BucketMap::isDrained() const {
 
 uint64_t BucketMap::getSequence() const {
   return sequence_;
+}
+
+void BucketMap::clearNotReadyRows() {
+  std::vector<Item> rows;
+  getEverything(rows);
+  for (size_t i = 0; i < rows.size(); ++i) {
+    auto item = rows[i];
+    if (item && !item->second.ready()) {
+      folly::RWSpinLock::WriteHolder guard(lock_);
+      eraseBasedOnKeyList(i, item->first.c_str());
+    }
+  }
 }
 
 } // namespace gorilla

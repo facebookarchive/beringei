@@ -222,7 +222,7 @@ TEST_F(BucketMapTest, Reload) {
   }
 
   // We need to enable it again.
-  keyWriter->startShard(10);
+  keyWriter->startShard(10, true);
 
   // Now wipe the key_list file and reload the data yet again.
   // Create a key with a timestamp that post-dates the data on disk so we can

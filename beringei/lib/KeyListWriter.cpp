@@ -76,15 +76,26 @@ void KeyListWriter::compact(
   writer->compact(generator);
 }
 
-void KeyListWriter::startShard(int64_t shardId) {
-  enable(shardId);
+void KeyListWriter::startShard(int64_t shardId, bool force) {
+  if (force) {
+    enable(shardId);
+  } else {
+    KeyInfo info;
+    info.shardId = shardId;
+    info.type = KeyInfo::START_SHARD;
+    keyInfoQueue_.blockingWrite(std::move(info));
+  }
 }
 
-void KeyListWriter::stopShard(int64_t shardId) {
-  KeyInfo info;
-  info.shardId = shardId;
-  info.type = KeyInfo::STOP_SHARD;
-  keyInfoQueue_.blockingWrite(std::move(info));
+void KeyListWriter::stopShard(int64_t shardId, bool force) {
+  if (force) {
+    disable(shardId);
+  } else {
+    KeyInfo info;
+    info.shardId = shardId;
+    info.type = KeyInfo::STOP_SHARD;
+    keyInfoQueue_.blockingWrite(std::move(info));
+  }
 }
 
 void KeyListWriter::startMonitoring() {

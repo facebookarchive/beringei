@@ -48,8 +48,8 @@ class KeyListWriter {
       std::function<std::tuple<uint32_t, const char*, uint16_t, int32_t>()>
           generator);
 
-  void startShard(int64_t shardId);
-  void stopShard(int64_t shardId);
+  void startShard(int64_t shardId, bool force = false);
+  void stopShard(int64_t shardId, bool force = false);
 
   static void startMonitoring();
 
