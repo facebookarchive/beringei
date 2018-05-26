@@ -121,7 +121,8 @@ vector<DataPoint> BeringeiNetworkClient::performPut(PutRequestMap& requests) {
 
   std::vector<DataPoint> result;
 
-  folly::collectAll(pendingResponses)
+  folly::collectAllSemiFuture(pendingResponses)
+      .toUnsafeFuture()
       .then([&](auto& responses) {
         for (auto& maybeDropped : responses) {
           auto& dps = maybeDropped.value();

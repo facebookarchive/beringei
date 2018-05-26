@@ -569,7 +569,8 @@ auto BeringeiClientImpl::futureContextFinalize(
         std::chrono::milliseconds(BeringeiNetworkClient::getTimeoutMs()));
   }));
   context.either.push_back(
-      collectAll(context.getFutures)
+      collectAllSemiFuture(context.getFutures)
+          .toUnsafeFuture()
           .then([](const std::vector<folly::Try<folly::Unit>>&) {}));
   return folly::collectAny(context.either).then(std::forward<F>(fn));
 }
