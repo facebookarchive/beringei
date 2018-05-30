@@ -102,7 +102,7 @@ folly::Future<std::vector<DataPoint>> BeringeiNetworkClient::futurePerformPut(
     return folly::makeFuture(std::vector<DataPoint>({}));
   } else {
     return client->future_putDataPoints(request)
-        .then([](PutDataResult& result) { return std::move(result.data); })
+        .then([](PutDataResult&& result) { return std::move(result.data); })
         .onError([dps = request.data](const std::exception& e) mutable {
           LOG(ERROR) << "putDataPoints failed: " << e.what();
           return std::move(dps);

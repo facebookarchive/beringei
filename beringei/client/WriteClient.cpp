@@ -224,7 +224,7 @@ void WriteClient::putWithRetry(
 
   client->futurePerformPut(request, hostWriter->getHostInfo())
       .then([this, timer, points = request.data.size()](
-                std::vector<DataPoint>& dropped) {
+                std::vector<DataPoint>&& dropped) {
         GorillaStatsManager::addStatValue(counterUsPerPut_, timer->get());
         GorillaStatsManager::addStatValue(
             counterPutKey_, points - dropped.size());
