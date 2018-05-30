@@ -201,7 +201,7 @@ BucketStorage::FetchStatus BucketStorage::fetch(
   }
 
   if (data_[bucket].position != position && data_[bucket].position != 0) {
-    VLOG(0) << "Tried to fetch data for an expired bucket:" << bucket
+    VLOG(0) << "Tried to fetch data for an expired bucket:" << size_t(bucket)
             << " position:" << position;
     GorillaStatsManager::addStatValue(kExpiredBucketFetch, 1);
     return FAILURE;
