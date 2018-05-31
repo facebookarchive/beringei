@@ -123,7 +123,7 @@ vector<DataPoint> BeringeiNetworkClient::performPut(PutRequestMap& requests) {
 
   folly::collectAllSemiFuture(pendingResponses)
       .toUnsafeFuture()
-      .then([&](auto& responses) {
+      .then([&](auto&& responses) {
         for (auto& maybeDropped : responses) {
           auto& dps = maybeDropped.value();
           result.insert(
