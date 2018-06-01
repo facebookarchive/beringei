@@ -31,6 +31,10 @@ const int kKeyListSize = 5000;
 const int kLoadTestRuns = 1;
 const string kDefaultKey = "key";
 
+// Keylist writer changed from blockingWrite to best-effort write when trying
+// to add key. This means we need a large enough queue for this keylist.
+const int kKeyListQueueSize = kKeys;
+
 DECLARE_int32(zippydb_batch_queue_element_size);
 
 class BucketMapTest : public testing::Test {
@@ -125,7 +129,8 @@ TEST_F(BucketMapTest, TimeSeries) {
   boost::filesystem::create_directories(
       FileUtils::joinPaths(dir.dirname(), "10"));
 
-  auto keyWriter = std::make_shared<KeyListWriter>(dir.dirname(), 100);
+  auto keyWriter =
+      std::make_shared<KeyListWriter>(dir.dirname(), kKeyListQueueSize);
   auto bucketLogWriter = std::make_shared<BucketLogWriter>(
       4 * kGorillaSecondsPerHour, dir.dirname(), 100, 0);
   keyWriter->startShard(10);
@@ -157,7 +162,8 @@ TEST_F(BucketMapTest, Reload) {
 
   {
     // Fill, then close the BucketMap.
-    auto keyWriter = std::make_shared<KeyListWriter>(dir.dirname(), 100);
+    auto keyWriter =
+        std::make_shared<KeyListWriter>(dir.dirname(), kKeyListQueueSize);
     keyWriter->startShard(10);
     BucketMap map(
         6,
@@ -175,7 +181,8 @@ TEST_F(BucketMapTest, Reload) {
     ts3 = map.timestamp(3);
   }
 
-  auto keyWriter = std::make_shared<KeyListWriter>(dir.dirname(), 100);
+  auto keyWriter =
+      std::make_shared<KeyListWriter>(dir.dirname(), kKeyListQueueSize);
   keyWriter->startShard(10);
   /* sleep override */
   std::this_thread::sleep_for(std::chrono::seconds(2));
