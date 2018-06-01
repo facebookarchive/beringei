@@ -663,6 +663,7 @@ bool BucketMap::readBlockFiles() {
 
   return true;
 }
+
 bool BucketMap::eraseBasedOnKeyList(uint32_t id, const char* key) {
   if (id >= rows_.size()) {
     return false;
