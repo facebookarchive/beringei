@@ -119,6 +119,44 @@ bool PersistentKeyList::compactToFile(
   return true;
 }
 
+bool PersistentKeyList::compactToBuffer(
+    std::function<std::tuple<uint32_t, const char*, uint16_t, int32_t>()>
+        generator,
+    uint64_t seq,
+    folly::fbstring& out) {
+  folly::fbstring buffer;
+  for (auto key = generator(); std::get<1>(key) != nullptr; key = generator()) {
+    appendBuffer(
+        buffer,
+        std::get<0>(key),
+        std::get<1>(key),
+        std::get<2>(key),
+        std::get<3>(key));
+  }
+
+  if (buffer.empty()) {
+    return false;
+  }
+
+  try {
+    auto ioBuffer = folly::IOBuf::wrapBuffer(buffer.data(), buffer.length());
+    auto codec = folly::io::getCodec(
+        folly::io::CodecType::ZLIB, folly::io::COMPRESSION_LEVEL_BEST);
+    auto compressed = codec->compress(ioBuffer.get());
+    compressed->coalesce();
+
+    out.reserve(compressed->length() + 1 + 8);
+    out.append((char*)(&seq), 8);
+    out.append(&kCompressedFileWithTimestampsMarker, 1);
+    out.append((char*)compressed->data(), compressed->length());
+  } catch (const std::exception& e) {
+    LOG(ERROR) << "Compression failed:" << e.what();
+    return false;
+  }
+
+  return true;
+}
+
 void PersistentKeyList::compact(
     std::function<std::tuple<uint32_t, const char*, uint16_t, int32_t>()>
         generator) {

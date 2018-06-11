@@ -110,6 +110,12 @@ class PersistentKeyList : public PersistentKeyListIf {
       std::function<std::tuple<uint32_t, const char*, uint16_t, int32_t>()>
           generator);
 
+  static bool compactToBuffer(
+      std::function<std::tuple<uint32_t, const char*, uint16_t, int32_t>()>
+          generator,
+      uint64_t seq,
+      folly::fbstring& out);
+
  private:
   // Prepare a new file for writes. Returns the id of the previous one.
   int64_t openNext();
