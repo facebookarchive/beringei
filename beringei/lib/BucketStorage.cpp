@@ -91,15 +91,15 @@ BucketStorage::BucketStorageId BucketStorage::store(
   // Check if this is the first time this position is seen. If it
   // is, buckets are rotated and an old bucket is now the active
   // one.
-  if (position > newestPosition_) {
+  if (position > data_[bucket].position) {
     // Need this lock to prevent reading from deleted memory in fetch.
     folly::RWSpinLock::WriteHolder writeGuard(data_[bucket].fetchLock);
 
     if (data_[bucket].activePages < data_[bucket].pages.size()) {
       // Only delete memory if the pages were not fully used the
-      // previous time around. This means that if there's a spike in
-      // the amount of data on day 1, the extra memory will be freed
-      // on day 3.
+      // previous time around. This means that with 12 2-hour buckets
+      // if there's a spike in the amount of data on day 1, the extra
+      // memory will be freed on day 2.
       data_[bucket].pages.resize(data_[bucket].activePages);
     }
 
@@ -265,6 +265,7 @@ void BucketStorage::clearAndDisable() {
     std::unique_lock<std::mutex> guard(data_[i].pagesMutex);
     folly::RWSpinLock::WriteHolder writeGuard(data_[i].fetchLock);
 
+    data_[i].position = 0;
     data_[i].disabled = true;
     std::vector<std::shared_ptr<DataBlock>>().swap(data_[i].pages);
     data_[i].activePages = 0;
@@ -280,6 +281,7 @@ void BucketStorage::enable() {
     std::unique_lock<std::mutex> guard(data_[i].pagesMutex);
     folly::RWSpinLock::WriteHolder writeGuard(data_[i].fetchLock);
 
+    data_[i].position = 0;
     data_[i].disabled = false;
     data_[i].activePages = 0;
     data_[i].lastPageBytesUsed = 0;
@@ -459,17 +461,19 @@ bool BucketStorage::sanityCheck(uint8_t bucket, uint32_t position) {
     return false;
   }
 
-  if (data_[bucket].position != position) {
-    if (data_[bucket].position == 0) {
-      // First time this bucket is used for anything. Mark the
-      // position.
-      data_[bucket].position = position;
-    } else {
-      LOG(WARNING) << "Tried to fetch expired bucket";
-      return false;
-    }
+  if (data_[bucket].position == 0) {
+    // First time this bucket is used for anything. Mark the
+    // position.
+    data_[bucket].position = position;
+    return true;
   }
-  return true;
+
+  if (data_[bucket].position == position) {
+    return true;
+  }
+
+  LOG(WARNING) << "Tried to fetch expired bucket";
+  return false;
 }
 
 void BucketStorage::deleteBucketsOlderThan(uint32_t position) {

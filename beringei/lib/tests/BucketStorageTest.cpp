@@ -19,6 +19,86 @@ using namespace facebook::gorilla;
 using namespace google;
 using namespace std;
 
+// Work with entries stored in successive positions
+class BucketStoragePersistenceTest : public ::testing::Test {
+ protected:
+  // @param[IN] offset Nth entry in test
+  static uint32_t position(size_t offset) {
+    return kPositionBase_ + offset;
+  }
+
+  static std::string data(size_t offset);
+
+  static void storageAssertLoad(
+      BucketStorage& storage,
+      TemporaryDirectory& dirArg);
+
+  static BucketStorage::BucketStorageId storageStore(
+      BucketStorage& storage,
+      size_t offset);
+
+  static void storageAssertFetch(
+      BucketStorage& storage,
+      size_t offset,
+      BucketStorage::BucketStorageId id);
+
+  static void storageFinalize(BucketStorage& storage, size_t offset);
+
+ private:
+  static const uint32_t kPositionBase_ = 10;
+  static const uint32_t kCountBase_ = 100;
+};
+
+std::string BucketStoragePersistenceTest::data(size_t offset) {
+  std::ostringstream os;
+  os << "test" << offset;
+  return os.str();
+}
+
+void BucketStoragePersistenceTest::storageAssertLoad(
+    BucketStorage& storage,
+    TemporaryDirectory& dirArg) {
+  DataBlockReader reader(0, dirArg.dirname());
+  auto positions = reader.findCompletedBlockFiles();
+  for (auto position = positions.rbegin(); position != positions.rend();
+       ++position) {
+    SCOPED_TRACE(
+        std::string("load position ") + folly::to<std::string>(*position));
+    std::vector<uint32_t> timeSeriesIds;
+    std::vector<uint64_t> storageIds;
+    bool success = storage.loadPosition(*position, timeSeriesIds, storageIds);
+    ASSERT_TRUE(success);
+  }
+}
+
+BucketStorage::BucketStorageId BucketStoragePersistenceTest::storageStore(
+    BucketStorage& storage,
+    size_t offset) {
+  std::string in(data(offset));
+  return storage.store(
+      kPositionBase_ + offset, in.c_str(), in.length(), kCountBase_ + offset);
+}
+
+void BucketStoragePersistenceTest::storageAssertFetch(
+    BucketStorage& storage,
+    size_t offset,
+    BucketStorage::BucketStorageId id) {
+  SCOPED_TRACE(std::string("fetch ") + folly::to<std::string>(offset));
+  auto expect = data(offset);
+  std::string out;
+  uint16_t count;
+  auto status = storage.fetch(kPositionBase_ + offset, id, out, count);
+  ASSERT_EQ(status, BucketStorage::FetchStatus::SUCCESS);
+  ASSERT_EQ(out, expect);
+  ASSERT_EQ(count, kCountBase_ + offset);
+}
+
+void BucketStoragePersistenceTest::storageFinalize(
+    BucketStorage& storage,
+    size_t offset) {
+  storage.finalizeBucket(kPositionBase_ + offset);
+}
+
 TEST(BucketStorageTest, SmallStoreAndFetch) {
   BucketStorage storage(5, 0, "");
 
@@ -417,7 +497,7 @@ TEST(BucketStorageTest, DisableAndEnableAndReuse) {
   ASSERT_EQ(101, itemCount);
 }
 
-TEST(BucketStorageTest, StoreAfterFinalize) {
+TEST_F(BucketStoragePersistenceTest, StoreAfterFinalize) {
   TemporaryDirectory dir("gorilla_test");
   boost::filesystem::create_directories(
       FileUtils::joinPaths(dir.dirname(), "0"));
@@ -459,4 +539,64 @@ TEST(BucketStorageTest, StoreAfterFinalize) {
       storage.fetch(12, id4, str, itemCount));
   ASSERT_EQ("test4", str);
   ASSERT_EQ(104, itemCount);
+}
+
+TEST_F(BucketStoragePersistenceTest, Switchover) {
+  TemporaryDirectory dir("gorilla_test");
+  boost::filesystem::create_directories(
+      FileUtils::joinPaths(dir.dirname(), "0"));
+  const int64_t shardId = 0;
+  const uint8_t buckets = 5;
+
+  std::vector<BucketStorage::BucketStorageId> ids;
+
+  auto storage =
+      std::make_unique<BucketStorage>(buckets, shardId, dir.dirname());
+
+  // Fill and force first disk eviction
+  for (size_t i = 1; i <= 6; ++i) {
+    SCOPED_TRACE(std::string("memory fill ") + folly::to<std::string>(i));
+    ASSERT_NO_FATAL_FAILURE(ids.push_back(storageStore(*storage, i)));
+    ASSERT_NO_FATAL_FAILURE(storageAssertFetch(*storage, i, ids[i - 1]));
+    storageFinalize(*storage, i);
+    ASSERT_NO_FATAL_FAILURE(storageAssertFetch(*storage, i, ids[i - 1]));
+  }
+
+  std::string out;
+  uint16_t count;
+  ASSERT_EQ(
+      storage->fetch(position(1), ids[0], out, count),
+      BucketStorage::FetchStatus::FAILURE);
+
+  storage->clearAndDisable();
+
+  // Switch nodes with shared storage
+  auto storage2 =
+      std::make_unique<BucketStorage>(buckets, shardId, dir.dirname());
+  {
+    SCOPED_TRACE(std::string("switch over load"));
+    ASSERT_NO_FATAL_FAILURE(storageAssertLoad(*storage2, dir));
+  }
+  for (unsigned i = 2; i <= 6; ++i) {
+    SCOPED_TRACE(std::string("switch over fetch " + folly::to<std::string>(i)));
+    ASSERT_NO_FATAL_FAILURE(storageAssertFetch(*storage2, i, ids[i - 1]));
+  }
+
+  // Add a bucket before switching back
+  ids.push_back(storageStore(*storage2, 7));
+  storageFinalize(*storage2, 7);
+
+  storage2.reset();
+
+  // Switch back
+  storage->enable();
+  {
+    SCOPED_TRACE(std::string("switch back load"));
+    ASSERT_NO_FATAL_FAILURE(storageAssertLoad(*storage, dir));
+  }
+
+  for (unsigned i = 3; i <= 7; ++i) {
+    SCOPED_TRACE(std::string("switch back fetch " + folly::to<std::string>(i)));
+    ASSERT_NO_FATAL_FAILURE(storageAssertFetch(*storage, i, ids[i - 1]));
+  }
 }
