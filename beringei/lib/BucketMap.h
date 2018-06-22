@@ -27,6 +27,7 @@
 #include "beringei/lib/LogReader.h"
 #include "beringei/lib/PersistentKeyList.h"
 #include "beringei/lib/Timer.h"
+#include "folly/container/F14Map.h"
 
 namespace facebook {
 namespace gorilla {
@@ -287,7 +288,7 @@ class BucketMap {
 
   mutable folly::RWSpinLock lock_;
 
-  std::unordered_map<const char*, int, CaseHash, CaseEq> map_;
+  folly::F14FastMap<const char*, int, CaseHash, CaseEq> map_;
 
   // Always equal to rows_.size();
   std::atomic<int> tableSize_;

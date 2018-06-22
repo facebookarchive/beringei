@@ -322,7 +322,7 @@ bool BucketMap::setState(BucketMap::State state) {
 
   // If we have to drop a shard, move the data here, then free all the memory
   // outside of any locks, as this can take a long time.
-  std::unordered_map<const char*, int, CaseHash, CaseEq> tmpMap;
+  folly::F14FastMap<const char*, int, CaseHash, CaseEq> tmpMap;
   std::set<size_t> tmpQueue;
   std::vector<Item> tmpVec;
   std::vector<std::vector<uint32_t>> tmpDeviations;
