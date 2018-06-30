@@ -130,7 +130,7 @@ void FileUtils::rename(int64_t id, const std::string& toPrefix) {
   }
 }
 
-void FileUtils::createDirectories() {
+void FileUtils::createDirectories() const {
   boost::filesystem::create_directories(directory_);
 }
 

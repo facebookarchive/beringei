@@ -44,9 +44,6 @@ const BucketStorage::BucketStorageId BucketStorage::kInvalidId = 0;
 // Also an invalid ID because offset + length will be > page size.
 const BucketStorage::BucketStorageId BucketStorage::kDisabledId = ~0;
 
-const std::string BucketStorage::kDataPrefix = "block_data";
-const std::string BucketStorage::kCompletePrefix = "complete_block";
-
 static const size_t kLargeFileBuffer = 1024 * 1024;
 
 static const std::string kBlockFileReadFailures = "block_file_read_failures";
@@ -68,8 +65,6 @@ BucketStorageSingle::BucketStorageSingle(
     : BucketStorage(numBuckets, shardId),
       newestPosition_(0),
       dataBlockReader_(shardId, dataDirectory),
-      dataFiles_(shardId, kDataPrefix, dataDirectory),
-      completeFiles_(shardId, kCompletePrefix, dataDirectory),
       numMemoryBuckets_(
           numMemoryBuckets == kDefaultToNumBuckets ? numBuckets
                                                    : numMemoryBuckets) {
@@ -80,8 +75,7 @@ BucketStorageSingle::BucketStorageSingle(
 BucketStorageSingle::~BucketStorageSingle() {}
 
 void BucketStorageSingle::createDirectories() {
-  dataFiles_.createDirectories();
-  completeFiles_.createDirectories();
+  dataBlockReader_.createDirectories();
 }
 
 BucketStorage::BucketStorageId BucketStorageSingle::store(
@@ -406,92 +400,11 @@ void BucketStorageSingle::finalizeBucket(uint32_t position) {
   }
 
   if (activePages > 0 && timeSeriesIds.size() > 0) {
-    write(position, pages, activePages, timeSeriesIds, storageIds);
+    // Delete files older than 24h.
+    dataBlockReader_.remove(position - numBuckets_);
+    dataBlockReader_.write(
+        position, pages, activePages, timeSeriesIds, storageIds);
   }
-}
-
-void BucketStorageSingle::write(
-    uint32_t position,
-    const std::vector<std::shared_ptr<DataBlock>>& pages,
-    uint32_t activePages,
-    const std::vector<uint32_t>& timeSeriesIds,
-    const std::vector<BucketStorageId>& storageIds) {
-  CHECK_EQ(timeSeriesIds.size(), storageIds.size());
-
-  // Delete files older than 24h.
-  dataFiles_.remove(position - numBuckets_);
-  completeFiles_.remove(position - numBuckets_);
-
-  auto dataFile = dataFiles_.open(position, "wb", kLargeFileBuffer);
-  if (!dataFile.file) {
-    LOG(ERROR) << "Opening data block file:" << dataFile.name << " failed";
-    return;
-  }
-
-  uint32_t count = timeSeriesIds.size();
-  size_t dataLen = sizeof(uint32_t) + // count
-      sizeof(uint32_t) + // active pages
-      count * sizeof(uint32_t) + // time series ids
-      count * sizeof(uint64_t) + // storage ids
-      activePages * kDataBlockSize; // blocks
-
-  std::unique_ptr<char[]> buffer(new char[dataLen]);
-  char* ptr = buffer.get();
-
-  memcpy(ptr, &count, sizeof(uint32_t));
-  ptr += sizeof(uint32_t);
-  memcpy(ptr, &activePages, sizeof(uint32_t));
-  ptr += sizeof(uint32_t);
-
-  memcpy(ptr, &timeSeriesIds[0], sizeof(uint32_t) * count);
-  ptr += sizeof(uint32_t) * count;
-
-  memcpy(ptr, &storageIds[0], sizeof(uint64_t) * count);
-  ptr += sizeof(uint64_t) * count;
-
-  for (int i = 0; i < activePages; i++) {
-    memcpy(ptr, pages[i]->data, kDataBlockSize);
-    ptr += kDataBlockSize;
-  }
-
-  CHECK_EQ(ptr - buffer.get(), dataLen);
-
-  try {
-    auto ioBuffer = folly::IOBuf::wrapBuffer(buffer.get(), dataLen);
-    auto codec = folly::io::getCodec(
-        folly::io::CodecType::ZLIB, folly::io::COMPRESSION_LEVEL_BEST);
-    auto compressed = codec->compress(ioBuffer.get());
-    compressed->coalesce();
-
-    if (fwrite(
-            compressed->data(),
-            sizeof(char),
-            compressed->length(),
-            dataFile.file) != compressed->length()) {
-      PLOG(ERROR) << "Writing compressed data block file " << dataFile.name
-                  << " failed";
-      FileUtils::closeFile(dataFile, false);
-      return;
-    }
-
-    LOG(INFO) << "Wrote compressed data block file " << dataFile.name
-              << " dataLen:" << dataLen
-              << " compressed:" << compressed->length();
-
-  } catch (std::exception& e) {
-    LOG(ERROR) << e.what();
-    FileUtils::closeFile(dataFile, false);
-    return;
-  }
-
-  FileUtils::closeFile(dataFile, false);
-
-  auto completeFile = completeFiles_.open(position, "wb", 0);
-  if (!completeFile.file) {
-    LOG(ERROR) << "Opening marker file " << completeFile.name << " failed";
-    return;
-  }
-  FileUtils::closeFile(completeFile, false);
 }
 
 bool BucketStorageSingle::sanityCheck(uint8_t bucket, uint32_t position) {
@@ -516,8 +429,7 @@ bool BucketStorageSingle::sanityCheck(uint8_t bucket, uint32_t position) {
 }
 
 void BucketStorageSingle::deleteBucketsOlderThan(uint32_t position) {
-  completeFiles_.clearTo(position);
-  dataFiles_.clearTo(position);
+  dataBlockReader_.clearTo(position);
 }
 
 void BucketStorage::startMonitoring() {

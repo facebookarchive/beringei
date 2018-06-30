@@ -40,13 +40,6 @@ class BucketStorage {
   static const uint32_t kPageSize;
   static const uint8_t kDefaultToNumBuckets;
 
-  static const std::string kDataPrefix;
-
-  // These files are only used as marker files to indicate which
-  // blocks have been completed. The files are empty but the file name
-  // has the id of the completed block.
-  static const std::string kCompletePrefix;
-
   BucketStorage(uint8_t numBuckets, int shardId);
   virtual ~BucketStorage();
 
@@ -154,7 +147,9 @@ class BucketStorage {
 
  private:
   BucketStorage(const BucketStorage&) = delete;
+  BucketStorage(BucketStorage&&) = delete;
   BucketStorage& operator=(const BucketStorage&) = delete;
+  BucketStorage& operator=(BucketStorage&&) = delete;
 };
 
 // class BucketStorageSingle
@@ -210,9 +205,6 @@ class BucketStorageSingle : public BucketStorage {
   virtual std::pair<uint64_t, uint64_t> getPagesSize() override;
 
  private:
-  BucketStorageSingle(const BucketStorageSingle&) = delete;
-  BucketStorageSingle& operator=(const BucketStorageSingle&) = delete;
-
   void write(
       uint32_t position,
       const std::vector<std::shared_ptr<DataBlock>>& pages,
@@ -256,9 +248,6 @@ class BucketStorageSingle : public BucketStorage {
   int newestPosition_;
   std::unique_ptr<BucketData[]> data_;
   DataBlockReader dataBlockReader_;
-
-  FileUtils dataFiles_;
-  FileUtils completeFiles_;
 
   const uint8_t numMemoryBuckets_;
 };

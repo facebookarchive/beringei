@@ -60,7 +60,7 @@ class FileUtils {
 
   // Creates directories. Must be called before other file operations
   // are used.
-  void createDirectories();
+  void createDirectories() const;
 
   // Remove a file with the given id.
   void remove(int64_t id);

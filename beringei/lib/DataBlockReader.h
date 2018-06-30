@@ -10,6 +10,7 @@
 #pragma once
 
 #include <functional>
+#include <memory>
 #include <set>
 #include <string>
 #include <vector>
@@ -22,7 +23,7 @@ namespace gorilla {
 
 class DataBlockReader {
  public:
-  explicit DataBlockReader(int64_t shardId, const std::string& dataDirectory);
+  DataBlockReader(int64_t shardId, const std::string& dataDirectory);
 
   // Returns allocated blocks for every page in the given position.
   // Fills in timeSeriesIds and storageIds with the metadata associated with
@@ -32,12 +33,27 @@ class DataBlockReader {
       std::vector<uint32_t>& timeSeriesIds,
       std::vector<uint64_t>& storageIds);
 
+  void write(
+      uint32_t position,
+      const std::vector<std::shared_ptr<DataBlock>>& pages,
+      uint32_t activePages,
+      const std::vector<uint32_t>& timeSeriesIds,
+      const std::vector<uint64_t>& storageIds);
+
   // Returns the file ids for the completed blocks.
-  std::set<uint32_t> findCompletedBlockFiles();
+  std::set<uint32_t> findCompletedBlockFiles() const;
+
+  void clearTo(int64_t position);
+
+  // Create necessary persistence directories. NOP when they already exist
+  void createDirectories();
+
+  // Remove file
+  void remove(int64_t id);
 
  private:
   FileUtils dataFiles_;
-  FileUtils completedFiles_;
+  FileUtils completeFiles_;
 };
 }
 } // facebook:gorilla
