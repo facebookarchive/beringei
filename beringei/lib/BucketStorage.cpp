@@ -64,7 +64,7 @@ BucketStorageSingle::BucketStorageSingle(
     uint8_t numMemoryBuckets)
     : BucketStorage(numBuckets, shardId),
       newestPosition_(0),
-      dataBlockReader_(shardId, dataDirectory),
+      dataBlockIO_(shardId, dataDirectory),
       numMemoryBuckets_(
           numMemoryBuckets == kDefaultToNumBuckets ? numBuckets
                                                    : numMemoryBuckets) {
@@ -75,7 +75,7 @@ BucketStorageSingle::BucketStorageSingle(
 BucketStorageSingle::~BucketStorageSingle() {}
 
 void BucketStorageSingle::createDirectories() {
-  dataBlockReader_.createDirectories();
+  dataBlockIO_.createDirectories();
 }
 
 BucketStorage::BucketStorageId BucketStorageSingle::store(
@@ -234,7 +234,7 @@ BucketStorage::FetchStatus BucketStorageSingle::fetch(
 }
 
 std::set<uint32_t> BucketStorageSingle::findCompletedPositions() {
-  return dataBlockReader_.findCompletedBlockFiles();
+  return dataBlockIO_.findCompletedBlockFiles();
 }
 
 bool BucketStorageSingle::loadPosition(
@@ -259,8 +259,7 @@ bool BucketStorageSingle::loadPosition(
   }
 
   // Actually load the data.
-  auto blocks =
-      dataBlockReader_.readBlocks(position, timeSeriesIds, storageIds);
+  auto blocks = dataBlockIO_.readBlocks(position, timeSeriesIds, storageIds);
   if (blocks.size() == 0) {
     GorillaStatsManager::addStatValue(kBlockFileReadFailures, 1);
     return false;
@@ -401,9 +400,8 @@ void BucketStorageSingle::finalizeBucket(uint32_t position) {
 
   if (activePages > 0 && timeSeriesIds.size() > 0) {
     // Delete files older than 24h.
-    dataBlockReader_.remove(position - numBuckets_);
-    dataBlockReader_.write(
-        position, pages, activePages, timeSeriesIds, storageIds);
+    dataBlockIO_.remove(position - numBuckets_);
+    dataBlockIO_.write(position, pages, activePages, timeSeriesIds, storageIds);
   }
 }
 
@@ -429,7 +427,7 @@ bool BucketStorageSingle::sanityCheck(uint8_t bucket, uint32_t position) {
 }
 
 void BucketStorageSingle::deleteBucketsOlderThan(uint32_t position) {
-  dataBlockReader_.clearTo(position);
+  dataBlockIO_.clearTo(position);
 }
 
 void BucketStorage::startMonitoring() {

@@ -19,7 +19,7 @@
 #include <vector>
 
 #include "DataBlock.h"
-#include "DataBlockReader.h"
+#include "DataBlockIO.h"
 
 #include <folly/synchronization/RWSpinLock.h>
 
@@ -247,7 +247,7 @@ class BucketStorageSingle : public BucketStorage {
 
   int newestPosition_;
   std::unique_ptr<BucketData[]> data_;
-  DataBlockReader dataBlockReader_;
+  DataBlockIO dataBlockIO_;
 
   const uint8_t numMemoryBuckets_;
 };

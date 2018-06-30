@@ -37,8 +37,8 @@ add_library(
     CaseUtils.cpp
     CaseUtils.h
     DataBlock.h
-    DataBlockReader.cpp
-    DataBlockReader.h
+    DataBlockIO.cpp
+    DataBlockIO.h
     DataLog.cpp
     DataLog.h
     FileUtils.cpp

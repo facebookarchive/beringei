@@ -12,7 +12,7 @@
 
 #include "beringei/lib/BucketStorage.h"
 #include "beringei/lib/BucketStorageHotCold.h"
-#include "beringei/lib/DataBlockReader.h"
+#include "beringei/lib/DataBlockIO.h"
 
 using namespace ::testing;
 using namespace facebook;
@@ -80,8 +80,7 @@ std::string BucketStoragePersistenceTest::data(size_t offset) {
 void BucketStoragePersistenceTest::storageAssertLoad(
     BucketStorage& storage,
     TemporaryDirectory& dirArg) {
-  DataBlockReader reader(0, dirArg.dirname());
-  auto positions = reader.findCompletedBlockFiles();
+  auto positions = storage.findCompletedPositions();
   for (auto position = positions.rbegin(); position != positions.rend();
        ++position) {
     SCOPED_TRACE(
@@ -271,7 +270,7 @@ TEST(BucketStorageTest, BigData) {
 
   vector<uint32_t> timeSeriesIds;
   vector<uint64_t> storageIds;
-  DataBlockReader reader(shardId, dir.dirname());
+  DataBlockIO reader(shardId, dir.dirname());
   set<uint32_t> files = reader.findCompletedBlockFiles();
   ASSERT_EQ(1, files.size());
   auto blocks = reader.readBlocks(*files.begin(), timeSeriesIds, storageIds);

@@ -7,7 +7,7 @@
  * of patent rights can be found in the PATENTS file in the same directory.
  */
 
-#include "DataBlockReader.h"
+#include "DataBlockIO.h"
 
 #include "BucketStorage.h"
 
@@ -28,13 +28,11 @@ const std::string kCompletePrefix = "complete_block";
 const size_t kLargeFileBuffer = 1024 * 1024;
 } // namespace
 
-DataBlockReader::DataBlockReader(
-    int64_t shardId,
-    const std::string& dataDirectory)
+DataBlockIO::DataBlockIO(int64_t shardId, const std::string& dataDirectory)
     : dataFiles_(shardId, kDataPrefix, dataDirectory),
       completeFiles_(shardId, kCompletePrefix, dataDirectory) {}
 
-std::vector<std::unique_ptr<DataBlock>> DataBlockReader::readBlocks(
+std::vector<std::unique_ptr<DataBlock>> DataBlockIO::readBlocks(
     uint32_t position,
     std::vector<uint32_t>& timeSeriesIds,
     std::vector<uint64_t>& storageIds) {
@@ -117,7 +115,7 @@ std::vector<std::unique_ptr<DataBlock>> DataBlockReader::readBlocks(
   return pointers;
 }
 
-void DataBlockReader::write(
+void DataBlockIO::write(
     uint32_t position,
     const std::vector<std::shared_ptr<DataBlock>>& pages,
     uint32_t activePages,
@@ -197,24 +195,24 @@ void DataBlockReader::write(
   FileUtils::closeFile(completeFile, false);
 }
 
-std::set<uint32_t> DataBlockReader::findCompletedBlockFiles() const {
+std::set<uint32_t> DataBlockIO::findCompletedBlockFiles() const {
   const std::vector<int64_t> files = completeFiles_.ls();
   std::set<uint32_t> completedBlockFiles(files.begin(), files.end());
 
   return completedBlockFiles;
 }
 
-void DataBlockReader::clearTo(int64_t position) {
+void DataBlockIO::clearTo(int64_t position) {
   completeFiles_.clearTo(position);
   dataFiles_.clearTo(position);
 }
 
-void DataBlockReader::createDirectories() {
+void DataBlockIO::createDirectories() {
   dataFiles_.createDirectories();
   completeFiles_.createDirectories();
 }
 
-void DataBlockReader::remove(int64_t position) {
+void DataBlockIO::remove(int64_t position) {
   dataFiles_.remove(position);
   completeFiles_.remove(position);
 }

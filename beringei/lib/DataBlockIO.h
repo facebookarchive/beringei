@@ -21,9 +21,9 @@
 namespace facebook {
 namespace gorilla {
 
-class DataBlockReader {
+class DataBlockIO {
  public:
-  DataBlockReader(int64_t shardId, const std::string& dataDirectory);
+  DataBlockIO(int64_t shardId, const std::string& dataDirectory);
 
   // Returns allocated blocks for every page in the given position.
   // Fills in timeSeriesIds and storageIds with the metadata associated with
@@ -55,5 +55,5 @@ class DataBlockReader {
   FileUtils dataFiles_;
   FileUtils completeFiles_;
 };
-}
-} // facebook:gorilla
+} // namespace gorilla
+} // namespace facebook
