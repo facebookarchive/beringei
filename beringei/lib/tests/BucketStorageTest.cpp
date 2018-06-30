@@ -21,7 +21,7 @@ using namespace google;
 using namespace std;
 
 namespace {
-enum class StorageType { STORAGE_SINGLE, STORAGE_HOT_COLD };
+enum class StorageType { STORAGE_SINGLE, STORAGE_SINGLE_V1, STORAGE_HOT_COLD };
 }
 
 class BucketStorageHeatTest
@@ -35,9 +35,17 @@ class BucketStorageHeatTest
     switch (type) {
       case StorageType::STORAGE_SINGLE:
         return std::make_unique<BucketStorageSingle>(args...);
+
+      case StorageType::STORAGE_SINGLE_V1:
+        return std::make_unique<BucketStorageSingle>(
+            args...,
+            BucketStorage::kDefaultToNumBuckets,
+            DataBlockVersion::V_0_UNCOMPRESSED);
+
       case StorageType::STORAGE_HOT_COLD:
         return std::make_unique<BucketStorageHotCold>(args...);
     }
+    CHECK(false);
   }
 };
 
@@ -345,6 +353,7 @@ INSTANTIATE_TEST_CASE_P(
     BucketStorageHeatTest,
     ::testing::Values(
         StorageType::STORAGE_SINGLE,
+        StorageType::STORAGE_SINGLE_V1,
         StorageType::STORAGE_HOT_COLD));
 
 TEST(BucketStorageTest, BigDataStoreAfterCleanupWithoutFinalize) {

@@ -61,10 +61,11 @@ BucketStorageSingle::BucketStorageSingle(
     uint8_t numBuckets,
     int shardId,
     const std::string& dataDirectory,
-    uint8_t numMemoryBuckets)
+    uint8_t numMemoryBuckets,
+    DataBlockVersion writeVersion)
     : BucketStorage(numBuckets, shardId),
       newestPosition_(0),
-      dataBlockIO_(shardId, dataDirectory),
+      dataBlockIO_(shardId, dataDirectory, writeVersion),
       numMemoryBuckets_(
           numMemoryBuckets == kDefaultToNumBuckets ? numBuckets
                                                    : numMemoryBuckets) {

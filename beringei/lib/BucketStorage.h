@@ -164,7 +164,8 @@ class BucketStorageSingle : public BucketStorage {
       uint8_t numBuckets,
       int shardId,
       const std::string& dataDirectory,
-      uint8_t numMemoryBuckets = kDefaultToNumBuckets);
+      uint8_t numMemoryBuckets = kDefaultToNumBuckets,
+      DataBlockVersion writeVersion = DataBlockVersion::V_0);
 
   virtual ~BucketStorageSingle() override;
 

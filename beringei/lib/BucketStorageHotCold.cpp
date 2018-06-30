@@ -43,12 +43,17 @@ BucketStorageHotCold::BucketStorageHotCold(
       storage_{std::make_unique<BucketStorageSingle>(
                    numBuckets,
                    shardId,
-                   dataDirectory),
+                   dataDirectory,
+                   numBuckets,
+                   // Backwards compatible for downgrade
+                   DataBlockVersion::V_0),
                std::make_unique<BucketStorageSingle>(
                    numBuckets,
                    shardId,
                    getColdSubdirectory(dataDirectory),
-                   numColdMemoryBuckets)} {
+                   numColdMemoryBuckets,
+                   // Supports paging
+                   DataBlockVersion::V_0_UNCOMPRESSED)} {
   static folly::once_flag flag;
   folly::call_once(flag, [&]() {
     GorillaStatsManager::addStatExportType(kPositionMissingCold, SUM);

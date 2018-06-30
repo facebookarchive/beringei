@@ -21,9 +21,20 @@
 namespace facebook {
 namespace gorilla {
 
+enum class DataBlockVersion : int32_t {
+  V_UNKNOWN = -1,
+  V_0 = 0,
+  // Pageable
+  V_0_UNCOMPRESSED,
+  V_MAX
+};
+
 class DataBlockIO {
  public:
-  DataBlockIO(int64_t shardId, const std::string& dataDirectory);
+  DataBlockIO(
+      int64_t shardId,
+      const std::string& dataDirectory,
+      DataBlockVersion writeVersion = DataBlockVersion::V_0);
 
   // Returns allocated blocks for every page in the given position.
   // Fills in timeSeriesIds and storageIds with the metadata associated with
@@ -43,6 +54,7 @@ class DataBlockIO {
   // Returns the file ids for the completed blocks.
   std::set<uint32_t> findCompletedBlockFiles() const;
 
+  // Delete buckets older than the specified position
   void clearTo(int64_t position);
 
   // Create necessary persistence directories. NOP when they already exist
@@ -52,6 +64,8 @@ class DataBlockIO {
   void remove(int64_t id);
 
  private:
+  const DataBlockVersion writeVersion_;
+
   FileUtils dataFiles_;
   FileUtils completeFiles_;
 };
