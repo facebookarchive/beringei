@@ -13,8 +13,9 @@
 #include <folly/MapUtil.h>
 
 #include "beringei/lib/BucketLogWriter.h"
+#include "beringei/lib/BucketStorage.h"
+#include "beringei/lib/BucketStorageHotCold.h"
 #include "beringei/lib/BucketUtils.h"
-#include "beringei/lib/DataBlockReader.h"
 #include "beringei/lib/DataLog.h"
 #include "beringei/lib/GorillaStatsManager.h"
 #include "beringei/lib/GorillaTimeConstants.h"
@@ -85,13 +86,24 @@ BucketMap::BucketMap(
     BucketMap::State state,
     std::shared_ptr<LogReaderFactory> logReaderFactory,
     std::shared_ptr<KeyListReaderFactory> keyReaderFactory,
-    bool usePrimaryTopology)
+    bool usePrimaryTopology,
+    bool enableHotColdBuckets)
     : n_(buckets),
       windowSize_(windowSize),
       reliableDataStartTime_(0),
       lock_(),
       tableSize_(0),
-      storage_(new BucketStorageSingle(buckets, shardId, dataDirectory)),
+      storage_(
+          enableHotColdBuckets ? std::unique_ptr<BucketStorage>(
+                                     std::make_unique<BucketStorageHotCold>(
+                                         buckets,
+                                         shardId,
+                                         dataDirectory))
+                               : std::unique_ptr<BucketStorage>(
+                                     std::make_unique<BucketStorageSingle>(
+                                         buckets,
+                                         shardId,
+                                         dataDirectory))),
       state_(state),
       shardId_(shardId),
       dataDirectory_(dataDirectory),
@@ -121,6 +133,10 @@ BucketMap::~BucketMap() {
   if (usePrimaryTopology_) {
     stopStreamKeys();
   }
+}
+
+void BucketMap::createDirectories() {
+  storage_->createDirectories();
 }
 
 // Insert the given data point, creating a new row if necessary.
@@ -554,12 +570,11 @@ void BucketMap::readData() {
 
   Timer timer(true);
 
-  DataBlockReader reader(shardId_, dataDirectory_);
   {
     std::unique_lock<std::mutex> guard(unreadBlockFilesMutex_);
     int missingFiles = 0;
     try {
-      unreadBlockFiles_ = reader.findCompletedBlockFiles();
+      unreadBlockFiles_ = storage_->findCompletedPositions();
       if (unreadBlockFiles_.size() > 0) {
         missingFiles = checkForMissingBlockFiles();
         lastFinalizedBucket_ = *unreadBlockFiles_.rbegin();

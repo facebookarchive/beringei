@@ -11,6 +11,7 @@
 #include <string>
 
 #include "beringei/lib/BucketStorage.h"
+#include "beringei/lib/BucketStorageHotCold.h"
 #include "beringei/lib/DataBlockReader.h"
 
 using namespace ::testing;
@@ -19,8 +20,26 @@ using namespace facebook::gorilla;
 using namespace google;
 using namespace std;
 
-class BucketStorageHeatTest : public ::testing::Test,
-                              public ::testing::WithParamInterface<bool> {};
+namespace {
+enum class StorageType { STORAGE_SINGLE, STORAGE_HOT_COLD };
+}
+
+class BucketStorageHeatTest
+    : public ::testing::Test,
+      public ::testing::WithParamInterface<StorageType> {
+ protected:
+  template <typename... Types>
+  std::unique_ptr<BucketStorage> createStorage(
+      StorageType type,
+      Types... args) {
+    switch (type) {
+      case StorageType::STORAGE_SINGLE:
+        return std::make_unique<BucketStorageSingle>(args...);
+      case StorageType::STORAGE_HOT_COLD:
+        return std::make_unique<BucketStorageHotCold>(args...);
+    }
+  }
+};
 
 // Work with entries stored in successive positions
 class BucketStoragePersistenceTest : public ::testing::Test {
@@ -103,10 +122,11 @@ void BucketStoragePersistenceTest::storageFinalize(
 }
 
 TEST_P(BucketStorageHeatTest, SmallStoreAndFetch) {
-  const bool cold = GetParam();
-  BucketStorageSingle storage(5, 0, "");
+  auto type = GetParam();
+  auto storage = createStorage(type, 5, 0, "");
+  bool cold = type == StorageType::STORAGE_HOT_COLD;
 
-  auto id = storage.store(11, "test", 4, 100, 42, cold);
+  auto id = storage->store(11, "test", 4, 100, 42, cold);
   ASSERT_NE(BucketStorage::kInvalidId, id);
   ASSERT_EQ(BucketStorage::coldId(id), cold);
 
@@ -115,7 +135,7 @@ TEST_P(BucketStorageHeatTest, SmallStoreAndFetch) {
 
   ASSERT_EQ(
       BucketStorage::FetchStatus::SUCCESS,
-      storage.fetch(11, id, str, itemCount));
+      storage->fetch(11, id, str, itemCount));
   ASSERT_EQ("test", str);
   ASSERT_EQ(100, itemCount);
 }
@@ -277,9 +297,8 @@ TEST(BucketStorageTest, BigData) {
 }
 
 TEST_P(BucketStorageHeatTest, BigDataFromDisk) {
+  const StorageType type = GetParam();
   TemporaryDirectory dir("gorilla_data_block");
-  boost::filesystem::create_directories(
-      FileUtils::joinPaths(dir.dirname(), "12"));
   int64_t shardId = 12;
 
   vector<BucketStorage::BucketStorageId> ids(5);
@@ -287,24 +306,25 @@ TEST_P(BucketStorageHeatTest, BigDataFromDisk) {
 
   // Scoped BucketStorageSingle object to let the destructor free the memory.
   {
-    BucketStorageSingle storage(10, shardId, dir.dirname());
+    auto storage = createStorage(type, 10, shardId, dir.dirname());
+    storage->createDirectories();
     for (int i = 0; i < 5; i++) {
       string data(30000, '0' + i);
       bool cold = i % 5;
-      ids[i] = storage.store(
+      ids[i] = storage->store(
           100, data.c_str(), data.length(), 100 + i, timeSeriesIds[i], cold);
       ASSERT_NE(BucketStorage::kInvalidId, ids[i]);
       EXPECT_EQ(BucketStorage::coldId(ids[i]), cold);
     }
-    storage.finalizeBucket(100);
+    storage->finalizeBucket(100);
 
     /* sleep override */ usleep(10000);
   }
 
   vector<uint32_t> timeSeriesIds2;
   vector<uint64_t> storageIds;
-  BucketStorageSingle storage(10, shardId, dir.dirname());
-  ASSERT_TRUE(storage.loadPosition(100, timeSeriesIds2, storageIds));
+  auto storage = createStorage(type, 10, shardId, dir.dirname());
+  ASSERT_TRUE(storage->loadPosition(100, timeSeriesIds2, storageIds));
   ASSERT_EQ(ids, storageIds);
   ASSERT_EQ(timeSeriesIds, timeSeriesIds2);
 
@@ -312,21 +332,21 @@ TEST_P(BucketStorageHeatTest, BigDataFromDisk) {
     string expectedData(30000, '0' + i);
     string str;
     uint16_t itemCount;
-    bool cold = i % 5;
-
     ASSERT_EQ(
         BucketStorage::FetchStatus::SUCCESS,
-        storage.fetch(100, ids[i], str, itemCount));
+        storage->fetch(100, ids[i], str, itemCount));
     ASSERT_EQ(expectedData, str);
     ASSERT_EQ(100 + i, itemCount);
-    EXPECT_EQ(BucketStorage::coldId(ids[i]), cold);
+    EXPECT_EQ(BucketStorage::coldId(ids[i]), (bool)(i % 5));
   }
 }
 
 INSTANTIATE_TEST_CASE_P(
     Cold,
     BucketStorageHeatTest,
-    ::testing::Values(false, true));
+    ::testing::Values(
+        StorageType::STORAGE_SINGLE,
+        StorageType::STORAGE_HOT_COLD));
 
 TEST(BucketStorageTest, BigDataStoreAfterCleanupWithoutFinalize) {
   TemporaryDirectory dir("gorilla_data_block");

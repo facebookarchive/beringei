@@ -36,6 +36,8 @@ const uint32_t kMaxPageCount = 131072;
 // kMaxPageCount * kPageSize = 8GB
 const uint32_t BucketStorage::kPageSize = kDataBlockSize;
 
+const uint8_t BucketStorage::kDefaultToNumBuckets = 0;
+
 // Zero can be used as the invalid ID because no valid ID will ever be zero
 const BucketStorage::BucketStorageId BucketStorage::kInvalidId = 0;
 
@@ -61,14 +63,25 @@ BucketStorage::~BucketStorage() {}
 BucketStorageSingle::BucketStorageSingle(
     uint8_t numBuckets,
     int shardId,
-    const std::string& dataDirectory)
+    const std::string& dataDirectory,
+    uint8_t numMemoryBuckets)
     : BucketStorage(numBuckets, shardId),
       newestPosition_(0),
       dataBlockReader_(shardId, dataDirectory),
       dataFiles_(shardId, kDataPrefix, dataDirectory),
-      completeFiles_(shardId, kCompletePrefix, dataDirectory) {
+      completeFiles_(shardId, kCompletePrefix, dataDirectory),
+      numMemoryBuckets_(
+          numMemoryBuckets == kDefaultToNumBuckets ? numBuckets
+                                                   : numMemoryBuckets) {
   data_.reset(new BucketData[numBuckets]);
   enable();
+}
+
+BucketStorageSingle::~BucketStorageSingle() {}
+
+void BucketStorageSingle::createDirectories() {
+  dataFiles_.createDirectories();
+  completeFiles_.createDirectories();
 }
 
 BucketStorage::BucketStorageId BucketStorageSingle::store(
@@ -183,7 +196,8 @@ BucketStorage::FetchStatus BucketStorageSingle::fetch(
     uint32_t position,
     BucketStorage::BucketStorageId id,
     std::string& data,
-    uint16_t& itemCount) {
+    uint16_t& itemCount,
+    FetchType* type) {
   if (id == kInvalidId || id == kDisabledId) {
     return FAILURE;
   }
@@ -216,10 +230,17 @@ BucketStorage::FetchStatus BucketStorageSingle::fetch(
   if (pageIndex < data_[bucket].pages.size() &&
       data_[bucket].pages[pageIndex]) {
     data.assign(data_[bucket].pages[pageIndex]->data + pageOffset, dataLength);
+    if (type) {
+      *type = MEMORY;
+    }
     return SUCCESS;
   }
 
   return FAILURE;
+}
+
+std::set<uint32_t> BucketStorageSingle::findCompletedPositions() {
+  return dataBlockReader_.findCompletedBlockFiles();
 }
 
 bool BucketStorageSingle::loadPosition(
@@ -292,6 +313,10 @@ void BucketStorageSingle::enable() {
     data_[i].activePages = 0;
     data_[i].lastPageBytesUsed = 0;
   }
+}
+
+uint8_t BucketStorageSingle::numMemoryBuckets(bool /* unused */) const {
+  return numMemoryBuckets_;
 }
 
 BucketStorage::BucketStorageId BucketStorage::createId(

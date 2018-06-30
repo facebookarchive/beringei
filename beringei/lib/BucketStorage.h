@@ -13,6 +13,7 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -37,6 +38,7 @@ class BucketStorage {
   static const BucketStorageId kInvalidId;
   static const BucketStorageId kDisabledId;
   static const uint32_t kPageSize;
+  static const uint8_t kDefaultToNumBuckets;
 
   static const std::string kDataPrefix;
 
@@ -48,12 +50,16 @@ class BucketStorage {
   BucketStorage(uint8_t numBuckets, int shardId);
   virtual ~BucketStorage();
 
+  // Create necessary persistence directories. NOP when they already exist
+  virtual void createDirectories() = 0;
+
   // Stores data.
   //
   // `position` is the bucket position from the beginning before modulo.
   // `data` is the data to be stored.
   // `dataLength` is the length of the data in bytes
   // `itemCount` is the item count that will be returned when fetching data
+  // `cold` is true for cold which may have different eviction policies
   //
   // Returns an id that can be used to fetch data later, or kInvalidId if data
   // could not be stored. This can happen if data is tried to be stored for
@@ -68,6 +74,7 @@ class BucketStorage {
       bool cold = false) = 0;
 
   enum FetchStatus { SUCCESS, FAILURE };
+  enum FetchType { NONE, MEMORY, INVALID, DISK, MAX };
 
   // Fetches data.
   //
@@ -77,7 +84,11 @@ class BucketStorage {
       uint32_t position,
       BucketStorageId id,
       std::string& data,
-      uint16_t& itemCount) = 0;
+      uint16_t& itemCount,
+      FetchType* type = nullptr) = 0;
+
+  // Returns completed positions
+  virtual std::set<uint32_t> findCompletedPositions() = 0;
 
   // Read all blocks for a given position into memory.
   //
@@ -85,6 +96,8 @@ class BucketStorage {
   // false if it wasn't, due to disk failure or the position being
   // expired or disabled. Fills in timeSeriesIds and storageIds with
   // the metadata associated with the blocks.
+  //
+  // Must be called from newest (highest) to oldest position
   virtual bool loadPosition(
       uint32_t position,
       std::vector<uint32_t>& timeSeriesIds,
@@ -96,9 +109,15 @@ class BucketStorage {
   // Enables a previously disabled storage.
   virtual void enable() = 0;
 
-  uint8_t numBuckets() {
+  // @return number of buckets persisted
+  uint8_t numBuckets() const {
     return numBuckets_;
   }
+
+  // @param[in] cold specifies heat, where hot and cold may have
+  // different eviction policies
+  // @return number of buckets maintained in memory
+  virtual uint8_t numMemoryBuckets(bool cold) const = 0;
 
   static void parseId(
       BucketStorageId id,
@@ -107,7 +126,8 @@ class BucketStorage {
       uint16_t& dataLength,
       uint16_t& itemCount);
 
-  static bool coldId(BucketStorageId);
+  // Returns true when id was cold when stored
+  static bool coldId(BucketStorageId id);
 
   // Finalizes a bucket at the given position. After calling this no
   // more data can be stored in this bucket.
@@ -131,6 +151,10 @@ class BucketStorage {
 
   const uint8_t numBuckets_;
   const int shardId_;
+
+ private:
+  BucketStorage(const BucketStorage&) = delete;
+  BucketStorage& operator=(const BucketStorage&) = delete;
 };
 
 // class BucketStorageSingle
@@ -144,9 +168,12 @@ class BucketStorageSingle : public BucketStorage {
   BucketStorageSingle(
       uint8_t numBuckets,
       int shardId,
-      const std::string& dataDirectory);
+      const std::string& dataDirectory,
+      uint8_t numMemoryBuckets = kDefaultToNumBuckets);
 
-  virtual ~BucketStorageSingle() override {}
+  virtual ~BucketStorageSingle() override;
+
+  virtual void createDirectories() override;
 
   virtual BucketStorageId store(
       uint32_t position,
@@ -160,7 +187,10 @@ class BucketStorageSingle : public BucketStorage {
       uint32_t position,
       BucketStorageId id,
       std::string& data,
-      uint16_t& itemCount) override;
+      uint16_t& itemCount,
+      FetchType* type = nullptr) override;
+
+  virtual std::set<uint32_t> findCompletedPositions() override;
 
   virtual bool loadPosition(
       uint32_t position,
@@ -171,6 +201,8 @@ class BucketStorageSingle : public BucketStorage {
 
   virtual void enable() override;
 
+  virtual uint8_t numMemoryBuckets(bool cold) const override;
+
   virtual void finalizeBucket(uint32_t position) override;
 
   virtual void deleteBucketsOlderThan(uint32_t position) override;
@@ -178,6 +210,9 @@ class BucketStorageSingle : public BucketStorage {
   virtual std::pair<uint64_t, uint64_t> getPagesSize() override;
 
  private:
+  BucketStorageSingle(const BucketStorageSingle&) = delete;
+  BucketStorageSingle& operator=(const BucketStorageSingle&) = delete;
+
   void write(
       uint32_t position,
       const std::vector<std::shared_ptr<DataBlock>>& pages,
@@ -224,6 +259,8 @@ class BucketStorageSingle : public BucketStorage {
 
   FileUtils dataFiles_;
   FileUtils completeFiles_;
+
+  const uint8_t numMemoryBuckets_;
 };
-}
-} // facebook:gorilla
+} // namespace gorilla
+} // namespace facebook

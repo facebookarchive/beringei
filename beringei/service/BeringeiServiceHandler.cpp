@@ -95,6 +95,11 @@ DEFINE_int32(
     -1,
     "Only return cold data from the first N buckets when positive");
 
+DEFINE_bool(
+    enable_hot_cold_buckets,
+    false,
+    "Segregate cold data into separate buckets");
+
 namespace facebook {
 namespace gorilla {
 
@@ -208,11 +213,11 @@ BeringeiServiceHandler::BeringeiServiceHandler(
         bucketLogWriter,
         BucketMap::UNOWNED,
         logReaderFactory_,
-        keyReaderFactory_);
+        keyReaderFactory_,
+        FLAGS_enable_hot_cold_buckets);
 
     if (FLAGS_create_directories) {
-      FileUtils utils(i, "", FLAGS_data_directory);
-      utils.createDirectories();
+      map->createDirectories();
     }
 
     // If we won't be refreshing the shard map, then assume we own everything.

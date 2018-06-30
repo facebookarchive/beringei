@@ -43,9 +43,40 @@ class BucketedTimeSeries {
       uint32_t timeSeriesId,
       uint16_t* category);
 
+  using FetchType = BucketStorage::FetchType;
+
+  class GetCounts {
+   public:
+    GetCounts() : blockCountBySource_{}, coldBlocks_() {}
+
+    void blockFetched(FetchType source, bool cold = false) {
+      ++blockCountBySource_[source];
+      if (cold) {
+        ++coldBlocks_;
+      }
+    }
+
+    uint8_t getBlockCount(FetchType source) const {
+      return blockCountBySource_[source];
+    }
+
+    uint8_t getColdBlocks() const {
+      return coldBlocks_;
+    }
+
+   private:
+    std::array<uint8_t, FetchType::MAX> blockCountBySource_;
+    uint8_t coldBlocks_;
+  };
+
   // Read out buckets between begin and end inclusive, including current one.
   typedef std::vector<TimeSeriesBlock> Output;
-  void get(uint32_t begin, uint32_t end, Output& out, BucketStorage* storage);
+  void get(
+      uint32_t begin,
+      uint32_t end,
+      Output& out,
+      BucketStorage* storage,
+      GetCounts* = nullptr);
 
   // Returns a tuple representing:
   //   1) the number of points in the active stream.

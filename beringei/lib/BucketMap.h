@@ -88,8 +88,11 @@ class BucketMap {
       State state,
       std::shared_ptr<LogReaderFactory> logReaderFactory,
       std::shared_ptr<KeyListReaderFactory> keyReaderFactory,
-      bool usePrimaryArchitecture = false);
+      bool usePrimaryArchitecture = false,
+      bool enableHotColdBuckets = false);
   virtual ~BucketMap();
+
+  virtual void createDirectories();
 
   // Insert the given data point, creating a new row if necessary.
   // Returns the number of new rows created (0 or 1) and the number of

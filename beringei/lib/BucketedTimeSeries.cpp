@@ -24,6 +24,16 @@ DEFINE_uint32(
     0,
     "Time series queried more buckets ago are considered cold");
 
+DEFINE_bool(
+    enable_cold_writes,
+    false,
+    "Enable persistently flagging cold data buckets");
+
+DEFINE_bool(
+    all_buckets_memory,
+    false,
+    "Keep buckets in memory and just use eviction thresholds for stats.");
+
 namespace facebook {
 namespace gorilla {
 
@@ -107,7 +117,8 @@ void BucketedTimeSeries::get(
     uint32_t begin,
     uint32_t end,
     std::vector<TimeSeriesBlock>& out,
-    BucketStorage* storage) {
+    BucketStorage* storage,
+    GetCounts* countsOut) {
   uint8_t n = storage->numBuckets();
   out.reserve(out.size() + std::min<uint32_t>(n + 1, end - begin + 1));
 
@@ -117,15 +128,29 @@ void BucketedTimeSeries::get(
   end = std::min(end, current_ >= 1 ? current_ - 1 : 0);
   begin = std::max(begin, current_ >= n ? current_ - n : 0);
 
+  GetCounts counts{};
+
   for (int i = begin; i <= end; i++) {
     TimeSeriesBlock outBlock;
     uint16_t count;
 
+    BucketStorage::BucketStorageId id = blocks_[i % n];
+    BucketStorage::FetchType type = BucketStorage::FetchType::NONE;
     BucketStorage::FetchStatus status =
-        storage->fetch(i, blocks_[i % n], outBlock.data, count);
+        storage->fetch(i, id, outBlock.data, count, &type);
     if (status == BucketStorage::FetchStatus::SUCCESS) {
       outBlock.count = count;
       out.push_back(std::move(outBlock));
+      bool cold = BucketStorage::coldId(id);
+      if (!FLAGS_all_buckets_memory) {
+        counts.blockFetched(type, cold);
+      } else if (i + storage->numMemoryBuckets(cold) + 1 >= current_) {
+        counts.blockFetched(BucketStorage::FetchType::MEMORY, cold);
+      } else {
+        counts.blockFetched(BucketStorage::FetchType::DISK, cold);
+      }
+    } else {
+      counts.blockFetched(BucketStorage::FetchType::INVALID, false /* cold */);
     }
   }
 
@@ -133,6 +158,11 @@ void BucketedTimeSeries::get(
     out.emplace_back();
     out.back().count = count_;
     stream_.readData(out.back().data);
+    counts.blockFetched(BucketStorage::FetchType::MEMORY, false /* cold */);
+  }
+
+  if (countsOut) {
+    *countsOut = counts;
   }
 }
 
@@ -186,7 +216,7 @@ void BucketedTimeSeries::open(
           stream_.size(),
           count_,
           timeSeriesId,
-          getCold());
+          getCold() && FLAGS_enable_cold_writes);
     } else {
       block = BucketStorage::kInvalidId;
     }

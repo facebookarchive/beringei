@@ -21,6 +21,8 @@
 DECLARE_int32(mintimestampdelta);
 // Time series queried more buckets ago are considered cold
 DECLARE_uint32(cold_bucket_threshold);
+// Enable persistently flagging cold data buckets
+DECLARE_bool(enable_cold_writes);
 
 using namespace ::testing;
 using namespace facebook::gorilla;
@@ -70,15 +72,22 @@ class BucketedTimeSeriesTest2 : public testing::Test {
  public:
   BucketedTimeSeriesTest2()
       : flagMinTimestampDelta_(FLAGS_mintimestampdelta),
-        flagColdBucketThreshold_(FLAGS_cold_bucket_threshold) {}
+        flagColdBucketThreshold_(FLAGS_cold_bucket_threshold),
+        flagEnableColdWrites_(FLAGS_enable_cold_writes) {}
   ~BucketedTimeSeriesTest2() {
     FLAGS_mintimestampdelta = flagMinTimestampDelta_;
     FLAGS_cold_bucket_threshold = flagColdBucketThreshold_;
+    FLAGS_enable_cold_writes = flagEnableColdWrites_;
   }
 
  private:
   const decltype(FLAGS_mintimestampdelta) flagMinTimestampDelta_;
   const decltype(FLAGS_cold_bucket_threshold) flagColdBucketThreshold_;
+  const decltype(FLAGS_enable_cold_writes) flagEnableColdWrites_;
+};
+
+class BucketedTimeSeriesColdTest : public BucketedTimeSeriesTest2,
+                                   public ::testing::WithParamInterface<bool> {
 };
 
 class BucketedTimeSeriesTest : public BucketedTimeSeriesTest2 {
@@ -121,8 +130,9 @@ TEST_F(BucketedTimeSeriesTest, TimeSeries) {
   test<BucketedTimeSeries>(bucket, &storage, source0(), ts0());
 }
 
-TEST_F(BucketedTimeSeriesTest2, QueriedBucketsAgo) {
+TEST_P(BucketedTimeSeriesColdTest, QueriedBucketsAgo) {
   FLAGS_cold_bucket_threshold = 0;
+  FLAGS_enable_cold_writes = GetParam();
   BucketedTimeSeries bucket;
   bucket.reset(5, 0, 0);
   BucketStorageSingle storage(5, 0, "");
@@ -136,6 +146,7 @@ TEST_F(BucketedTimeSeriesTest2, QueriedBucketsAgo) {
 
   // Still no queries.
   ASSERT_EQ(255, bucket.getQueriedBucketsAgo());
+  // --enable_cold_writes only impacts persistence, not hot/cold determination
   ASSERT_TRUE(bucket.getCold());
 
   bucket.setQueried();
@@ -149,6 +160,11 @@ TEST_F(BucketedTimeSeriesTest2, QueriedBucketsAgo) {
   ASSERT_EQ(1, bucket.getQueriedBucketsAgo());
   ASSERT_TRUE(bucket.getCold());
 }
+
+INSTANTIATE_TEST_CASE_P(
+    EnableColdWrites,
+    BucketedTimeSeriesColdTest,
+    ::testing::Values(false, true));
 
 TEST_F(BucketedTimeSeriesTest2, MinTimestampDeltaCheck) {
   BucketedTimeSeries bucket;
