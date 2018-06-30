@@ -29,11 +29,11 @@ const uint16_t kMaxItemCount = 32767;
 // To fit in 15 bits.
 const uint16_t kMaxDataLength = 32767;
 
-// For page index to fit in 18 bits.
-const uint32_t kMaxPageCount = 262144;
+// For page index to fit in 17 bits.
+const uint32_t kMaxPageCount = 131072;
 
 // Store data in 64K chunks.
-// kMaxPageCount * kPageSize = 16GB
+// kMaxPageCount * kPageSize = 8GB
 const uint32_t BucketStorage::kPageSize = kDataBlockSize;
 
 // Zero can be used as the invalid ID because no valid ID will ever be zero
@@ -56,8 +56,10 @@ static const std::string kExpiredBucketFetch = "expired_bucket_fetches";
 BucketStorage::BucketStorage(
     uint8_t numBuckets,
     int shardId,
-    const std::string& dataDirectory)
-    : numBuckets_(numBuckets),
+    const std::string& dataDirectory,
+    bool cold)
+    : cold_(cold),
+      numBuckets_(numBuckets),
       newestPosition_(0),
       dataBlockReader_(shardId, dataDirectory),
       dataFiles_(shardId, kDataPrefix, dataDirectory),
@@ -292,11 +294,14 @@ BucketStorage::BucketStorageId BucketStorage::createId(
     uint32_t pageIndex,
     uint32_t pageOffset,
     uint16_t dataLength,
-    uint16_t itemCount) {
+    uint16_t itemCount) const {
   // Store all the values in 64 bits.
   BucketStorageId id = 0;
 
-  // Using the first 18 bits.
+  // Using the first bit.
+  id += (uint64_t)cold_ << 63;
+
+  // Using the next 17 bits.
   id += (uint64_t)pageIndex << 46;
 
   // The next 16 bits.
@@ -317,10 +322,14 @@ void BucketStorage::parseId(
     uint32_t& pageOffset,
     uint16_t& dataLength,
     uint16_t& itemCount) {
-  pageIndex = id >> 46;
+  pageIndex = (id >> 46) & (kMaxPageCount - 1);
   pageOffset = (id >> 30) & (kPageSize - 1);
   dataLength = (id >> 15) & kMaxDataLength;
   itemCount = id & kMaxItemCount;
+}
+
+bool BucketStorage::coldId(BucketStorageId id) {
+  return id != kInvalidId && id != kDisabledId && ((id >> 63) & 1);
 }
 
 void BucketStorage::finalizeBucket(uint32_t position) {

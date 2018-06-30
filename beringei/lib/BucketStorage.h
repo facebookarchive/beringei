@@ -50,7 +50,8 @@ class BucketStorage {
   BucketStorage(
       uint8_t numBuckets,
       int shardId,
-      const std::string& dataDirectory);
+      const std::string& dataDirectory,
+      bool cold = false);
 
   virtual ~BucketStorage() {}
 
@@ -112,6 +113,8 @@ class BucketStorage {
       uint16_t& dataLength,
       uint16_t& itemCount);
 
+  static bool coldId(BucketStorageId);
+
   // Finalizes a bucket at the given position. After calling this no
   // more data can be stored in this bucket.
   void finalizeBucket(uint32_t position);
@@ -129,7 +132,7 @@ class BucketStorage {
       uint32_t pageIndex,
       uint32_t pageOffset,
       uint16_t dataLength,
-      uint16_t itemCount);
+      uint16_t itemCount) const;
 
   void write(
       uint32_t position,
@@ -171,6 +174,7 @@ class BucketStorage {
     std::mutex pagesMutex;
   };
 
+  const bool cold_;
   const uint8_t numBuckets_;
   int newestPosition_;
   std::unique_ptr<BucketData[]> data_;

@@ -19,6 +19,9 @@ using namespace facebook::gorilla;
 using namespace google;
 using namespace std;
 
+class BucketStorageTestHeat : public ::testing::Test,
+                              public ::testing::WithParamInterface<bool> {};
+
 // Work with entries stored in successive positions
 class BucketStoragePersistenceTest : public ::testing::Test {
  protected:
@@ -99,11 +102,13 @@ void BucketStoragePersistenceTest::storageFinalize(
   storage.finalizeBucket(kPositionBase_ + offset);
 }
 
-TEST(BucketStorageTest, SmallStoreAndFetch) {
-  BucketStorage storage(5, 0, "");
+TEST_P(BucketStorageTestHeat, SmallStoreAndFetch) {
+  const bool cold = GetParam();
+  BucketStorage storage(5, 0, "", cold);
 
   auto id = storage.store(11, "test", 4, 100);
   ASSERT_NE(BucketStorage::kInvalidId, id);
+  ASSERT_EQ(BucketStorage::coldId(id), cold);
 
   string str;
   uint16_t itemCount;
@@ -212,18 +217,20 @@ TEST(BucketStorageTest, SingleBucket) {
   ASSERT_EQ(100, itemCount);
 }
 
-TEST(BucketStorageTest, BigData) {
+TEST_P(BucketStorageTestHeat, BigData) {
+  const bool cold = GetParam();
   TemporaryDirectory dir("gorilla_data_block");
   boost::filesystem::create_directories(
       FileUtils::joinPaths(dir.dirname(), "12"));
   int64_t shardId = 12;
 
-  BucketStorage storage(10, shardId, dir.dirname());
+  BucketStorage storage(10, shardId, dir.dirname(), cold);
   vector<BucketStorage::BucketStorageId> ids(5);
   for (int i = 0; i < 5; i++) {
     string data(30000, '0' + i);
     ids[i] = storage.store(100, data.c_str(), data.length(), 100 + i, i * 10);
     ASSERT_NE(BucketStorage::kInvalidId, ids[i]);
+    EXPECT_EQ(BucketStorage::coldId(ids[i]), cold);
   }
   storage.finalizeBucket(100);
 
@@ -239,7 +246,7 @@ TEST(BucketStorageTest, BigData) {
     ASSERT_EQ(100 + i, itemCount);
   }
 
-  usleep(10000);
+  /* sleep override */ usleep(10000);
 
   vector<uint32_t> timeSeriesIds;
   vector<uint64_t> storageIds;
@@ -258,6 +265,7 @@ TEST(BucketStorageTest, BigData) {
     ASSERT_EQ(100 + i, itemCount);
     ASSERT_EQ(30000, dataLength);
     ASSERT_LT(pageIndex, blocks.size());
+    EXPECT_EQ(BucketStorage::coldId(ids[i]), cold);
 
     string expectedData(30000, '0' + i);
     string actualData(blocks[pageIndex]->data + pageOffset, 30000);
@@ -266,7 +274,8 @@ TEST(BucketStorageTest, BigData) {
   }
 }
 
-TEST(BucketStorageTest, BigDataFromDisk) {
+TEST_P(BucketStorageTestHeat, BigDataFromDisk) {
+  const bool cold = GetParam();
   TemporaryDirectory dir("gorilla_data_block");
   boost::filesystem::create_directories(
       FileUtils::joinPaths(dir.dirname(), "12"));
@@ -277,16 +286,17 @@ TEST(BucketStorageTest, BigDataFromDisk) {
 
   // Scoped BucketStorage object to let the destructor free the memory.
   {
-    BucketStorage storage(10, shardId, dir.dirname());
+    BucketStorage storage(10, shardId, dir.dirname(), cold);
     for (int i = 0; i < 5; i++) {
       string data(30000, '0' + i);
       ids[i] = storage.store(
           100, data.c_str(), data.length(), 100 + i, timeSeriesIds[i]);
       ASSERT_NE(BucketStorage::kInvalidId, ids[i]);
+      EXPECT_EQ(BucketStorage::coldId(ids[i]), cold);
     }
     storage.finalizeBucket(100);
 
-    usleep(10000);
+    /* sleep override */ usleep(10000);
   }
 
   vector<uint32_t> timeSeriesIds2;
@@ -306,8 +316,14 @@ TEST(BucketStorageTest, BigDataFromDisk) {
         storage.fetch(100, ids[i], str, itemCount));
     ASSERT_EQ(expectedData, str);
     ASSERT_EQ(100 + i, itemCount);
+    EXPECT_EQ(BucketStorage::coldId(ids[i]), cold);
   }
 }
+
+INSTANTIATE_TEST_CASE_P(
+    Cold,
+    BucketStorageTestHeat,
+    ::testing::Values(false, true));
 
 TEST(BucketStorageTest, BigDataStoreAfterCleanupWithoutFinalize) {
   TemporaryDirectory dir("gorilla_data_block");
@@ -362,7 +378,7 @@ TEST(BucketStorageTest, DedupedDataFromDisk) {
     }
     storage.finalizeBucket(100);
 
-    usleep(10000);
+    /* sleep override */ usleep(10000);
   }
 
   ASSERT_EQ(dedupedValues.size(), dedupedIds.size());
@@ -497,7 +513,7 @@ TEST(BucketStorageTest, DisableAndEnableAndReuse) {
   ASSERT_EQ(101, itemCount);
 }
 
-TEST_F(BucketStoragePersistenceTest, StoreAfterFinalize) {
+TEST(BucketStorageTest, StoreAfterFinalize) {
   TemporaryDirectory dir("gorilla_test");
   boost::filesystem::create_directories(
       FileUtils::joinPaths(dir.dirname(), "0"));
