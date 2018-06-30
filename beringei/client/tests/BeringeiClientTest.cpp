@@ -267,7 +267,7 @@ class BeringeiClientTest : public testing::Test {
     BucketedTimeSeries b1, b2;
     b1.reset(5, 0, 0);
     b2.reset(5, 0, 0);
-    BucketStorage storage(5, 0, "");
+    BucketStorageSingle storage(5, 0, "");
 
     for (int i = 19; i < 22; i++) {
       TimeValuePair tv;

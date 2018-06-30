@@ -19,6 +19,11 @@ DEFINE_int32(
     30,
     "Values coming in faster than this are considered spam");
 
+DEFINE_uint32(
+    cold_bucket_threshold,
+    0,
+    "Time series queried more buckets ago are considered cold");
+
 namespace facebook {
 namespace gorilla {
 
@@ -176,7 +181,12 @@ void BucketedTimeSeries::open(
       }
       // Copy out the active data.
       block = storage->store(
-          current_, stream_.getDataPtr(), stream_.size(), count_, timeSeriesId);
+          current_,
+          stream_.getDataPtr(),
+          stream_.size(),
+          count_,
+          timeSeriesId,
+          getCold());
     } else {
       block = BucketStorage::kInvalidId;
     }
@@ -306,5 +316,10 @@ uint32_t BucketedTimeSeries::getLastUpdateTime(
 int32_t BucketedTimeSeries::getBucketAge(uint32_t bucket) const {
   return current_ - bucket;
 }
+
+bool BucketedTimeSeries::getCold() const {
+  return queriedBucketsAgo_ > FLAGS_cold_bucket_threshold;
+}
+
 } // namespace gorilla
 } // namespace facebook

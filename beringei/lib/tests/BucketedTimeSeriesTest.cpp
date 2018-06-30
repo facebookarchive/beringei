@@ -7,6 +7,7 @@
  * of patent rights can be found in the PATENTS file in the same directory.
  */
 
+#include <gflags/gflags.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <tuple>
@@ -15,6 +16,11 @@
 #include "beringei/lib/BucketStorage.h"
 #include "beringei/lib/BucketedTimeSeries.h"
 #include "beringei/lib/TimeSeries.h"
+
+// Values coming in faster than this are considered spam
+DECLARE_int32(mintimestampdelta);
+// Time series queried more buckets ago are considered cold
+DECLARE_uint32(cold_bucket_threshold);
 
 using namespace ::testing;
 using namespace facebook::gorilla;
@@ -60,7 +66,22 @@ static TimeValuePair makeTV(double v, int64_t t) {
   return tv;
 }
 
-class BucketedTimeSeriesTest : public testing::Test {
+class BucketedTimeSeriesTest2 : public testing::Test {
+ public:
+  BucketedTimeSeriesTest2()
+      : flagMinTimestampDelta_(FLAGS_mintimestampdelta),
+        flagColdBucketThreshold_(FLAGS_cold_bucket_threshold) {}
+  ~BucketedTimeSeriesTest2() {
+    FLAGS_mintimestampdelta = flagMinTimestampDelta_;
+    FLAGS_cold_bucket_threshold = flagColdBucketThreshold_;
+  }
+
+ private:
+  const decltype(FLAGS_mintimestampdelta) flagMinTimestampDelta_;
+  const decltype(FLAGS_cold_bucket_threshold) flagColdBucketThreshold_;
+};
+
+class BucketedTimeSeriesTest : public BucketedTimeSeriesTest2 {
  protected:
   void SetUp() override {
     tv[0] = makeTV(0.0, 60);
@@ -96,14 +117,15 @@ class BucketedTimeSeriesTest : public testing::Test {
 TEST_F(BucketedTimeSeriesTest, TimeSeries) {
   BucketedTimeSeries bucket;
   bucket.reset(5, 0, 0);
-  BucketStorage storage(5, 0, "");
+  BucketStorageSingle storage(5, 0, "");
   test<BucketedTimeSeries>(bucket, &storage, source0(), ts0());
 }
 
-TEST(BucketedTimeSeriesTest2, QueriedBucketsAgo) {
+TEST_F(BucketedTimeSeriesTest2, QueriedBucketsAgo) {
+  FLAGS_cold_bucket_threshold = 0;
   BucketedTimeSeries bucket;
   bucket.reset(5, 0, 0);
-  BucketStorage storage(5, 0, "");
+  BucketStorageSingle storage(5, 0, "");
 
   // No queries yet.
   ASSERT_EQ(255, bucket.getQueriedBucketsAgo());
@@ -114,25 +136,28 @@ TEST(BucketedTimeSeriesTest2, QueriedBucketsAgo) {
 
   // Still no queries.
   ASSERT_EQ(255, bucket.getQueriedBucketsAgo());
+  ASSERT_TRUE(bucket.getCold());
 
   bucket.setQueried();
 
   // Was just queried.
   ASSERT_EQ(0, bucket.getQueriedBucketsAgo());
+  ASSERT_FALSE(bucket.getCold());
   bucket.put(2, value, &storage, 12, nullptr);
 
   // New bucket started after last get
   ASSERT_EQ(1, bucket.getQueriedBucketsAgo());
+  ASSERT_TRUE(bucket.getCold());
 }
 
-TEST(BucketedTimeSeriesTest2, MinTimestampDeltaCheck) {
+TEST_F(BucketedTimeSeriesTest2, MinTimestampDeltaCheck) {
   BucketedTimeSeries bucket;
   bucket.reset(5, 0, 0);
-  BucketStorage storage(5, 0, "");
+  BucketStorageSingle storage(5, 0, "");
 
   uint32_t timeSeriesId = 0;
   uint16_t* timeSeriesCategory = nullptr;
-  uint32_t defaultMinTimestampDelta = 30;
+  uint32_t defaultMinTimestampDelta = FLAGS_mintimestampdelta;
   uint32_t bucketId;
   TimeValuePair tvPair;
 
@@ -191,12 +216,12 @@ TEST(BucketedTimeSeriesTest2, MinTimestampDeltaCheck) {
       bucket.put(bucketId, tvPair, &storage, timeSeriesId, timeSeriesCategory));
 }
 
-TEST(BucketedTimeSeriesTest2, MinimumBucketAndTimestamp) {
+TEST_F(BucketedTimeSeriesTest2, MinimumBucketAndTimestamp) {
   BucketedTimeSeries b;
-  BucketStorage s(5, 0, "");
+  BucketStorageSingle s(5, 0, "");
 
-  auto block1 = s.store(8, "a", 1, 22, 7);
-  auto block2 = s.store(9, "b", 1, 23, 7);
+  auto block1 = s.store(8, "a", 1, 22, 7, false);
+  auto block2 = s.store(9, "b", 1, 23, 7, false);
 
   ASSERT_NE(BucketStorage::kInvalidId, block1);
   ASSERT_NE(BucketStorage::kInvalidId, block2);

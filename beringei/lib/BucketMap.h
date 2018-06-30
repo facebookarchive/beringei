@@ -9,6 +9,7 @@
 
 #pragma once
 
+#include <memory>
 #include <queue>
 #include <string>
 #include <unordered_map>
@@ -294,9 +295,9 @@ class BucketMap {
   std::atomic<int> tableSize_;
 
   std::vector<Item> rows_;
-  //  std::priority_queue<int, std::vector<int>, std::less<int>> freeList_;
+  // std::priority_queue<int, std::vector<int>, std::less<int>> freeList_;
   std::set<size_t> freeList_;
-  BucketStorage storage_;
+  std::unique_ptr<BucketStorage> storage_;
   State state_;
   int shardId_;
   const std::string dataDirectory_;

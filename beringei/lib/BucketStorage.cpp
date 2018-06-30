@@ -53,13 +53,16 @@ static const std::string kWrittenTimeSeriesSize =
     "timeseries_block_written_size";
 static const std::string kExpiredBucketFetch = "expired_bucket_fetches";
 
-BucketStorage::BucketStorage(
+BucketStorage::BucketStorage(uint8_t numBuckets, int shardId)
+    : numBuckets_(numBuckets), shardId_(shardId) {}
+
+BucketStorage::~BucketStorage() {}
+
+BucketStorageSingle::BucketStorageSingle(
     uint8_t numBuckets,
     int shardId,
-    const std::string& dataDirectory,
-    bool cold)
-    : cold_(cold),
-      numBuckets_(numBuckets),
+    const std::string& dataDirectory)
+    : BucketStorage(numBuckets, shardId),
       newestPosition_(0),
       dataBlockReader_(shardId, dataDirectory),
       dataFiles_(shardId, kDataPrefix, dataDirectory),
@@ -68,12 +71,13 @@ BucketStorage::BucketStorage(
   enable();
 }
 
-BucketStorage::BucketStorageId BucketStorage::store(
+BucketStorage::BucketStorageId BucketStorageSingle::store(
     uint32_t position,
     const char* data,
     uint16_t dataLength,
     uint16_t itemCount,
-    uint32_t timeSeriesId) {
+    uint32_t timeSeriesId,
+    bool cold) {
   if (dataLength > kMaxDataLength || itemCount > kMaxItemCount) {
     LOG(ERROR) << "Attempted to insert too much data. Length : " << dataLength
                << " Count : " << itemCount;
@@ -165,7 +169,7 @@ BucketStorage::BucketStorageId BucketStorage::store(
     data_[bucket].lastPageBytesUsed += dataLength;
 
     memcpy(data_[bucket].pages[pageIndex]->data + pageOffset, data, dataLength);
-    id = createId(pageIndex, pageOffset, dataLength, itemCount);
+    id = createId(pageIndex, pageOffset, dataLength, itemCount, cold);
     data_[bucket].storageIdsLookupMap.insert(std::make_pair(hash, id));
     GorillaStatsManager::addStatValue(kWrittenTimeSeriesSize, dataLength);
   }
@@ -175,7 +179,7 @@ BucketStorage::BucketStorageId BucketStorage::store(
   return id;
 }
 
-BucketStorage::FetchStatus BucketStorage::fetch(
+BucketStorage::FetchStatus BucketStorageSingle::fetch(
     uint32_t position,
     BucketStorage::BucketStorageId id,
     std::string& data,
@@ -218,7 +222,7 @@ BucketStorage::FetchStatus BucketStorage::fetch(
   return FAILURE;
 }
 
-bool BucketStorage::loadPosition(
+bool BucketStorageSingle::loadPosition(
     uint32_t position,
     std::vector<uint32_t>& timeSeriesIds,
     std::vector<uint64_t>& storageIds) {
@@ -262,7 +266,7 @@ bool BucketStorage::loadPosition(
   return true;
 }
 
-void BucketStorage::clearAndDisable() {
+void BucketStorageSingle::clearAndDisable() {
   for (int i = 0; i < numBuckets_; i++) {
     std::unique_lock<std::mutex> guard(data_[i].pagesMutex);
     folly::RWSpinLock::WriteHolder writeGuard(data_[i].fetchLock);
@@ -278,7 +282,7 @@ void BucketStorage::clearAndDisable() {
   }
 }
 
-void BucketStorage::enable() {
+void BucketStorageSingle::enable() {
   for (int i = 0; i < numBuckets_; i++) {
     std::unique_lock<std::mutex> guard(data_[i].pagesMutex);
     folly::RWSpinLock::WriteHolder writeGuard(data_[i].fetchLock);
@@ -294,12 +298,13 @@ BucketStorage::BucketStorageId BucketStorage::createId(
     uint32_t pageIndex,
     uint32_t pageOffset,
     uint16_t dataLength,
-    uint16_t itemCount) const {
+    uint16_t itemCount,
+    bool cold) {
   // Store all the values in 64 bits.
   BucketStorageId id = 0;
 
   // Using the first bit.
-  id += (uint64_t)cold_ << 63;
+  id += (uint64_t)cold << 63;
 
   // Using the next 17 bits.
   id += (uint64_t)pageIndex << 46;
@@ -332,7 +337,7 @@ bool BucketStorage::coldId(BucketStorageId id) {
   return id != kInvalidId && id != kDisabledId && ((id >> 63) & 1);
 }
 
-void BucketStorage::finalizeBucket(uint32_t position) {
+void BucketStorageSingle::finalizeBucket(uint32_t position) {
   std::vector<std::shared_ptr<DataBlock>> pages;
   std::vector<uint32_t> timeSeriesIds;
   std::vector<BucketStorageId> storageIds;
@@ -380,7 +385,7 @@ void BucketStorage::finalizeBucket(uint32_t position) {
   }
 }
 
-void BucketStorage::write(
+void BucketStorageSingle::write(
     uint32_t position,
     const std::vector<std::shared_ptr<DataBlock>>& pages,
     uint32_t activePages,
@@ -464,7 +469,7 @@ void BucketStorage::write(
   FileUtils::closeFile(completeFile, false);
 }
 
-bool BucketStorage::sanityCheck(uint8_t bucket, uint32_t position) {
+bool BucketStorageSingle::sanityCheck(uint8_t bucket, uint32_t position) {
   if (data_[bucket].disabled) {
     LOG(WARNING) << "Tried to fetch bucket for disabled shard";
     return false;
@@ -485,7 +490,7 @@ bool BucketStorage::sanityCheck(uint8_t bucket, uint32_t position) {
   return false;
 }
 
-void BucketStorage::deleteBucketsOlderThan(uint32_t position) {
+void BucketStorageSingle::deleteBucketsOlderThan(uint32_t position) {
   completeFiles_.clearTo(position);
   dataFiles_.clearTo(position);
 }
@@ -499,7 +504,7 @@ void BucketStorage::startMonitoring() {
   GorillaStatsManager::addStatExportType(kExpiredBucketFetch, COUNT);
 }
 
-std::pair<uint64_t, uint64_t> BucketStorage::getPagesSize() {
+std::pair<uint64_t, uint64_t> BucketStorageSingle::getPagesSize() {
   uint64_t activePagesSize = 0;
   uint64_t totalPagesSize = 0;
   for (int i = 0; i < numBuckets_; i++) {

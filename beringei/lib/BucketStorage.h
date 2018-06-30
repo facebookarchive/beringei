@@ -27,10 +27,9 @@ namespace gorilla {
 
 // class BucketStorage
 //
-// This class stores data for each bucket in 64K blocks. The reason
-// for storing data in a single place (or single place for each shard)
-// is to avoid the memory overhead and fragmentation that comes from
-// allocating millions of ~500 byte blocks.
+// Abstract interface to storage, allowing run-time dependency injection
+// of a single storage system or split hot/cold storage with sooner
+// eviction of cold data
 class BucketStorage {
  public:
   typedef uint64_t BucketStorageId;
@@ -40,20 +39,14 @@ class BucketStorage {
   static const uint32_t kPageSize;
 
   static const std::string kDataPrefix;
-  static const std::string kMetadataPrefix;
 
   // These files are only used as marker files to indicate which
   // blocks have been completed. The files are empty but the file name
   // has the id of the completed block.
   static const std::string kCompletePrefix;
 
-  BucketStorage(
-      uint8_t numBuckets,
-      int shardId,
-      const std::string& dataDirectory,
-      bool cold = false);
-
-  virtual ~BucketStorage() {}
+  BucketStorage(uint8_t numBuckets, int shardId);
+  virtual ~BucketStorage();
 
   // Stores data.
   //
@@ -66,12 +59,13 @@ class BucketStorage {
   // could not be stored. This can happen if data is tried to be stored for
   // a position that is too old, i.e., more than numBuckets behind the current
   // position.
-  BucketStorageId store(
+  virtual BucketStorageId store(
       uint32_t position,
       const char* data,
       uint16_t dataLength,
       uint16_t itemCount,
-      uint32_t timeSeriesId = 0);
+      uint32_t timeSeriesId = 0,
+      bool cold = false) = 0;
 
   enum FetchStatus { SUCCESS, FAILURE };
 
@@ -83,7 +77,7 @@ class BucketStorage {
       uint32_t position,
       BucketStorageId id,
       std::string& data,
-      uint16_t& itemCount);
+      uint16_t& itemCount) = 0;
 
   // Read all blocks for a given position into memory.
   //
@@ -91,16 +85,16 @@ class BucketStorage {
   // false if it wasn't, due to disk failure or the position being
   // expired or disabled. Fills in timeSeriesIds and storageIds with
   // the metadata associated with the blocks.
-  bool loadPosition(
+  virtual bool loadPosition(
       uint32_t position,
       std::vector<uint32_t>& timeSeriesIds,
-      std::vector<uint64_t>& storageIds);
+      std::vector<uint64_t>& storageIds) = 0;
 
   // This clears and disables the buckets for reads and writes.
-  void clearAndDisable();
+  virtual void clearAndDisable() = 0;
 
   // Enables a previously disabled storage.
-  void enable();
+  virtual void enable() = 0;
 
   uint8_t numBuckets() {
     return numBuckets_;
@@ -117,23 +111,73 @@ class BucketStorage {
 
   // Finalizes a bucket at the given position. After calling this no
   // more data can be stored in this bucket.
-  void finalizeBucket(uint32_t position);
+  virtual void finalizeBucket(uint32_t position) = 0;
 
-  void deleteBucketsOlderThan(uint32_t position);
+  virtual void deleteBucketsOlderThan(uint32_t position) = 0;
 
   static void startMonitoring();
 
   // Returns the total size of active and all in-memory pages
   // (active pages size; all pages size)
-  std::pair<uint64_t, uint64_t> getPagesSize();
+  virtual std::pair<uint64_t, uint64_t> getPagesSize() = 0;
 
- private:
-  BucketStorageId createId(
+ protected:
+  static BucketStorageId createId(
       uint32_t pageIndex,
       uint32_t pageOffset,
       uint16_t dataLength,
-      uint16_t itemCount) const;
+      uint16_t itemCount,
+      bool cold);
 
+  const uint8_t numBuckets_;
+  const int shardId_;
+};
+
+// class BucketStorageSingle
+//
+// This class stores data for each bucket in 64K blocks. The reason
+// for storing data in a single place (or single place for each shard)
+// is to avoid the memory overhead and fragmentation that comes from
+// allocating millions of ~500 byte blocks.
+class BucketStorageSingle : public BucketStorage {
+ public:
+  BucketStorageSingle(
+      uint8_t numBuckets,
+      int shardId,
+      const std::string& dataDirectory);
+
+  virtual ~BucketStorageSingle() override {}
+
+  virtual BucketStorageId store(
+      uint32_t position,
+      const char* data,
+      uint16_t dataLength,
+      uint16_t itemCount,
+      uint32_t timeSeriesId = 0,
+      bool cold = false) override;
+
+  virtual FetchStatus fetch(
+      uint32_t position,
+      BucketStorageId id,
+      std::string& data,
+      uint16_t& itemCount) override;
+
+  virtual bool loadPosition(
+      uint32_t position,
+      std::vector<uint32_t>& timeSeriesIds,
+      std::vector<uint64_t>& storageIds) override;
+
+  virtual void clearAndDisable() override;
+
+  virtual void enable() override;
+
+  virtual void finalizeBucket(uint32_t position) override;
+
+  virtual void deleteBucketsOlderThan(uint32_t position) override;
+
+  virtual std::pair<uint64_t, uint64_t> getPagesSize() override;
+
+ private:
   void write(
       uint32_t position,
       const std::vector<std::shared_ptr<DataBlock>>& pages,
@@ -174,8 +218,6 @@ class BucketStorage {
     std::mutex pagesMutex;
   };
 
-  const bool cold_;
-  const uint8_t numBuckets_;
   int newestPosition_;
   std::unique_ptr<BucketData[]> data_;
   DataBlockReader dataBlockReader_;

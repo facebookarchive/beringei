@@ -101,6 +101,9 @@ class BucketedTimeSeries {
     ready_ = true;
   }
 
+  // Return whether this time series is cold
+  bool getCold() const;
+
  private:
   // Open the next bucket for writes.
   void open(uint32_t next, BucketStorage* storage, uint32_t timeSeriesId);

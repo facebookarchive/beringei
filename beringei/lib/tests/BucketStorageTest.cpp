@@ -19,7 +19,7 @@ using namespace facebook::gorilla;
 using namespace google;
 using namespace std;
 
-class BucketStorageTestHeat : public ::testing::Test,
+class BucketStorageHeatTest : public ::testing::Test,
                               public ::testing::WithParamInterface<bool> {};
 
 // Work with entries stored in successive positions
@@ -102,11 +102,11 @@ void BucketStoragePersistenceTest::storageFinalize(
   storage.finalizeBucket(kPositionBase_ + offset);
 }
 
-TEST_P(BucketStorageTestHeat, SmallStoreAndFetch) {
+TEST_P(BucketStorageHeatTest, SmallStoreAndFetch) {
   const bool cold = GetParam();
-  BucketStorage storage(5, 0, "", cold);
+  BucketStorageSingle storage(5, 0, "");
 
-  auto id = storage.store(11, "test", 4, 100);
+  auto id = storage.store(11, "test", 4, 100, 42, cold);
   ASSERT_NE(BucketStorage::kInvalidId, id);
   ASSERT_EQ(BucketStorage::coldId(id), cold);
 
@@ -121,7 +121,7 @@ TEST_P(BucketStorageTestHeat, SmallStoreAndFetch) {
 }
 
 TEST(BucketStorageTest, DedupData) {
-  BucketStorage storage(5, 0, "");
+  BucketStorageSingle storage(5, 0, "");
 
   auto id1 = storage.store(11, "test1", 5, 100);
   auto id2 = storage.store(11, "test2", 5, 100);
@@ -159,7 +159,7 @@ TEST(BucketStorageTest, DedupData) {
 }
 
 TEST(BucketStorageTest, StoringOldData) {
-  BucketStorage storage(4, 0, "");
+  BucketStorageSingle storage(4, 0, "");
 
   auto firstId = storage.store(11, "test1", 5, 101);
   ASSERT_NE(BucketStorage::kInvalidId, firstId);
@@ -193,7 +193,7 @@ TEST(BucketStorageTest, StoringOldData) {
 }
 
 TEST(BucketStorageTest, SingleBucket) {
-  BucketStorage storage(1, 0, "");
+  BucketStorageSingle storage(1, 0, "");
 
   vector<BucketStorage::BucketStorageId> ids(10);
   for (int i = 1; i < 10; i++) {
@@ -217,18 +217,19 @@ TEST(BucketStorageTest, SingleBucket) {
   ASSERT_EQ(100, itemCount);
 }
 
-TEST_P(BucketStorageTestHeat, BigData) {
-  const bool cold = GetParam();
+TEST(BucketStorageTest, BigData) {
   TemporaryDirectory dir("gorilla_data_block");
   boost::filesystem::create_directories(
       FileUtils::joinPaths(dir.dirname(), "12"));
   int64_t shardId = 12;
 
-  BucketStorage storage(10, shardId, dir.dirname(), cold);
+  BucketStorageSingle storage(10, shardId, dir.dirname());
   vector<BucketStorage::BucketStorageId> ids(5);
   for (int i = 0; i < 5; i++) {
+    bool cold = i % 2;
     string data(30000, '0' + i);
-    ids[i] = storage.store(100, data.c_str(), data.length(), 100 + i, i * 10);
+    ids[i] =
+        storage.store(100, data.c_str(), data.length(), 100 + i, i * 10, cold);
     ASSERT_NE(BucketStorage::kInvalidId, ids[i]);
     EXPECT_EQ(BucketStorage::coldId(ids[i]), cold);
   }
@@ -258,6 +259,7 @@ TEST_P(BucketStorageTestHeat, BigData) {
   ASSERT_EQ(5, storageIds.size());
 
   for (int i = 0; i < 5; i++) {
+    bool cold = i % 2;
     uint32_t pageIndex, pageOffset;
     uint16_t dataLength, itemCount;
     BucketStorage::parseId(
@@ -274,8 +276,7 @@ TEST_P(BucketStorageTestHeat, BigData) {
   }
 }
 
-TEST_P(BucketStorageTestHeat, BigDataFromDisk) {
-  const bool cold = GetParam();
+TEST_P(BucketStorageHeatTest, BigDataFromDisk) {
   TemporaryDirectory dir("gorilla_data_block");
   boost::filesystem::create_directories(
       FileUtils::joinPaths(dir.dirname(), "12"));
@@ -284,13 +285,14 @@ TEST_P(BucketStorageTestHeat, BigDataFromDisk) {
   vector<BucketStorage::BucketStorageId> ids(5);
   vector<uint32_t> timeSeriesIds = {100, 200, 300, 400, 500};
 
-  // Scoped BucketStorage object to let the destructor free the memory.
+  // Scoped BucketStorageSingle object to let the destructor free the memory.
   {
-    BucketStorage storage(10, shardId, dir.dirname(), cold);
+    BucketStorageSingle storage(10, shardId, dir.dirname());
     for (int i = 0; i < 5; i++) {
       string data(30000, '0' + i);
+      bool cold = i % 5;
       ids[i] = storage.store(
-          100, data.c_str(), data.length(), 100 + i, timeSeriesIds[i]);
+          100, data.c_str(), data.length(), 100 + i, timeSeriesIds[i], cold);
       ASSERT_NE(BucketStorage::kInvalidId, ids[i]);
       EXPECT_EQ(BucketStorage::coldId(ids[i]), cold);
     }
@@ -301,7 +303,7 @@ TEST_P(BucketStorageTestHeat, BigDataFromDisk) {
 
   vector<uint32_t> timeSeriesIds2;
   vector<uint64_t> storageIds;
-  BucketStorage storage(10, shardId, dir.dirname());
+  BucketStorageSingle storage(10, shardId, dir.dirname());
   ASSERT_TRUE(storage.loadPosition(100, timeSeriesIds2, storageIds));
   ASSERT_EQ(ids, storageIds);
   ASSERT_EQ(timeSeriesIds, timeSeriesIds2);
@@ -310,6 +312,7 @@ TEST_P(BucketStorageTestHeat, BigDataFromDisk) {
     string expectedData(30000, '0' + i);
     string str;
     uint16_t itemCount;
+    bool cold = i % 5;
 
     ASSERT_EQ(
         BucketStorage::FetchStatus::SUCCESS,
@@ -322,7 +325,7 @@ TEST_P(BucketStorageTestHeat, BigDataFromDisk) {
 
 INSTANTIATE_TEST_CASE_P(
     Cold,
-    BucketStorageTestHeat,
+    BucketStorageHeatTest,
     ::testing::Values(false, true));
 
 TEST(BucketStorageTest, BigDataStoreAfterCleanupWithoutFinalize) {
@@ -335,11 +338,11 @@ TEST(BucketStorageTest, BigDataStoreAfterCleanupWithoutFinalize) {
   vector<uint32_t> timeSeriesIds = {100, 200, 300, 400, 500};
 
   {
-    BucketStorage storage(10, shardId, dir.dirname());
+    BucketStorageSingle storage(10, shardId, dir.dirname());
     for (int i = 0; i < 5; i++) {
       string data(30000, '0' + i);
       ids[i] = storage.store(
-          100, data.c_str(), data.length(), 100 + i, timeSeriesIds[i]);
+          100, data.c_str(), data.length(), 100 + i, timeSeriesIds[i], false);
       ASSERT_NE(BucketStorage::kInvalidId, ids[i]);
     }
     storage.clearAndDisable();
@@ -348,7 +351,7 @@ TEST(BucketStorageTest, BigDataStoreAfterCleanupWithoutFinalize) {
     for (int i = 0; i < 5; i++) {
       string data(30000, '0' + i);
       ids[i] = storage.store(
-          100, data.c_str(), data.length(), 100 + i, timeSeriesIds[i]);
+          100, data.c_str(), data.length(), 100 + i, timeSeriesIds[i], false);
       ASSERT_NE(BucketStorage::kInvalidId, ids[i]);
     }
   }
@@ -364,14 +367,14 @@ TEST(BucketStorageTest, DedupedDataFromDisk) {
   set<BucketStorage::BucketStorageId> dedupedIds;
   set<pair<string, int>> dedupedValues;
 
-  // Scoped BucketStorage object to let the destructor free the memory.
+  // Scoped BucketStorageSingle object to let the destructor free the memory.
   {
-    BucketStorage storage(10, shardId, dir.dirname());
+    BucketStorageSingle storage(10, shardId, dir.dirname());
     for (int i = 0; i < 2048; i++) {
       string data(30000, char(random() % 256));
       dedupedValues.insert(make_pair(data, i % 16));
-      ids[i].first =
-          storage.store(100, data.c_str(), data.length(), 100 + (i % 16), i);
+      ids[i].first = storage.store(
+          100, data.c_str(), data.length(), 100 + (i % 16), i, false);
       ids[i].second = data;
       dedupedIds.insert(ids[i].first);
       ASSERT_NE(BucketStorage::kInvalidId, ids[i].first);
@@ -385,7 +388,7 @@ TEST(BucketStorageTest, DedupedDataFromDisk) {
 
   vector<uint32_t> timeSeriesIds2;
   vector<uint64_t> storageIds;
-  BucketStorage storage(10, shardId, dir.dirname());
+  BucketStorageSingle storage(10, shardId, dir.dirname());
   ASSERT_TRUE(storage.loadPosition(100, timeSeriesIds2, storageIds));
   ASSERT_EQ(2048, storageIds.size());
   ASSERT_EQ(2048, timeSeriesIds2.size());
@@ -405,7 +408,7 @@ TEST(BucketStorageTest, DedupedDataFromDisk) {
 }
 
 TEST(BucketStorageTest, StoringToExpiredBuckets) {
-  BucketStorage storage(5, 0, "");
+  BucketStorageSingle storage(5, 0, "");
 
   for (int i = 1; i < 10; i++) {
     auto id = storage.store(i, "test1", 5, 100);
@@ -429,7 +432,7 @@ TEST(BucketStorageTest, SpikeInData) {
   boost::filesystem::create_directories(
       FileUtils::joinPaths(dir.dirname(), "0"));
 
-  BucketStorage storage(1, 0, dir.dirname());
+  BucketStorageSingle storage(1, 0, dir.dirname());
 
   for (int i = 0; i < 100000; i++) {
     auto id = storage.store(100, "test1", 5, 100);
@@ -460,7 +463,7 @@ TEST(BucketStorageTest, SpikeInData) {
 }
 
 TEST(BucketStorageTest, Disable) {
-  BucketStorage storage(5, 0, "");
+  BucketStorageSingle storage(5, 0, "");
 
   auto id = storage.store(11, "test", 4, 100);
   ASSERT_NE(BucketStorage::kInvalidId, id);
@@ -476,7 +479,7 @@ TEST(BucketStorageTest, Disable) {
 }
 
 TEST(BucketStorageTest, DisableAndEnable) {
-  BucketStorage storage(5, 0, "");
+  BucketStorageSingle storage(5, 0, "");
 
   auto id = storage.store(11, "test", 4, 100);
   ASSERT_NE(BucketStorage::kInvalidId, id);
@@ -493,7 +496,7 @@ TEST(BucketStorageTest, DisableAndEnable) {
 }
 
 TEST(BucketStorageTest, DisableAndEnableAndReuse) {
-  BucketStorage storage(5, 0, "");
+  BucketStorageSingle storage(5, 0, "");
 
   auto id = storage.store(11, "test", 4, 100);
   ASSERT_NE(BucketStorage::kInvalidId, id);
@@ -518,7 +521,7 @@ TEST(BucketStorageTest, StoreAfterFinalize) {
   boost::filesystem::create_directories(
       FileUtils::joinPaths(dir.dirname(), "0"));
 
-  BucketStorage storage(5, 0, dir.dirname());
+  BucketStorageSingle storage(5, 0, dir.dirname());
 
   auto id1 = storage.store(11, "test1", 5, 101);
   ASSERT_NE(BucketStorage::kInvalidId, id1);
@@ -567,7 +570,7 @@ TEST_F(BucketStoragePersistenceTest, Switchover) {
   std::vector<BucketStorage::BucketStorageId> ids;
 
   auto storage =
-      std::make_unique<BucketStorage>(buckets, shardId, dir.dirname());
+      std::make_unique<BucketStorageSingle>(buckets, shardId, dir.dirname());
 
   // Fill and force first disk eviction
   for (size_t i = 1; i <= 6; ++i) {
@@ -588,7 +591,7 @@ TEST_F(BucketStoragePersistenceTest, Switchover) {
 
   // Switch nodes with shared storage
   auto storage2 =
-      std::make_unique<BucketStorage>(buckets, shardId, dir.dirname());
+      std::make_unique<BucketStorageSingle>(buckets, shardId, dir.dirname());
   {
     SCOPED_TRACE(std::string("switch over load"));
     ASSERT_NO_FATAL_FAILURE(storageAssertLoad(*storage2, dir));

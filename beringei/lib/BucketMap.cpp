@@ -71,8 +71,6 @@ static const std::string kFailedDeleteOldKey = "num_failed_delete_old_key";
 
 static const size_t kMaxAllowedKeyLength = 400;
 
-static int16_t kInstagramCategoryId = 271;
-
 const int BucketMap::kNotOwned = -1;
 
 DECLARE_int32(max_allowed_timeseries_id);
@@ -93,7 +91,7 @@ BucketMap::BucketMap(
       reliableDataStartTime_(0),
       lock_(),
       tableSize_(0),
-      storage_(buckets, shardId, dataDirectory),
+      storage_(new BucketStorageSingle(buckets, shardId, dataDirectory)),
       state_(state),
       shardId_(shardId),
       dataDirectory_(dataDirectory),
@@ -193,7 +191,8 @@ std::pair<int, int> BucketMap::put(
   auto newRow = std::make_shared<std::pair<std::string, BucketedTimeSeries>>();
   newRow->first = key;
   newRow->second.reset(n_, b, value.unixTime);
-  newRow->second.put(b, value, &storage_, -1, &category);
+  newRow->second.put(
+      b, value, storage_.get(), static_cast<uint32_t>(-1), &category);
 
   int index = 0;
   bool keyAdded = false;
@@ -314,7 +313,7 @@ uint32_t BucketMap::buckets(uint64_t duration) const {
 }
 
 BucketStorage* BucketMap::getStorage() {
-  return &storage_;
+  return storage_.get();
 }
 
 bool BucketMap::setState(BucketMap::State state) {
@@ -374,9 +373,9 @@ bool BucketMap::setState(BucketMap::State state) {
   // Enable/disable storage outside the lock because it might take a
   // while and the the storage object has its own locking.
   if (state == PRE_OWNED) {
-    storage_.enable();
+    storage_->enable();
   } else if (state == UNOWNED) {
-    storage_.clearAndDisable();
+    storage_->clearAndDisable();
   }
 
   LOG(INFO) << "Changed state of shard " << shardId_ << " from " << oldState
@@ -433,8 +432,6 @@ int BucketMap::finalizeBuckets(uint32_t lastBucketToFinalize) {
   std::vector<BucketMap::Item> timeSeriesData;
   getEverything(timeSeriesData);
 
-  uint32_t droppedBatchCount = 0;
-
   for (uint32_t bucket = bucketToFinalize; bucket <= lastBucketToFinalize;
        bucket++) {
     for (int i = 0; i < timeSeriesData.size(); i++) {
@@ -481,7 +478,7 @@ void BucketMap::compactKeyList(bool force) {
   std::vector<Item> items;
   getEverything(items);
 
-  uint32_t i = -1;
+  uint32_t i = static_cast<uint32_t>(-1);
   keyWriter_->compact(shardId_, [&]() {
     for (i++; i < items.size(); i++) {
       // Only checkpoint keys that are ready.
@@ -500,7 +497,7 @@ void BucketMap::compactKeyList(bool force) {
 
 void BucketMap::deleteOldBlockFiles() {
   // Start far enough back that we can't possibly interfere with anything.
-  storage_.deleteBucketsOlderThan(bucket(time(nullptr)) - n_ - 1);
+  storage_->deleteBucketsOlderThan(bucket(time(nullptr)) - n_ - 1);
 }
 
 void BucketMap::startMonitoring() {
@@ -580,7 +577,7 @@ void BucketMap::readData() {
   readLogFiles(lastFinalizedBucket_);
   GorillaStatsManager::addStatValue(
       kMsPerLogFilesRead, timer.reset() / kGorillaUsecPerMs);
-  CHECK(getState() == READING_LOGS);
+  CHECK_EQ(getState(), READING_LOGS);
 
   success = setState(PROCESSING_QUEUED_DATA_POINTS);
   CHECK(success);
@@ -638,13 +635,14 @@ bool BucketMap::readBlockFiles() {
 
   LOG(INFO) << "Reading blockfiles for shard " << shardId_ << ": " << position;
   Timer timer(true);
-  if (storage_.loadPosition(position, timeSeriesIds, storageIds)) {
+  if (storage_->loadPosition(position, timeSeriesIds, storageIds)) {
     folly::RWSpinLock::ReadHolder guard(lock_);
 
     for (int i = 0; i < timeSeriesIds.size(); i++) {
       if (timeSeriesIds[i] < rows_.size() && rows_[timeSeriesIds[i]].get()) {
+        DCHECK_LT(i, storageIds.size());
         rows_[timeSeriesIds[i]]->second.setDataBlock(
-            position, &storage_, storageIds[i]);
+            position, storage_.get(), storageIds[i]);
       } else {
         GorillaStatsManager::addStatValue(kUnknownKeysInBlockMetadataFiles);
       }
@@ -792,16 +790,15 @@ void BucketMap::readLogFiles(uint32_t lastBlock) {
                         double value,
                         uint32_t& unknownKeys,
                         int64_t& lastTimestamp) {
-    {
-      folly::RWSpinLock::ReadHolder guard(lock_);
-      if (key < rows_.size() && rows_[key].get()) {
-        TimeValuePair tv;
-        tv.unixTime = unixTime;
-        tv.value = value;
-        rows_[key]->second.put(bucket(unixTime), tv, &storage_, key, nullptr);
-      } else {
-        unknownKeys++;
-      }
+    folly::RWSpinLock::ReadHolder guard(lock_);
+    if (key < rows_.size() && rows_[key].get()) {
+      TimeValuePair tv;
+      tv.unixTime = unixTime;
+      tv.value = value;
+      rows_[key]->second.put(
+          bucket(unixTime), tv, storage_.get(), key, nullptr);
+    } else {
+      unknownKeys++;
     }
 
     int64_t gap = unixTime - lastTimestamp;
@@ -929,7 +926,7 @@ void BucketMap::processQueuedDataPoints(bool skipStateCheck) {
       State state;
       {
         folly::RWSpinLock::ReadHolder guard(lock_);
-        CHECK(dp.timeSeriesId < rows_.size());
+        CHECK_LT(dp.timeSeriesId, rows_.size());
         item = rows_[dp.timeSeriesId];
         state = state_;
       }
@@ -955,8 +952,9 @@ bool BucketMap::putDataPointWithId(
     const TimeValuePair& value,
     uint16_t category) {
   uint32_t b = bucket(value.unixTime);
-  bool added = timeSeries->put(b, value, &storage_, timeSeriesId, &category);
-  if (added && timeSeries->ready()) {
+  bool added =
+      timeSeries->put(b, value, storage_.get(), timeSeriesId, &category);
+  if (added) {
     logWriter_->logData(shardId_, timeSeriesId, value.unixTime, value.value);
   }
   return added;
@@ -1064,7 +1062,7 @@ int BucketMap::indexDeviatingTimeSeries(
     }
 
     // Index values that are over the limit.
-    double stddev = sqrt(variance);
+    double stddev = std::sqrt(variance);
     double limit = minimumSigma * stddev;
     for (auto& v : values) {
       if (v.unixTime >= indexingStartTime && v.unixTime <= endTime &&
