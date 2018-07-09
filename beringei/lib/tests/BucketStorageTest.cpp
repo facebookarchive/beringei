@@ -10,6 +10,8 @@
 #include <gtest/gtest.h>
 #include <string>
 
+#include "folly/Conv.h"
+
 #include "beringei/lib/BucketStorage.h"
 #include "beringei/lib/BucketStorageHotCold.h"
 #include "beringei/lib/DataBlockIO.h"
@@ -49,9 +51,17 @@ class BucketStorageHeatTest
   }
 };
 
+class BucketStoragePageTest : public ::testing::Test,
+                              public ::testing::WithParamInterface<bool> {};
 // Work with entries stored in successive positions
-class BucketStoragePersistenceTest : public ::testing::Test {
+class BucketStoragePersistenceTest
+    : public ::testing::Test,
+      public ::testing::WithParamInterface<bool> {
  protected:
+  std::unique_ptr<BucketStorageSingle> createStorage(
+      const TemporaryDirectory& dir,
+      bool page);
+
   // @param[IN] offset Nth entry in test
   static uint32_t position(size_t offset) {
     return kPositionBase_ + offset;
@@ -59,9 +69,7 @@ class BucketStoragePersistenceTest : public ::testing::Test {
 
   static std::string data(size_t offset);
 
-  static void storageAssertLoad(
-      BucketStorage& storage,
-      TemporaryDirectory& dirArg);
+  static void storageAssertLoad(BucketStorage& storage);
 
   static BucketStorage::BucketStorageId storageStore(
       BucketStorage& storage,
@@ -70,24 +78,43 @@ class BucketStoragePersistenceTest : public ::testing::Test {
   static void storageAssertFetch(
       BucketStorage& storage,
       size_t offset,
-      BucketStorage::BucketStorageId id);
+      BucketStorage::BucketStorageId id,
+      folly::Optional<BucketStorage::FetchType> type = folly::none);
 
   static void storageFinalize(BucketStorage& storage, size_t offset);
 
  private:
-  static const uint32_t kPositionBase_ = 10;
-  static const uint32_t kCountBase_ = 100;
+  static const int64_t kShardId_;
+  static const uint8_t kNumBuckets_;
+  static const uint8_t kNumMemoryBuckets_;
+  static const uint32_t kPositionBase_;
+  static const uint32_t kCountBase_;
+};
+
+const int64_t BucketStoragePersistenceTest::kShardId_ = 0;
+const uint8_t BucketStoragePersistenceTest::kNumBuckets_ = 5;
+const uint8_t BucketStoragePersistenceTest::kNumMemoryBuckets_ = 2;
+const uint32_t BucketStoragePersistenceTest::kPositionBase_ = 10;
+const uint32_t BucketStoragePersistenceTest::kCountBase_ = 100;
+
+std::unique_ptr<BucketStorageSingle>
+BucketStoragePersistenceTest::createStorage(
+    const TemporaryDirectory& dir,
+    bool page) {
+  /* 5 buckets, 2 in-core */
+  return std::make_unique<BucketStorageSingle>(
+      kNumBuckets_,
+      kShardId_,
+      dir.dirname(),
+      page ? kNumMemoryBuckets_ : BucketStorage::kDefaultToNumBuckets,
+      page ? DataBlockVersion::V_0_UNCOMPRESSED : DataBlockVersion::V_0);
 };
 
 std::string BucketStoragePersistenceTest::data(size_t offset) {
-  std::ostringstream os;
-  os << "test" << offset;
-  return os.str();
+  return std::string("test") + folly::to<std::string>(offset);
 }
 
-void BucketStoragePersistenceTest::storageAssertLoad(
-    BucketStorage& storage,
-    TemporaryDirectory& dirArg) {
+void BucketStoragePersistenceTest::storageAssertLoad(BucketStorage& storage) {
   auto positions = storage.findCompletedPositions();
   for (auto position = positions.rbegin(); position != positions.rend();
        ++position) {
@@ -111,22 +138,28 @@ BucketStorage::BucketStorageId BucketStoragePersistenceTest::storageStore(
 void BucketStoragePersistenceTest::storageAssertFetch(
     BucketStorage& storage,
     size_t offset,
-    BucketStorage::BucketStorageId id) {
+    BucketStorage::BucketStorageId id,
+    folly::Optional<BucketStorage::FetchType> type) {
   SCOPED_TRACE(std::string("fetch ") + folly::to<std::string>(offset));
   auto expect = data(offset);
   std::string out;
   uint16_t count;
-  auto status = storage.fetch(kPositionBase_ + offset, id, out, count);
+  BucketStorage::FetchType outType;
+  auto status =
+      storage.fetch(kPositionBase_ + offset, id, out, count, &outType);
   ASSERT_EQ(status, BucketStorage::FetchStatus::SUCCESS);
   ASSERT_EQ(out, expect);
   ASSERT_EQ(count, kCountBase_ + offset);
+  if (type) {
+    ASSERT_EQ(outType, *type);
+  }
 }
 
 void BucketStoragePersistenceTest::storageFinalize(
     BucketStorage& storage,
     size_t offset) {
   storage.finalizeBucket(kPositionBase_ + offset);
-}
+};
 
 TEST_P(BucketStorageHeatTest, SmallStoreAndFetch) {
   auto type = GetParam();
@@ -588,27 +621,41 @@ TEST(BucketStorageTest, StoreAfterFinalize) {
   ASSERT_EQ(104, itemCount);
 }
 
-TEST_F(BucketStoragePersistenceTest, Switchover) {
+TEST_P(BucketStoragePersistenceTest, Switchover) {
+  const bool page = GetParam();
   TemporaryDirectory dir("gorilla_test");
   boost::filesystem::create_directories(
       FileUtils::joinPaths(dir.dirname(), "0"));
-  const int64_t shardId = 0;
-  const uint8_t buckets = 5;
 
   std::vector<BucketStorage::BucketStorageId> ids;
 
-  auto storage =
-      std::make_unique<BucketStorageSingle>(buckets, shardId, dir.dirname());
+  auto storage = createStorage(dir, page);
 
-  // Fill and force first disk eviction
-  for (size_t i = 1; i <= 6; ++i) {
+  // Fill memory slots
+  for (auto i : {1, 2}) {
     SCOPED_TRACE(std::string("memory fill ") + folly::to<std::string>(i));
-    ASSERT_NO_FATAL_FAILURE(ids.push_back(storageStore(*storage, i)));
-    ASSERT_NO_FATAL_FAILURE(storageAssertFetch(*storage, i, ids[i - 1]));
+    ids.push_back(storageStore(*storage, i));
+    ASSERT_NO_FATAL_FAILURE(storageAssertFetch(
+        *storage, i, ids[i - 1], BucketStorage::FetchType::MEMORY));
     storageFinalize(*storage, i);
-    ASSERT_NO_FATAL_FAILURE(storageAssertFetch(*storage, i, ids[i - 1]));
+    ASSERT_NO_FATAL_FAILURE(storageAssertFetch(
+        *storage, i, ids[i - 1], BucketStorage::FetchType::MEMORY));
   }
 
+  // Force memory eviction and fill disk slots
+  for (auto i : {3, 4, 5}) {
+    SCOPED_TRACE(std::string("persistent fill ") + folly::to<std::string>(i));
+    ids.push_back(storageStore(*storage, i));
+    storageFinalize(*storage, i);
+    for (unsigned j = 1; j <= i; ++j) {
+      SCOPED_TRACE(std::string("fetch ") + folly::to<std::string>(j));
+      ASSERT_NO_FATAL_FAILURE(storageAssertFetch(*storage, j, ids[j - 1]));
+    }
+  }
+
+  // Force first disk eviction
+  ids.push_back(storageStore(*storage, 6));
+  storageFinalize(*storage, 6);
   std::string out;
   uint16_t count;
   ASSERT_EQ(
@@ -618,32 +665,44 @@ TEST_F(BucketStoragePersistenceTest, Switchover) {
   storage->clearAndDisable();
 
   // Switch nodes with shared storage
-  auto storage2 =
-      std::make_unique<BucketStorageSingle>(buckets, shardId, dir.dirname());
+  auto storage2 = createStorage(dir, page);
   {
     SCOPED_TRACE(std::string("switch over load"));
-    ASSERT_NO_FATAL_FAILURE(storageAssertLoad(*storage2, dir));
+    ASSERT_NO_FATAL_FAILURE(storageAssertLoad(*storage2));
   }
   for (unsigned i = 2; i <= 6; ++i) {
     SCOPED_TRACE(std::string("switch over fetch " + folly::to<std::string>(i)));
-    ASSERT_NO_FATAL_FAILURE(storageAssertFetch(*storage2, i, ids[i - 1]));
+    ASSERT_NO_FATAL_FAILURE(storageAssertFetch(
+        *storage2,
+        i,
+        ids[i - 1],
+        page && i < 5 ? BucketStorage::FetchType::DISK
+                      : BucketStorage::FetchType::MEMORY));
   }
 
   // Add a bucket before switching back
   ids.push_back(storageStore(*storage2, 7));
   storageFinalize(*storage2, 7);
-
   storage2.reset();
 
   // Switch back
   storage->enable();
   {
     SCOPED_TRACE(std::string("switch back load"));
-    ASSERT_NO_FATAL_FAILURE(storageAssertLoad(*storage, dir));
+    ASSERT_NO_FATAL_FAILURE(storageAssertLoad(*storage));
   }
-
   for (unsigned i = 3; i <= 7; ++i) {
     SCOPED_TRACE(std::string("switch back fetch " + folly::to<std::string>(i)));
-    ASSERT_NO_FATAL_FAILURE(storageAssertFetch(*storage, i, ids[i - 1]));
+    ASSERT_NO_FATAL_FAILURE(storageAssertFetch(
+        *storage,
+        i,
+        ids[i - 1],
+        page && i < 6 ? BucketStorage::FetchType::DISK
+                      : BucketStorage::FetchType::MEMORY));
   }
 }
+
+INSTANTIATE_TEST_CASE_P(
+    Page,
+    BucketStoragePersistenceTest,
+    ::testing::Values(false));
