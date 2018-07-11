@@ -560,6 +560,7 @@ void BeringeiClientImpl::futureContextAddFn(
 template <typename F>
 auto BeringeiClientImpl::futureContextFinalize(
     BeringeiFutureContext& context,
+    folly::Executor* executor,
     F&& fn) {
   // Futures madness.
   // Block until either every result has arrived or we received enough results
@@ -570,9 +571,9 @@ auto BeringeiClientImpl::futureContextFinalize(
   }));
   context.either.push_back(
       collectAllSemiFuture(context.getFutures)
-          .toUnsafeFuture()
-          .then([](const std::vector<folly::Try<folly::Unit>>&) {}));
-  return folly::collectAny(context.either).then(std::forward<F>(fn));
+          .via(executor)
+          .then(executor, [](const std::vector<folly::Try<folly::Unit>>&) {}));
+  return folly::collectAny(context.either).then(executor, std::forward<F>(fn));
 }
 
 folly::Future<BeringeiGetResult> BeringeiClientImpl::futureGet(
@@ -597,14 +598,9 @@ folly::Future<BeringeiGetResult> BeringeiClientImpl::futureGet(
     for (const auto& key : folly::enumerate(request.keys)) {
       (*client)->addKeyToGetRequest(key.index, *key, getRequests[client.index]);
     }
-
     for (auto& r : getRequests[client.index]) {
       r.second.first.begin = request.begin;
       r.second.first.end = request.end;
-      // TODO: BeringeiGetResult::addResults() blocks on a lock, which we
-      //       shouldn't do in the CPU thread pool. Though this approach still
-      //       reduces latency compared to everything in one thread.
-      //       Maybe split the decompression and merging steps?
       futureContextAddFn(
           *getContext,
           workExecutor,
@@ -613,7 +609,7 @@ folly::Future<BeringeiGetResult> BeringeiClientImpl::futureGet(
            clientId = client.index,
            indices = std::move(r.second.second)](GetDataResult&& result) {
             if (getContext->resultCollector->addResults(
-                    result, indices, clientId)) {
+                    std::move(result), indices, clientId)) {
               getContext->oneComplete.setValue();
             }
           });
@@ -622,6 +618,7 @@ folly::Future<BeringeiGetResult> BeringeiClientImpl::futureGet(
 
   return futureContextFinalize(
       *getContext,
+      workExecutor,
       [getContext, shouldThrow = throwExceptionOnTransientFailure_](
           std::pair<unsigned long, folly::Try<folly::Unit>>&&) {
         return getContext->resultCollector->finalize(
@@ -768,6 +765,7 @@ folly::Future<BeringeiScanShardResult> BeringeiClientImpl::futureScanShard(
 
   return futureContextFinalize(
       *context,
+      workExecutor,
       [context, shouldThrow = throwExceptionOnTransientFailure_](
           std::pair<unsigned long, folly::Try<folly::Unit>>&&) {
         return context->resultCollector->finalize(

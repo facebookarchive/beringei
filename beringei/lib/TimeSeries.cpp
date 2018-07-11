@@ -183,5 +183,6 @@ void TimeSeries::mergeValues(
 
   std::swap(out, newData);
 }
-}
-} // facebook::gorilla
+
+} // namespace gorilla
+} // namespace facebook

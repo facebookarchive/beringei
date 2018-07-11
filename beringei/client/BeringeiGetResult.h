@@ -10,8 +10,10 @@
 #pragma once
 
 #include <bitset>
+#include <mutex>
 #include <vector>
 
+#include <folly/MPMCQueue.h>
 #include <folly/fibers/TimedMutex.h>
 #include <folly/futures/Future.h>
 
@@ -65,10 +67,14 @@ class BeringeiGetResultCollector {
       int64_t begin,
       int64_t end);
 
-  // Insert data and return true if we just finished the first complete copy
-  // of the results.
+  // Insert received data into internal queue, and return number of keys read.
+  // @param[in] results Results received from Gorilla.
+  // @param[in] indices Indices of keys in the requests for a host.
+  //  For example, host A has keys 0, 3, 4. Host B has keys 1, 2.
+  // @param[in] service Index of the region.
+  // @returns Number valid keys from {results}.
   bool addResults(
-      const GetDataResult& results,
+      GetDataResult&& results,
       const std::vector<size_t>& indices,
       size_t service);
 
@@ -94,12 +100,18 @@ class BeringeiGetResultCollector {
   // How many copies we're expecting for each key.
   size_t numServices_;
 
-  // How many keys have no results.
-  size_t remainingKeys_;
+  struct AddStats {
+    // How many keys have no results.
+    size_t remainingKeys;
+
+    // How many services have reported this key.
+    std::vector<uint32_t> count;
+  };
+  folly::Synchronized<AddStats, std::mutex> addStats_;
 
   // Which services have reported which keys.
   struct KeyStats {
-    uint32_t count;
+    uint32_t finalizedCount;
     std::bitset<32> received;
   };
   std::vector<KeyStats> complete_;
@@ -110,9 +122,16 @@ class BeringeiGetResultCollector {
   // Mismatches per each service's first merge, indexed by 1ull << service.
   std::vector<int64_t> mismatches_;
 
-  folly::fibers::TimedMutex lock_;
-  bool done_;
+  std::atomic<bool> done_;
   BeringeiGetResult result_;
+
+  struct Item {
+    GetDataResult results;
+    std::vector<size_t> indices;
+    size_t serviceId;
+  };
+
+  folly::MPMCQueue<Item> queue_;
 };
 
 } // namespace gorilla

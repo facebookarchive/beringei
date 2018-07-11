@@ -50,89 +50,127 @@ BeringeiGetResultCollector::BeringeiGetResultCollector(
     : beginTime_(begin),
       endTime_(end),
       numServices_(services),
-      remainingKeys_(size),
       complete_(size),
       drops_(1ull << services),
       mismatches_(1ull << services),
       done_(false),
-      result_(size) {
+      result_(size),
+      queue_(size * services) {
   // This would require an insane amount of memory anyway, but at least make
   // sure we don't overrun the KeyStats structure.
   CHECK_LT(numServices_, 32);
+  SYNCHRONIZED(addStats_) {
+    addStats_.remainingKeys = size;
+    addStats_.count.resize(size);
+  }
 }
 
 bool BeringeiGetResultCollector::addResults(
-    const GetDataResult& results,
+    GetDataResult&& results,
     const std::vector<size_t>& indices,
     size_t serviceId) {
   bool ret = false;
-
-  lock_.lock();
-  if (done_) {
-    lock_.unlock();
-    return false;
+  if (done_.load()) {
+    return 0;
   }
 
-  for (auto result : folly::enumerate(results.results)) {
-    size_t i = indices[result.index];
-    switch (result->status) {
-      case StatusCode::OK:
-      case StatusCode::MISSING_TOO_MUCH_DATA:
-        // A complete result.
-        // We can't count MISSING_TOO_MUCH_DATA as an incomplete result
-        // because it's not a transient failure. We don't want to fail the query
-        // completely if all replicas are missing data at different time points.
-        merge(i, serviceId, *result);
-        complete_[i].received.set(serviceId);
-        ret |= ++complete_[i].count == 1 && --remainingKeys_ == 0;
-        break;
-      case StatusCode::DONT_OWN_SHARD:
-        // While in theory we would want to invalidate the shard map cache and
-        // issue a new query to whoever *does* own the shard, in practice the
-        // TTL on the cache is much, much shorter than the time it takes to load
-        // a shard. If we did successfully issue a new query, we wouldn't get
-        // any meaningful data from the new owner.
-        break;
-      case StatusCode::KEY_MISSING:
-        // We successfully found that there was no data.
-        complete_[i].received.set(serviceId);
-        ret |= ++complete_[i].count == 1 && --remainingKeys_ == 0;
-        break;
-      case StatusCode::SHARD_IN_PROGRESS:
-        // Include the data in the results, but don't count it as a complete
-        // copy.
-        merge(i, serviceId, *result);
-        complete_[i].received.set(serviceId);
-        break;
-      case StatusCode::RPC_FAIL:
-      case StatusCode::BUCKET_NOT_FINALIZED:
-      case StatusCode::ZIPPY_STORAGE_FAIL:
-        // Beringei should not return these result codes.
-        LOG(FATAL) << "Invalid error code from Beringei: "
-                   << apache::thrift::TEnumTraits<StatusCode>::findName(
-                          result->status);
-        break;
+  SYNCHRONIZED(addStats_) {
+    for (auto result : folly::enumerate(results.get_results())) {
+      size_t i = indices[result.index];
+      switch (result->status) {
+        case StatusCode::OK:
+          FOLLY_FALLTHROUGH;
+        case StatusCode::KEY_MISSING:
+          FOLLY_FALLTHROUGH;
+        case StatusCode::MISSING_TOO_MUCH_DATA:
+          ret |= ++addStats_.count[i] == 1 && --addStats_.remainingKeys == 0;
+          break;
+        case StatusCode::DONT_OWN_SHARD:
+          break;
+        case StatusCode::SHARD_IN_PROGRESS:
+          break;
+        case StatusCode::RPC_FAIL:
+        case StatusCode::BUCKET_NOT_FINALIZED:
+        case StatusCode::ZIPPY_STORAGE_FAIL:
+          // Beringei should not return these result codes.
+          LOG(FATAL) << "Invalid error code from Beringei: "
+                     << apache::thrift::TEnumTraits<StatusCode>::findName(
+                            result->status);
+          break;
+      }
     }
   }
-  lock_.unlock();
-  return ret;
+
+  Item item;
+  item.indices = indices;
+  item.serviceId = serviceId;
+  item.results = std::move(results);
+  bool success = queue_.write(std::move(item));
+
+  // If we failed to write to queue, let all 3 regions come back.
+  return ret && success;
 }
 
 BeringeiGetResult BeringeiGetResultCollector::finalize(
     bool validate,
     const std::vector<std::string>& serviceNames) {
-  // From here on out, future calls to addResults() will do nothing.
-  lock_.lock();
-  done_ = true;
-  lock_.unlock();
+  done_.store(true);
+  Item item;
+  while (queue_.read(item)) {
+    auto& indices = item.indices;
+    auto& results = item.results;
+    auto serviceId = item.serviceId;
+    for (auto result : folly::enumerate(results.results)) {
+      size_t i = indices[result.index];
+      switch (result->status) {
+        case StatusCode::SHARD_IN_PROGRESS:
+          // Include the data in the results, but don't count it as a complete
+          // copy.
+          merge(i, serviceId, *result);
+          complete_[i].received.set(serviceId);
+          break;
+        case StatusCode::OK:
+          FOLLY_FALLTHROUGH;
+        case StatusCode::MISSING_TOO_MUCH_DATA:
+          // A complete result.
+          // We can't count MISSING_TOO_MUCH_DATA as an incomplete result
+          // because it's not a transient failure. We don't want to fail the
+          // query completely if all replicas are missing data at different time
+          // points.
+          merge(i, serviceId, *result);
+          ++complete_[i].finalizedCount;
+          complete_[i].received.set(serviceId);
+          break;
+        case StatusCode::DONT_OWN_SHARD:
+          // While in theory we would want to invalidate the shard map cache and
+          // issue a new query to whoever *does* own the shard, in practice the
+          // TTL on the cache is much, much shorter than the time it takes to
+          // load a shard. If we did successfully issue a new query, we wouldn't
+          // get any meaningful data from the new owner.
+          break;
+        case StatusCode::KEY_MISSING:
+          // We successfully found that there was no data.
+          complete_[i].received.set(serviceId);
+          ++complete_[i].finalizedCount;
+          break;
+        case StatusCode::RPC_FAIL:
+        case StatusCode::BUCKET_NOT_FINALIZED:
+        case StatusCode::ZIPPY_STORAGE_FAIL:
+          // Beringei should not return these result codes.
+          LOG(FATAL) << "Invalid error code from Beringei: "
+                     << apache::thrift::TEnumTraits<StatusCode>::findName(
+                            result->status);
+          break;
+      }
+    }
+  }
 
   CHECK_EQ(serviceNames.size(), numServices_);
-
   uint32_t min = numServices_;
   std::vector<int> resultSets(1ull << numServices_);
 
   for (auto c : complete_) {
-    min = std::min(min, c.count);
+    min = std::min(min, c.finalizedCount);
     resultSets[c.received.to_ulong()]++;
   }
 
@@ -227,7 +265,7 @@ void BeringeiGetResultCollector::merge(
   // Missing in current result
   drops_[1ull << service] += (result_.results[i].size() - inSize);
 
-  if (complete_[i].count == 1) {
+  if (complete_[i].finalizedCount == 1) {
     mismatches_[complete_[i].received.to_ulong()] += mismatches;
   }
   mismatches_[1ull << service] += mismatches;

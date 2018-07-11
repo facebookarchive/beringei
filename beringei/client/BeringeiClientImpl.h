@@ -165,7 +165,10 @@ class BeringeiClientImpl {
       F&& fn);
 
   template <typename F>
-  auto futureContextFinalize(BeringeiFutureContext& context, F&& fn);
+  auto futureContextFinalize(
+      BeringeiFutureContext& context,
+      folly::Executor* executor,
+      F&& fn);
 
   std::vector<std::shared_ptr<BeringeiNetworkClient>> getAllReadClients(
       const std::string& serviceOverride);

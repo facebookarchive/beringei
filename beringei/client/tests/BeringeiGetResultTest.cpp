@@ -151,38 +151,38 @@ TEST_F(BeringeiGetResultTest, MergeCompare) {
 TEST_F(BeringeiGetResultTest, Complete) {
   BeringeiGetResultCollector collector(2, 2, 60, 240);
 
-  EXPECT_FALSE(collector.addResults(missing, {0}, 0));
-  EXPECT_FALSE(collector.addResults(missing, {0}, 1));
-  EXPECT_TRUE(collector.addResults(ok, {1}, 1));
-  EXPECT_FALSE(collector.addResults(ok, {1}, 0));
+  EXPECT_FALSE(collector.addResults(folly::copy(missing), {0}, 0));
+  EXPECT_FALSE(collector.addResults(folly::copy(missing), {0}, 1));
+  EXPECT_TRUE(collector.addResults(folly::copy(ok), {1}, 1));
+  EXPECT_FALSE(collector.addResults(folly::copy(ok), {1}, 0));
   EXPECT_TRUE(collector.finalize(false, {"", ""}).allSuccess);
 }
 
 TEST_F(BeringeiGetResultTest, ShardsMissing) {
   BeringeiGetResultCollector collector(2, 2, 60, 240);
 
-  EXPECT_FALSE(collector.addResults(ok, {0}, 0));
-  EXPECT_FALSE(collector.addResults(unowned, {0}, 1));
-  EXPECT_TRUE(collector.addResults(ok, {1}, 1));
-  EXPECT_FALSE(collector.addResults(unowned, {1}, 0));
+  EXPECT_FALSE(collector.addResults(folly::copy(ok), {0}, 0));
+  EXPECT_FALSE(collector.addResults(folly::copy(unowned), {0}, 1));
+  EXPECT_TRUE(collector.addResults(folly::copy(ok), {1}, 1));
+  EXPECT_FALSE(collector.addResults(folly::copy(unowned), {1}, 0));
   EXPECT_TRUE(collector.finalize(false, {"", ""}).allSuccess);
 }
 
 TEST_F(BeringeiGetResultTest, Timeout) {
   BeringeiGetResultCollector collector(2, 2, 60, 240);
 
-  EXPECT_FALSE(collector.addResults(ok, {0}, 0));
-  EXPECT_FALSE(collector.addResults(ok, {0}, 1));
-  EXPECT_TRUE(collector.addResults(ok, {1}, 1));
+  EXPECT_FALSE(collector.addResults(folly::copy(ok), {0}, 0));
+  EXPECT_FALSE(collector.addResults(folly::copy(ok), {0}, 1));
+  EXPECT_TRUE(collector.addResults(folly::copy(ok), {1}, 1));
   EXPECT_TRUE(collector.finalize(false, {"", ""}).allSuccess);
 }
 
 TEST_F(BeringeiGetResultTest, Incomplete) {
   BeringeiGetResultCollector collector(2, 2, 60, 240);
 
-  EXPECT_FALSE(collector.addResults(ok, {0}, 0));
-  EXPECT_FALSE(collector.addResults(unowned, {1}, 0));
-  EXPECT_FALSE(collector.addResults(ok, {0}, 1));
-  EXPECT_FALSE(collector.addResults(unowned, {1}, 1));
+  EXPECT_FALSE(collector.addResults(folly::copy(ok), {0}, 0));
+  EXPECT_FALSE(collector.addResults(folly::copy(unowned), {1}, 0));
+  EXPECT_FALSE(collector.addResults(folly::copy(ok), {0}, 1));
+  EXPECT_FALSE(collector.addResults(folly::copy(unowned), {1}, 1));
   EXPECT_FALSE(collector.finalize(false, {"", ""}).allSuccess);
 }
